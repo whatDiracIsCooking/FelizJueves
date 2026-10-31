@@ -12,23 +12,23 @@
   "gpu": []
  },
  "counts": {
-  "compile/cuda/measured": 121,
-  "compile/cuda/modelled": 320,
-  "compile/hip/measured": 121,
-  "compile/hip/modelled": 320,
-  "gpu/cuda/modelled": 441,
-  "gpu/hip/modelled": 441
+  "compile/cuda/measured": 119,
+  "compile/cuda/modelled": 326,
+  "compile/hip/measured": 119,
+  "compile/hip/modelled": 326,
+  "gpu/cuda/modelled": 445,
+  "gpu/hip/modelled": 445
  },
  "held_out": {
   "compile/cuda": {
-   "n": 121,
-   "median_factor": 1.323,
-   "p90_factor": 2.535
+   "n": 119,
+   "median_factor": 1.321,
+   "p90_factor": 2.671
   },
   "compile/hip": {
-   "n": 121,
+   "n": 119,
    "median_factor": 1.285,
-   "p90_factor": 1.961
+   "p90_factor": 2.256
   },
   "gpu/cuda": {
    "n": 0,
@@ -202,9 +202,9 @@
    "family": "hessians",
    "tier": "compile",
    "backend": "cuda",
-   "a": 0.206969,
-   "b": 0.274684,
-   "n": 16,
+   "a": 0.217562,
+   "b": 0.295872,
+   "n": 14,
    "L": [
     0,
     1,
@@ -213,18 +213,18 @@
     4
    ],
    "held_out": {
-    "n": 11,
-    "median_factor": 1.604,
-    "p90_factor": 4.509
+    "n": 9,
+    "median_factor": 1.625,
+    "p90_factor": 6.318
    }
   },
   {
    "family": "hessians",
    "tier": "compile",
    "backend": "hip",
-   "a": 0.743466,
-   "b": 0.255586,
-   "n": 16,
+   "a": 0.759999,
+   "b": 0.288653,
+   "n": 14,
    "L": [
     0,
     1,
@@ -233,22 +233,21 @@
     4
    ],
    "held_out": {
-    "n": 11,
-    "median_factor": 1.555,
-    "p90_factor": 4.76
+    "n": 9,
+    "median_factor": 1.586,
+    "p90_factor": 6.271
    }
   },
   {
    "family": "hessians/mmd/dq/d2",
    "tier": "compile",
    "backend": "cuda",
-   "a": -0.205053,
-   "b": 0.102442,
-   "n": 3,
+   "a": null,
+   "b": null,
+   "n": 2,
    "L": [
     0,
-    1,
-    2
+    1
    ],
    "held_out": {
     "n": 0,
@@ -260,13 +259,12 @@
    "family": "hessians/mmd/dq/d2",
    "tier": "compile",
    "backend": "hip",
-   "a": 0.326472,
-   "b": 0.17282,
-   "n": 3,
+   "a": null,
+   "b": null,
+   "n": 2,
    "L": [
     0,
-    1,
-    2
+    1
    ],
    "held_out": {
     "n": 0,
@@ -314,13 +312,12 @@
    "family": "hessians/mmd/jab/d2",
    "tier": "compile",
    "backend": "cuda",
-   "a": -0.197757,
-   "b": 0.566151,
-   "n": 3,
+   "a": null,
+   "b": null,
+   "n": 2,
    "L": [
     0,
-    1,
-    2
+    1
    ],
    "held_out": {
     "n": 0,
@@ -332,13 +329,12 @@
    "family": "hessians/mmd/jab/d2",
    "tier": "compile",
    "backend": "hip",
-   "a": 0.389876,
-   "b": 0.300714,
-   "n": 3,
+   "a": null,
+   "b": null,
+   "n": 2,
    "L": [
     0,
-    1,
-    2
+    1
    ],
    "held_out": {
     "n": 0,
@@ -1088,9 +1084,9 @@
    "family": "pooled",
    "tier": "compile",
    "backend": "cuda",
-   "a": 0.772256,
-   "b": 0.247084,
-   "n": 121,
+   "a": 0.783022,
+   "b": 0.248132,
+   "n": 119,
    "L": [
     0,
     1,
@@ -1109,9 +1105,9 @@
    "family": "pooled",
    "tier": "compile",
    "backend": "hip",
-   "a": 1.266051,
-   "b": 0.252143,
-   "n": 121,
+   "a": 1.278848,
+   "b": 0.253388,
+   "n": 119,
    "L": [
     0,
     1,
@@ -1827,24 +1823,24 @@
    "family": "gradients",
    "compile": {
     "cuda": {
-     "s": 2.165,
+     "s": 2.188,
      "basis": "modelled",
      "source": "fit:pooled"
     },
     "hip": {
-     "s": 3.547,
+     "s": 3.592,
      "basis": "modelled",
      "source": "fit:pooled"
     }
    },
    "gpu": {
     "cuda": {
-     "s": 2.165,
+     "s": 2.188,
      "basis": "modelled",
      "source": "compile"
     },
     "hip": {
-     "s": 3.547,
+     "s": 3.592,
      "basis": "modelled",
      "source": "compile"
     }
@@ -1858,24 +1854,24 @@
    "family": "gradients",
    "compile": {
     "cuda": {
-     "s": 2.771,
+     "s": 2.804,
      "basis": "modelled",
      "source": "fit:pooled"
     },
     "hip": {
-     "s": 4.564,
+     "s": 4.629,
      "basis": "modelled",
      "source": "fit:pooled"
     }
    },
    "gpu": {
     "cuda": {
-     "s": 2.771,
+     "s": 2.804,
      "basis": "modelled",
      "source": "compile"
     },
     "hip": {
-     "s": 4.564,
+     "s": 4.629,
      "basis": "modelled",
      "source": "compile"
     }
@@ -1889,24 +1885,24 @@
    "family": "gradients",
    "compile": {
     "cuda": {
-     "s": 3.548,
+     "s": 3.594,
      "basis": "modelled",
      "source": "fit:pooled"
     },
     "hip": {
-     "s": 5.873,
+     "s": 5.963,
      "basis": "modelled",
      "source": "fit:pooled"
     }
    },
    "gpu": {
     "cuda": {
-     "s": 3.548,
+     "s": 3.594,
      "basis": "modelled",
      "source": "compile"
     },
     "hip": {
-     "s": 5.873,
+     "s": 5.963,
      "basis": "modelled",
      "source": "compile"
     }
@@ -1920,24 +1916,24 @@
    "family": "gradients",
    "compile": {
     "cuda": {
-     "s": 4.543,
+     "s": 4.606,
      "basis": "modelled",
      "source": "fit:pooled"
     },
     "hip": {
-     "s": 7.557,
+     "s": 7.683,
      "basis": "modelled",
      "source": "fit:pooled"
     }
    },
    "gpu": {
     "cuda": {
-     "s": 4.543,
+     "s": 4.606,
      "basis": "modelled",
      "source": "compile"
     },
     "hip": {
-     "s": 7.557,
+     "s": 7.683,
      "basis": "modelled",
      "source": "compile"
     }
@@ -1951,24 +1947,24 @@
    "family": "gradients",
    "compile": {
     "cuda": {
-     "s": 5.816,
+     "s": 5.904,
      "basis": "modelled",
      "source": "fit:pooled"
     },
     "hip": {
-     "s": 9.724,
+     "s": 9.899,
      "basis": "modelled",
      "source": "fit:pooled"
     }
    },
    "gpu": {
     "cuda": {
-     "s": 5.816,
+     "s": 5.904,
      "basis": "modelled",
      "source": "compile"
     },
     "hip": {
-     "s": 9.724,
+     "s": 9.899,
      "basis": "modelled",
      "source": "compile"
     }
@@ -2261,24 +2257,24 @@
    "family": "gradients",
    "compile": {
     "cuda": {
-     "s": 2.165,
+     "s": 2.188,
      "basis": "modelled",
      "source": "fit:pooled"
     },
     "hip": {
-     "s": 3.547,
+     "s": 3.592,
      "basis": "modelled",
      "source": "fit:pooled"
     }
    },
    "gpu": {
     "cuda": {
-     "s": 2.165,
+     "s": 2.188,
      "basis": "modelled",
      "source": "compile"
     },
     "hip": {
-     "s": 3.547,
+     "s": 3.592,
      "basis": "modelled",
      "source": "compile"
     }
@@ -2292,24 +2288,24 @@
    "family": "gradients",
    "compile": {
     "cuda": {
-     "s": 2.771,
+     "s": 2.804,
      "basis": "modelled",
      "source": "fit:pooled"
     },
     "hip": {
-     "s": 4.564,
+     "s": 4.629,
      "basis": "modelled",
      "source": "fit:pooled"
     }
    },
    "gpu": {
     "cuda": {
-     "s": 2.771,
+     "s": 2.804,
      "basis": "modelled",
      "source": "compile"
     },
     "hip": {
-     "s": 4.564,
+     "s": 4.629,
      "basis": "modelled",
      "source": "compile"
     }
@@ -2323,24 +2319,24 @@
    "family": "gradients",
    "compile": {
     "cuda": {
-     "s": 3.548,
+     "s": 3.594,
      "basis": "modelled",
      "source": "fit:pooled"
     },
     "hip": {
-     "s": 5.873,
+     "s": 5.963,
      "basis": "modelled",
      "source": "fit:pooled"
     }
    },
    "gpu": {
     "cuda": {
-     "s": 3.548,
+     "s": 3.594,
      "basis": "modelled",
      "source": "compile"
     },
     "hip": {
-     "s": 5.873,
+     "s": 5.963,
      "basis": "modelled",
      "source": "compile"
     }
@@ -2354,24 +2350,24 @@
    "family": "gradients",
    "compile": {
     "cuda": {
-     "s": 4.543,
+     "s": 4.606,
      "basis": "modelled",
      "source": "fit:pooled"
     },
     "hip": {
-     "s": 7.557,
+     "s": 7.683,
      "basis": "modelled",
      "source": "fit:pooled"
     }
    },
    "gpu": {
     "cuda": {
-     "s": 4.543,
+     "s": 4.606,
      "basis": "modelled",
      "source": "compile"
     },
     "hip": {
-     "s": 7.557,
+     "s": 7.683,
      "basis": "modelled",
      "source": "compile"
     }
@@ -2385,24 +2381,24 @@
    "family": "gradients",
    "compile": {
     "cuda": {
-     "s": 5.816,
+     "s": 5.904,
      "basis": "modelled",
      "source": "fit:pooled"
     },
     "hip": {
-     "s": 9.724,
+     "s": 9.899,
      "basis": "modelled",
      "source": "fit:pooled"
     }
    },
    "gpu": {
     "cuda": {
-     "s": 5.816,
+     "s": 5.904,
      "basis": "modelled",
      "source": "compile"
     },
     "hip": {
-     "s": 9.724,
+     "s": 9.899,
      "basis": "modelled",
      "source": "compile"
     }
@@ -2416,24 +2412,24 @@
    "family": "gradients",
    "compile": {
     "cuda": {
-     "s": 7.446,
+     "s": 7.566,
      "basis": "modelled",
      "source": "fit:pooled"
     },
     "hip": {
-     "s": 12.513,
+     "s": 12.753,
      "basis": "modelled",
      "source": "fit:pooled"
     }
    },
    "gpu": {
     "cuda": {
-     "s": 7.446,
+     "s": 7.566,
      "basis": "modelled",
      "source": "compile"
     },
     "hip": {
-     "s": 12.513,
+     "s": 12.753,
      "basis": "modelled",
      "source": "compile"
     }
@@ -2447,24 +2443,24 @@
    "family": "gradients",
    "compile": {
     "cuda": {
-     "s": 9.533,
+     "s": 9.697,
      "basis": "modelled",
      "source": "fit:pooled"
     },
     "hip": {
-     "s": 16.101,
+     "s": 16.431,
      "basis": "modelled",
      "source": "fit:pooled"
     }
    },
    "gpu": {
     "cuda": {
-     "s": 9.533,
+     "s": 9.697,
      "basis": "modelled",
      "source": "compile"
     },
     "hip": {
-     "s": 16.101,
+     "s": 16.431,
      "basis": "modelled",
      "source": "compile"
     }
@@ -2478,24 +2474,24 @@
    "family": "gradients",
    "compile": {
     "cuda": {
-     "s": 12.205,
+     "s": 12.428,
      "basis": "modelled",
      "source": "fit:pooled"
     },
     "hip": {
-     "s": 20.719,
+     "s": 21.17,
      "basis": "modelled",
      "source": "fit:pooled"
     }
    },
    "gpu": {
     "cuda": {
-     "s": 12.205,
+     "s": 12.428,
      "basis": "modelled",
      "source": "compile"
     },
     "hip": {
-     "s": 20.719,
+     "s": 21.17,
      "basis": "modelled",
      "source": "compile"
     }
@@ -2509,24 +2505,24 @@
    "family": "gradients",
    "compile": {
     "cuda": {
-     "s": 15.626,
+     "s": 15.928,
      "basis": "modelled",
      "source": "fit:pooled"
     },
     "hip": {
-     "s": 26.661,
+     "s": 27.275,
      "basis": "modelled",
      "source": "fit:pooled"
     }
    },
    "gpu": {
     "cuda": {
-     "s": 15.626,
+     "s": 15.928,
      "basis": "modelled",
      "source": "compile"
     },
     "hip": {
-     "s": 26.661,
+     "s": 27.275,
      "basis": "modelled",
      "source": "compile"
     }
@@ -2850,24 +2846,24 @@
    "family": "gradients",
    "compile": {
     "cuda": {
-     "s": 2.165,
+     "s": 2.188,
      "basis": "modelled",
      "source": "fit:pooled"
     },
     "hip": {
-     "s": 3.547,
+     "s": 3.592,
      "basis": "modelled",
      "source": "fit:pooled"
     }
    },
    "gpu": {
     "cuda": {
-     "s": 2.165,
+     "s": 2.188,
      "basis": "modelled",
      "source": "compile"
     },
     "hip": {
-     "s": 3.547,
+     "s": 3.592,
      "basis": "modelled",
      "source": "compile"
     }
@@ -2881,24 +2877,24 @@
    "family": "gradients",
    "compile": {
     "cuda": {
-     "s": 2.771,
+     "s": 2.804,
      "basis": "modelled",
      "source": "fit:pooled"
     },
     "hip": {
-     "s": 4.564,
+     "s": 4.629,
      "basis": "modelled",
      "source": "fit:pooled"
     }
    },
    "gpu": {
     "cuda": {
-     "s": 2.771,
+     "s": 2.804,
      "basis": "modelled",
      "source": "compile"
     },
     "hip": {
-     "s": 4.564,
+     "s": 4.629,
      "basis": "modelled",
      "source": "compile"
     }
@@ -2912,24 +2908,24 @@
    "family": "gradients",
    "compile": {
     "cuda": {
-     "s": 3.548,
+     "s": 3.594,
      "basis": "modelled",
      "source": "fit:pooled"
     },
     "hip": {
-     "s": 5.873,
+     "s": 5.963,
      "basis": "modelled",
      "source": "fit:pooled"
     }
    },
    "gpu": {
     "cuda": {
-     "s": 3.548,
+     "s": 3.594,
      "basis": "modelled",
      "source": "compile"
     },
     "hip": {
-     "s": 5.873,
+     "s": 5.963,
      "basis": "modelled",
      "source": "compile"
     }
@@ -2943,24 +2939,24 @@
    "family": "gradients",
    "compile": {
     "cuda": {
-     "s": 4.543,
+     "s": 4.606,
      "basis": "modelled",
      "source": "fit:pooled"
     },
     "hip": {
-     "s": 7.557,
+     "s": 7.683,
      "basis": "modelled",
      "source": "fit:pooled"
     }
    },
    "gpu": {
     "cuda": {
-     "s": 4.543,
+     "s": 4.606,
      "basis": "modelled",
      "source": "compile"
     },
     "hip": {
-     "s": 7.557,
+     "s": 7.683,
      "basis": "modelled",
      "source": "compile"
     }
@@ -2974,24 +2970,24 @@
    "family": "gradients",
    "compile": {
     "cuda": {
-     "s": 5.816,
+     "s": 5.904,
      "basis": "modelled",
      "source": "fit:pooled"
     },
     "hip": {
-     "s": 9.724,
+     "s": 9.899,
      "basis": "modelled",
      "source": "fit:pooled"
     }
    },
    "gpu": {
     "cuda": {
-     "s": 5.816,
+     "s": 5.904,
      "basis": "modelled",
      "source": "compile"
     },
     "hip": {
-     "s": 9.724,
+     "s": 9.899,
      "basis": "modelled",
      "source": "compile"
     }
@@ -3005,24 +3001,24 @@
    "family": "gradients",
    "compile": {
     "cuda": {
-     "s": 7.446,
+     "s": 7.566,
      "basis": "modelled",
      "source": "fit:pooled"
     },
     "hip": {
-     "s": 12.513,
+     "s": 12.753,
      "basis": "modelled",
      "source": "fit:pooled"
     }
    },
    "gpu": {
     "cuda": {
-     "s": 7.446,
+     "s": 7.566,
      "basis": "modelled",
      "source": "compile"
     },
     "hip": {
-     "s": 12.513,
+     "s": 12.753,
      "basis": "modelled",
      "source": "compile"
     }
@@ -3036,24 +3032,24 @@
    "family": "gradients",
    "compile": {
     "cuda": {
-     "s": 9.533,
+     "s": 9.697,
      "basis": "modelled",
      "source": "fit:pooled"
     },
     "hip": {
-     "s": 16.101,
+     "s": 16.431,
      "basis": "modelled",
      "source": "fit:pooled"
     }
    },
    "gpu": {
     "cuda": {
-     "s": 9.533,
+     "s": 9.697,
      "basis": "modelled",
      "source": "compile"
     },
     "hip": {
-     "s": 16.101,
+     "s": 16.431,
      "basis": "modelled",
      "source": "compile"
     }
@@ -3067,24 +3063,24 @@
    "family": "gradients",
    "compile": {
     "cuda": {
-     "s": 12.205,
+     "s": 12.428,
      "basis": "modelled",
      "source": "fit:pooled"
     },
     "hip": {
-     "s": 20.719,
+     "s": 21.17,
      "basis": "modelled",
      "source": "fit:pooled"
     }
    },
    "gpu": {
     "cuda": {
-     "s": 12.205,
+     "s": 12.428,
      "basis": "modelled",
      "source": "compile"
     },
     "hip": {
-     "s": 20.719,
+     "s": 21.17,
      "basis": "modelled",
      "source": "compile"
     }
@@ -3098,24 +3094,24 @@
    "family": "gradients",
    "compile": {
     "cuda": {
-     "s": 15.626,
+     "s": 15.928,
      "basis": "modelled",
      "source": "fit:pooled"
     },
     "hip": {
-     "s": 26.661,
+     "s": 27.275,
      "basis": "modelled",
      "source": "fit:pooled"
     }
    },
    "gpu": {
     "cuda": {
-     "s": 15.626,
+     "s": 15.928,
      "basis": "modelled",
      "source": "compile"
     },
     "hip": {
-     "s": 26.661,
+     "s": 27.275,
      "basis": "modelled",
      "source": "compile"
     }
@@ -3222,24 +3218,24 @@
    "family": "gradients",
    "compile": {
     "cuda": {
-     "s": 2.165,
+     "s": 2.188,
      "basis": "modelled",
      "source": "fit:pooled"
     },
     "hip": {
-     "s": 3.547,
+     "s": 3.592,
      "basis": "modelled",
      "source": "fit:pooled"
     }
    },
    "gpu": {
     "cuda": {
-     "s": 2.165,
+     "s": 2.188,
      "basis": "modelled",
      "source": "compile"
     },
     "hip": {
-     "s": 3.547,
+     "s": 3.592,
      "basis": "modelled",
      "source": "compile"
     }
@@ -3253,24 +3249,24 @@
    "family": "gradients",
    "compile": {
     "cuda": {
-     "s": 2.771,
+     "s": 2.804,
      "basis": "modelled",
      "source": "fit:pooled"
     },
     "hip": {
-     "s": 4.564,
+     "s": 4.629,
      "basis": "modelled",
      "source": "fit:pooled"
     }
    },
    "gpu": {
     "cuda": {
-     "s": 2.771,
+     "s": 2.804,
      "basis": "modelled",
      "source": "compile"
     },
     "hip": {
-     "s": 4.564,
+     "s": 4.629,
      "basis": "modelled",
      "source": "compile"
     }
@@ -3284,24 +3280,24 @@
    "family": "gradients",
    "compile": {
     "cuda": {
-     "s": 3.548,
+     "s": 3.594,
      "basis": "modelled",
      "source": "fit:pooled"
     },
     "hip": {
-     "s": 5.873,
+     "s": 5.963,
      "basis": "modelled",
      "source": "fit:pooled"
     }
    },
    "gpu": {
     "cuda": {
-     "s": 3.548,
+     "s": 3.594,
      "basis": "modelled",
      "source": "compile"
     },
     "hip": {
-     "s": 5.873,
+     "s": 5.963,
      "basis": "modelled",
      "source": "compile"
     }
@@ -3315,24 +3311,24 @@
    "family": "gradients",
    "compile": {
     "cuda": {
-     "s": 4.543,
+     "s": 4.606,
      "basis": "modelled",
      "source": "fit:pooled"
     },
     "hip": {
-     "s": 7.557,
+     "s": 7.683,
      "basis": "modelled",
      "source": "fit:pooled"
     }
    },
    "gpu": {
     "cuda": {
-     "s": 4.543,
+     "s": 4.606,
      "basis": "modelled",
      "source": "compile"
     },
     "hip": {
-     "s": 7.557,
+     "s": 7.683,
      "basis": "modelled",
      "source": "compile"
     }
@@ -3346,24 +3342,24 @@
    "family": "gradients",
    "compile": {
     "cuda": {
-     "s": 5.816,
+     "s": 5.904,
      "basis": "modelled",
      "source": "fit:pooled"
     },
     "hip": {
-     "s": 9.724,
+     "s": 9.899,
      "basis": "modelled",
      "source": "fit:pooled"
     }
    },
    "gpu": {
     "cuda": {
-     "s": 5.816,
+     "s": 5.904,
      "basis": "modelled",
      "source": "compile"
     },
     "hip": {
-     "s": 9.724,
+     "s": 9.899,
      "basis": "modelled",
      "source": "compile"
     }
@@ -3687,24 +3683,24 @@
    "family": "gradients",
    "compile": {
     "cuda": {
-     "s": 2.165,
+     "s": 2.188,
      "basis": "modelled",
      "source": "fit:pooled"
     },
     "hip": {
-     "s": 3.547,
+     "s": 3.592,
      "basis": "modelled",
      "source": "fit:pooled"
     }
    },
    "gpu": {
     "cuda": {
-     "s": 2.165,
+     "s": 2.188,
      "basis": "modelled",
      "source": "compile"
     },
     "hip": {
-     "s": 3.547,
+     "s": 3.592,
      "basis": "modelled",
      "source": "compile"
     }
@@ -3718,24 +3714,24 @@
    "family": "gradients",
    "compile": {
     "cuda": {
-     "s": 2.771,
+     "s": 2.804,
      "basis": "modelled",
      "source": "fit:pooled"
     },
     "hip": {
-     "s": 4.564,
+     "s": 4.629,
      "basis": "modelled",
      "source": "fit:pooled"
     }
    },
    "gpu": {
     "cuda": {
-     "s": 2.771,
+     "s": 2.804,
      "basis": "modelled",
      "source": "compile"
     },
     "hip": {
-     "s": 4.564,
+     "s": 4.629,
      "basis": "modelled",
      "source": "compile"
     }
@@ -3749,24 +3745,24 @@
    "family": "gradients",
    "compile": {
     "cuda": {
-     "s": 3.548,
+     "s": 3.594,
      "basis": "modelled",
      "source": "fit:pooled"
     },
     "hip": {
-     "s": 5.873,
+     "s": 5.963,
      "basis": "modelled",
      "source": "fit:pooled"
     }
    },
    "gpu": {
     "cuda": {
-     "s": 3.548,
+     "s": 3.594,
      "basis": "modelled",
      "source": "compile"
     },
     "hip": {
-     "s": 5.873,
+     "s": 5.963,
      "basis": "modelled",
      "source": "compile"
     }
@@ -3780,24 +3776,24 @@
    "family": "gradients",
    "compile": {
     "cuda": {
-     "s": 4.543,
+     "s": 4.606,
      "basis": "modelled",
      "source": "fit:pooled"
     },
     "hip": {
-     "s": 7.557,
+     "s": 7.683,
      "basis": "modelled",
      "source": "fit:pooled"
     }
    },
    "gpu": {
     "cuda": {
-     "s": 4.543,
+     "s": 4.606,
      "basis": "modelled",
      "source": "compile"
     },
     "hip": {
-     "s": 7.557,
+     "s": 7.683,
      "basis": "modelled",
      "source": "compile"
     }
@@ -3811,24 +3807,24 @@
    "family": "gradients",
    "compile": {
     "cuda": {
-     "s": 5.816,
+     "s": 5.904,
      "basis": "modelled",
      "source": "fit:pooled"
     },
     "hip": {
-     "s": 9.724,
+     "s": 9.899,
      "basis": "modelled",
      "source": "fit:pooled"
     }
    },
    "gpu": {
     "cuda": {
-     "s": 5.816,
+     "s": 5.904,
      "basis": "modelled",
      "source": "compile"
     },
     "hip": {
-     "s": 9.724,
+     "s": 9.899,
      "basis": "modelled",
      "source": "compile"
     }
@@ -3842,24 +3838,24 @@
    "family": "gradients",
    "compile": {
     "cuda": {
-     "s": 7.446,
+     "s": 7.566,
      "basis": "modelled",
      "source": "fit:pooled"
     },
     "hip": {
-     "s": 12.513,
+     "s": 12.753,
      "basis": "modelled",
      "source": "fit:pooled"
     }
    },
    "gpu": {
     "cuda": {
-     "s": 7.446,
+     "s": 7.566,
      "basis": "modelled",
      "source": "compile"
     },
     "hip": {
-     "s": 12.513,
+     "s": 12.753,
      "basis": "modelled",
      "source": "compile"
     }
@@ -3873,24 +3869,24 @@
    "family": "gradients",
    "compile": {
     "cuda": {
-     "s": 9.533,
+     "s": 9.697,
      "basis": "modelled",
      "source": "fit:pooled"
     },
     "hip": {
-     "s": 16.101,
+     "s": 16.431,
      "basis": "modelled",
      "source": "fit:pooled"
     }
    },
    "gpu": {
     "cuda": {
-     "s": 9.533,
+     "s": 9.697,
      "basis": "modelled",
      "source": "compile"
     },
     "hip": {
-     "s": 16.101,
+     "s": 16.431,
      "basis": "modelled",
      "source": "compile"
     }
@@ -3997,24 +3993,24 @@
    "family": "gradients",
    "compile": {
     "cuda": {
-     "s": 2.165,
+     "s": 2.188,
      "basis": "modelled",
      "source": "fit:pooled"
     },
     "hip": {
-     "s": 3.547,
+     "s": 3.592,
      "basis": "modelled",
      "source": "fit:pooled"
     }
    },
    "gpu": {
     "cuda": {
-     "s": 2.165,
+     "s": 2.188,
      "basis": "modelled",
      "source": "compile"
     },
     "hip": {
-     "s": 3.547,
+     "s": 3.592,
      "basis": "modelled",
      "source": "compile"
     }
@@ -4028,24 +4024,24 @@
    "family": "gradients",
    "compile": {
     "cuda": {
-     "s": 2.771,
+     "s": 2.804,
      "basis": "modelled",
      "source": "fit:pooled"
     },
     "hip": {
-     "s": 4.564,
+     "s": 4.629,
      "basis": "modelled",
      "source": "fit:pooled"
     }
    },
    "gpu": {
     "cuda": {
-     "s": 2.771,
+     "s": 2.804,
      "basis": "modelled",
      "source": "compile"
     },
     "hip": {
-     "s": 4.564,
+     "s": 4.629,
      "basis": "modelled",
      "source": "compile"
     }
@@ -4059,24 +4055,24 @@
    "family": "gradients",
    "compile": {
     "cuda": {
-     "s": 3.548,
+     "s": 3.594,
      "basis": "modelled",
      "source": "fit:pooled"
     },
     "hip": {
-     "s": 5.873,
+     "s": 5.963,
      "basis": "modelled",
      "source": "fit:pooled"
     }
    },
    "gpu": {
     "cuda": {
-     "s": 3.548,
+     "s": 3.594,
      "basis": "modelled",
      "source": "compile"
     },
     "hip": {
-     "s": 5.873,
+     "s": 5.963,
      "basis": "modelled",
      "source": "compile"
     }
@@ -4090,24 +4086,24 @@
    "family": "gradients",
    "compile": {
     "cuda": {
-     "s": 4.543,
+     "s": 4.606,
      "basis": "modelled",
      "source": "fit:pooled"
     },
     "hip": {
-     "s": 7.557,
+     "s": 7.683,
      "basis": "modelled",
      "source": "fit:pooled"
     }
    },
    "gpu": {
     "cuda": {
-     "s": 4.543,
+     "s": 4.606,
      "basis": "modelled",
      "source": "compile"
     },
     "hip": {
-     "s": 7.557,
+     "s": 7.683,
      "basis": "modelled",
      "source": "compile"
     }
@@ -4121,24 +4117,24 @@
    "family": "gradients",
    "compile": {
     "cuda": {
-     "s": 5.816,
+     "s": 5.904,
      "basis": "modelled",
      "source": "fit:pooled"
     },
     "hip": {
-     "s": 9.724,
+     "s": 9.899,
      "basis": "modelled",
      "source": "fit:pooled"
     }
    },
    "gpu": {
     "cuda": {
-     "s": 5.816,
+     "s": 5.904,
      "basis": "modelled",
      "source": "compile"
     },
     "hip": {
-     "s": 9.724,
+     "s": 9.899,
      "basis": "modelled",
      "source": "compile"
     }
@@ -4152,24 +4148,24 @@
    "family": "gradients",
    "compile": {
     "cuda": {
-     "s": 7.446,
+     "s": 7.566,
      "basis": "modelled",
      "source": "fit:pooled"
     },
     "hip": {
-     "s": 12.513,
+     "s": 12.753,
      "basis": "modelled",
      "source": "fit:pooled"
     }
    },
    "gpu": {
     "cuda": {
-     "s": 7.446,
+     "s": 7.566,
      "basis": "modelled",
      "source": "compile"
     },
     "hip": {
-     "s": 12.513,
+     "s": 12.753,
      "basis": "modelled",
      "source": "compile"
     }
@@ -4183,24 +4179,24 @@
    "family": "gradients",
    "compile": {
     "cuda": {
-     "s": 9.533,
+     "s": 9.697,
      "basis": "modelled",
      "source": "fit:pooled"
     },
     "hip": {
-     "s": 16.101,
+     "s": 16.431,
      "basis": "modelled",
      "source": "fit:pooled"
     }
    },
    "gpu": {
     "cuda": {
-     "s": 9.533,
+     "s": 9.697,
      "basis": "modelled",
      "source": "compile"
     },
     "hip": {
-     "s": 16.101,
+     "s": 16.431,
      "basis": "modelled",
      "source": "compile"
     }
@@ -4307,24 +4303,24 @@
    "family": "gradients",
    "compile": {
     "cuda": {
-     "s": 2.165,
+     "s": 2.188,
      "basis": "modelled",
      "source": "fit:pooled"
     },
     "hip": {
-     "s": 3.547,
+     "s": 3.592,
      "basis": "modelled",
      "source": "fit:pooled"
     }
    },
    "gpu": {
     "cuda": {
-     "s": 2.165,
+     "s": 2.188,
      "basis": "modelled",
      "source": "compile"
     },
     "hip": {
-     "s": 3.547,
+     "s": 3.592,
      "basis": "modelled",
      "source": "compile"
     }
@@ -4338,24 +4334,24 @@
    "family": "gradients",
    "compile": {
     "cuda": {
-     "s": 2.771,
+     "s": 2.804,
      "basis": "modelled",
      "source": "fit:pooled"
     },
     "hip": {
-     "s": 4.564,
+     "s": 4.629,
      "basis": "modelled",
      "source": "fit:pooled"
     }
    },
    "gpu": {
     "cuda": {
-     "s": 2.771,
+     "s": 2.804,
      "basis": "modelled",
      "source": "compile"
     },
     "hip": {
-     "s": 4.564,
+     "s": 4.629,
      "basis": "modelled",
      "source": "compile"
     }
@@ -4369,24 +4365,24 @@
    "family": "gradients",
    "compile": {
     "cuda": {
-     "s": 3.548,
+     "s": 3.594,
      "basis": "modelled",
      "source": "fit:pooled"
     },
     "hip": {
-     "s": 5.873,
+     "s": 5.963,
      "basis": "modelled",
      "source": "fit:pooled"
     }
    },
    "gpu": {
     "cuda": {
-     "s": 3.548,
+     "s": 3.594,
      "basis": "modelled",
      "source": "compile"
     },
     "hip": {
-     "s": 5.873,
+     "s": 5.963,
      "basis": "modelled",
      "source": "compile"
     }
@@ -4400,24 +4396,24 @@
    "family": "gradients",
    "compile": {
     "cuda": {
-     "s": 4.543,
+     "s": 4.606,
      "basis": "modelled",
      "source": "fit:pooled"
     },
     "hip": {
-     "s": 7.557,
+     "s": 7.683,
      "basis": "modelled",
      "source": "fit:pooled"
     }
    },
    "gpu": {
     "cuda": {
-     "s": 4.543,
+     "s": 4.606,
      "basis": "modelled",
      "source": "compile"
     },
     "hip": {
-     "s": 7.557,
+     "s": 7.683,
      "basis": "modelled",
      "source": "compile"
     }
@@ -4431,24 +4427,24 @@
    "family": "gradients",
    "compile": {
     "cuda": {
-     "s": 5.816,
+     "s": 5.904,
      "basis": "modelled",
      "source": "fit:pooled"
     },
     "hip": {
-     "s": 9.724,
+     "s": 9.899,
      "basis": "modelled",
      "source": "fit:pooled"
     }
    },
    "gpu": {
     "cuda": {
-     "s": 5.816,
+     "s": 5.904,
      "basis": "modelled",
      "source": "compile"
     },
     "hip": {
-     "s": 9.724,
+     "s": 9.899,
      "basis": "modelled",
      "source": "compile"
     }
@@ -4462,24 +4458,24 @@
    "family": "gradients",
    "compile": {
     "cuda": {
-     "s": 7.446,
+     "s": 7.566,
      "basis": "modelled",
      "source": "fit:pooled"
     },
     "hip": {
-     "s": 12.513,
+     "s": 12.753,
      "basis": "modelled",
      "source": "fit:pooled"
     }
    },
    "gpu": {
     "cuda": {
-     "s": 7.446,
+     "s": 7.566,
      "basis": "modelled",
      "source": "compile"
     },
     "hip": {
-     "s": 12.513,
+     "s": 12.753,
      "basis": "modelled",
      "source": "compile"
     }
@@ -4493,24 +4489,24 @@
    "family": "gradients",
    "compile": {
     "cuda": {
-     "s": 9.533,
+     "s": 9.697,
      "basis": "modelled",
      "source": "fit:pooled"
     },
     "hip": {
-     "s": 16.101,
+     "s": 16.431,
      "basis": "modelled",
      "source": "fit:pooled"
     }
    },
    "gpu": {
     "cuda": {
-     "s": 9.533,
+     "s": 9.697,
      "basis": "modelled",
      "source": "compile"
     },
     "hip": {
-     "s": 16.101,
+     "s": 16.431,
      "basis": "modelled",
      "source": "compile"
     }
@@ -5020,24 +5016,24 @@
    "family": "hessians",
    "compile": {
     "cuda": {
-     "s": 1.004,
-     "basis": "measured",
-     "source": "1 cases"
+     "s": 2.246,
+     "basis": "modelled",
+     "source": "fit:hessians"
     },
     "hip": {
-     "s": 2.06,
-     "basis": "measured",
-     "source": "1 cases"
+     "s": 3.809,
+     "basis": "modelled",
+     "source": "fit:hessians"
     }
    },
    "gpu": {
     "cuda": {
-     "s": 1.004,
+     "s": 2.246,
      "basis": "modelled",
      "source": "compile"
     },
     "hip": {
-     "s": 2.06,
+     "s": 3.809,
      "basis": "modelled",
      "source": "compile"
     }
@@ -5051,24 +5047,24 @@
    "family": "hessians",
    "compile": {
     "cuda": {
-     "s": 1.108,
+     "s": 3.02,
      "basis": "modelled",
-     "source": "fit:hessians/mmd/dq/d2, extrapolated past L 2"
+     "source": "fit:hessians"
     },
     "hip": {
-     "s": 2.328,
+     "s": 5.083,
      "basis": "modelled",
-     "source": "fit:hessians/mmd/dq/d2, extrapolated past L 2"
+     "source": "fit:hessians"
     }
    },
    "gpu": {
     "cuda": {
-     "s": 1.108,
+     "s": 3.02,
      "basis": "modelled",
      "source": "compile"
     },
     "hip": {
-     "s": 2.328,
+     "s": 5.083,
      "basis": "modelled",
      "source": "compile"
     }
@@ -5082,24 +5078,86 @@
    "family": "hessians",
    "compile": {
     "cuda": {
-     "s": 1.227,
+     "s": 4.059,
      "basis": "modelled",
-     "source": "fit:hessians/mmd/dq/d2, extrapolated past L 2"
+     "source": "fit:hessians"
     },
     "hip": {
-     "s": 2.767,
+     "s": 6.784,
      "basis": "modelled",
-     "source": "fit:hessians/mmd/dq/d2, extrapolated past L 2"
+     "source": "fit:hessians"
     }
    },
    "gpu": {
     "cuda": {
-     "s": 1.227,
+     "s": 4.059,
      "basis": "modelled",
      "source": "compile"
     },
     "hip": {
-     "s": 2.767,
+     "s": 6.784,
+     "basis": "modelled",
+     "source": "compile"
+    }
+   }
+  },
+  {
+   "engine": "mmd",
+   "quantity": "dq",
+   "deriv": 2,
+   "L": 5,
+   "family": "hessians",
+   "compile": {
+    "cuda": {
+     "s": 5.457,
+     "basis": "modelled",
+     "source": "fit:hessians, extrapolated past L 4"
+    },
+    "hip": {
+     "s": 9.055,
+     "basis": "modelled",
+     "source": "fit:hessians, extrapolated past L 4"
+    }
+   },
+   "gpu": {
+    "cuda": {
+     "s": 5.457,
+     "basis": "modelled",
+     "source": "compile"
+    },
+    "hip": {
+     "s": 9.055,
+     "basis": "modelled",
+     "source": "compile"
+    }
+   }
+  },
+  {
+   "engine": "mmd",
+   "quantity": "dq",
+   "deriv": 2,
+   "L": 6,
+   "family": "hessians",
+   "compile": {
+    "cuda": {
+     "s": 7.336,
+     "basis": "modelled",
+     "source": "fit:hessians, extrapolated past L 4"
+    },
+    "hip": {
+     "s": 12.084,
+     "basis": "modelled",
+     "source": "fit:hessians, extrapolated past L 4"
+    }
+   },
+   "gpu": {
+    "cuda": {
+     "s": 7.336,
+     "basis": "modelled",
+     "source": "compile"
+    },
+    "hip": {
+     "s": 12.084,
      "basis": "modelled",
      "source": "compile"
     }
@@ -5516,24 +5574,24 @@
    "family": "gradients",
    "compile": {
     "cuda": {
-     "s": 2.165,
+     "s": 2.188,
      "basis": "modelled",
      "source": "fit:pooled"
     },
     "hip": {
-     "s": 3.547,
+     "s": 3.592,
      "basis": "modelled",
      "source": "fit:pooled"
     }
    },
    "gpu": {
     "cuda": {
-     "s": 2.165,
+     "s": 2.188,
      "basis": "modelled",
      "source": "compile"
     },
     "hip": {
-     "s": 3.547,
+     "s": 3.592,
      "basis": "modelled",
      "source": "compile"
     }
@@ -5547,24 +5605,24 @@
    "family": "gradients",
    "compile": {
     "cuda": {
-     "s": 2.771,
+     "s": 2.804,
      "basis": "modelled",
      "source": "fit:pooled"
     },
     "hip": {
-     "s": 4.564,
+     "s": 4.629,
      "basis": "modelled",
      "source": "fit:pooled"
     }
    },
    "gpu": {
     "cuda": {
-     "s": 2.771,
+     "s": 2.804,
      "basis": "modelled",
      "source": "compile"
     },
     "hip": {
-     "s": 4.564,
+     "s": 4.629,
      "basis": "modelled",
      "source": "compile"
     }
@@ -5578,24 +5636,24 @@
    "family": "gradients",
    "compile": {
     "cuda": {
-     "s": 3.548,
+     "s": 3.594,
      "basis": "modelled",
      "source": "fit:pooled"
     },
     "hip": {
-     "s": 5.873,
+     "s": 5.963,
      "basis": "modelled",
      "source": "fit:pooled"
     }
    },
    "gpu": {
     "cuda": {
-     "s": 3.548,
+     "s": 3.594,
      "basis": "modelled",
      "source": "compile"
     },
     "hip": {
-     "s": 5.873,
+     "s": 5.963,
      "basis": "modelled",
      "source": "compile"
     }
@@ -5609,24 +5667,24 @@
    "family": "gradients",
    "compile": {
     "cuda": {
-     "s": 4.543,
+     "s": 4.606,
      "basis": "modelled",
      "source": "fit:pooled"
     },
     "hip": {
-     "s": 7.557,
+     "s": 7.683,
      "basis": "modelled",
      "source": "fit:pooled"
     }
    },
    "gpu": {
     "cuda": {
-     "s": 4.543,
+     "s": 4.606,
      "basis": "modelled",
      "source": "compile"
     },
     "hip": {
-     "s": 7.557,
+     "s": 7.683,
      "basis": "modelled",
      "source": "compile"
     }
@@ -5640,24 +5698,24 @@
    "family": "gradients",
    "compile": {
     "cuda": {
-     "s": 5.816,
+     "s": 5.904,
      "basis": "modelled",
      "source": "fit:pooled"
     },
     "hip": {
-     "s": 9.724,
+     "s": 9.899,
      "basis": "modelled",
      "source": "fit:pooled"
     }
    },
    "gpu": {
     "cuda": {
-     "s": 5.816,
+     "s": 5.904,
      "basis": "modelled",
      "source": "compile"
     },
     "hip": {
-     "s": 9.724,
+     "s": 9.899,
      "basis": "modelled",
      "source": "compile"
     }
@@ -5671,24 +5729,24 @@
    "family": "gradients",
    "compile": {
     "cuda": {
-     "s": 7.446,
+     "s": 7.566,
      "basis": "modelled",
      "source": "fit:pooled"
     },
     "hip": {
-     "s": 12.513,
+     "s": 12.753,
      "basis": "modelled",
      "source": "fit:pooled"
     }
    },
    "gpu": {
     "cuda": {
-     "s": 7.446,
+     "s": 7.566,
      "basis": "modelled",
      "source": "compile"
     },
     "hip": {
-     "s": 12.513,
+     "s": 12.753,
      "basis": "modelled",
      "source": "compile"
     }
@@ -5702,24 +5760,24 @@
    "family": "gradients",
    "compile": {
     "cuda": {
-     "s": 9.533,
+     "s": 9.697,
      "basis": "modelled",
      "source": "fit:pooled"
     },
     "hip": {
-     "s": 16.101,
+     "s": 16.431,
      "basis": "modelled",
      "source": "fit:pooled"
     }
    },
    "gpu": {
     "cuda": {
-     "s": 9.533,
+     "s": 9.697,
      "basis": "modelled",
      "source": "compile"
     },
     "hip": {
-     "s": 16.101,
+     "s": 16.431,
      "basis": "modelled",
      "source": "compile"
     }
@@ -5733,24 +5791,24 @@
    "family": "gradients",
    "compile": {
     "cuda": {
-     "s": 12.205,
+     "s": 12.428,
      "basis": "modelled",
      "source": "fit:pooled"
     },
     "hip": {
-     "s": 20.719,
+     "s": 21.17,
      "basis": "modelled",
      "source": "fit:pooled"
     }
    },
    "gpu": {
     "cuda": {
-     "s": 12.205,
+     "s": 12.428,
      "basis": "modelled",
      "source": "compile"
     },
     "hip": {
-     "s": 20.719,
+     "s": 21.17,
      "basis": "modelled",
      "source": "compile"
     }
@@ -5764,24 +5822,24 @@
    "family": "gradients",
    "compile": {
     "cuda": {
-     "s": 15.626,
+     "s": 15.928,
      "basis": "modelled",
      "source": "fit:pooled"
     },
     "hip": {
-     "s": 26.661,
+     "s": 27.275,
      "basis": "modelled",
      "source": "fit:pooled"
     }
    },
    "gpu": {
     "cuda": {
-     "s": 15.626,
+     "s": 15.928,
      "basis": "modelled",
      "source": "compile"
     },
     "hip": {
-     "s": 26.661,
+     "s": 27.275,
      "basis": "modelled",
      "source": "compile"
     }
@@ -5795,24 +5853,24 @@
    "family": "gradients",
    "compile": {
     "cuda": {
-     "s": 20.006,
+     "s": 20.414,
      "basis": "modelled",
      "source": "fit:pooled, extrapolated past L 8"
     },
     "hip": {
-     "s": 34.307,
+     "s": 35.14,
      "basis": "modelled",
      "source": "fit:pooled, extrapolated past L 8"
     }
    },
    "gpu": {
     "cuda": {
-     "s": 20.006,
+     "s": 20.414,
      "basis": "modelled",
      "source": "compile"
     },
     "hip": {
-     "s": 34.307,
+     "s": 35.14,
      "basis": "modelled",
      "source": "compile"
     }
@@ -5826,24 +5884,24 @@
    "family": "gradients",
    "compile": {
     "cuda": {
-     "s": 25.613,
+     "s": 26.163,
      "basis": "modelled",
      "source": "fit:pooled, extrapolated past L 8"
     },
     "hip": {
-     "s": 44.145,
+     "s": 45.274,
      "basis": "modelled",
      "source": "fit:pooled, extrapolated past L 8"
     }
    },
    "gpu": {
     "cuda": {
-     "s": 25.613,
+     "s": 26.163,
      "basis": "modelled",
      "source": "compile"
     },
     "hip": {
-     "s": 44.145,
+     "s": 45.274,
      "basis": "modelled",
      "source": "compile"
     }
@@ -5857,24 +5915,24 @@
    "family": "gradients",
    "compile": {
     "cuda": {
-     "s": 32.792,
+     "s": 33.531,
      "basis": "modelled",
      "source": "fit:pooled, extrapolated past L 8"
     },
     "hip": {
-     "s": 56.805,
+     "s": 58.33,
      "basis": "modelled",
      "source": "fit:pooled, extrapolated past L 8"
     }
    },
    "gpu": {
     "cuda": {
-     "s": 32.792,
+     "s": 33.531,
      "basis": "modelled",
      "source": "compile"
     },
     "hip": {
-     "s": 56.805,
+     "s": 58.33,
      "basis": "modelled",
      "source": "compile"
     }
@@ -5888,24 +5946,24 @@
    "family": "gradients",
    "compile": {
     "cuda": {
-     "s": 41.983,
+     "s": 42.974,
      "basis": "modelled",
      "source": "fit:pooled, extrapolated past L 8"
     },
     "hip": {
-     "s": 73.095,
+     "s": 75.152,
      "basis": "modelled",
      "source": "fit:pooled, extrapolated past L 8"
     }
    },
    "gpu": {
     "cuda": {
-     "s": 41.983,
+     "s": 42.974,
      "basis": "modelled",
      "source": "compile"
     },
     "hip": {
-     "s": 73.095,
+     "s": 75.152,
      "basis": "modelled",
      "source": "compile"
     }
@@ -7066,24 +7124,24 @@
    "family": "gradients",
    "compile": {
     "cuda": {
-     "s": 2.165,
+     "s": 2.188,
      "basis": "modelled",
      "source": "fit:pooled"
     },
     "hip": {
-     "s": 3.547,
+     "s": 3.592,
      "basis": "modelled",
      "source": "fit:pooled"
     }
    },
    "gpu": {
     "cuda": {
-     "s": 2.165,
+     "s": 2.188,
      "basis": "modelled",
      "source": "compile"
     },
     "hip": {
-     "s": 3.547,
+     "s": 3.592,
      "basis": "modelled",
      "source": "compile"
     }
@@ -7097,24 +7155,24 @@
    "family": "gradients",
    "compile": {
     "cuda": {
-     "s": 2.771,
+     "s": 2.804,
      "basis": "modelled",
      "source": "fit:pooled"
     },
     "hip": {
-     "s": 4.564,
+     "s": 4.629,
      "basis": "modelled",
      "source": "fit:pooled"
     }
    },
    "gpu": {
     "cuda": {
-     "s": 2.771,
+     "s": 2.804,
      "basis": "modelled",
      "source": "compile"
     },
     "hip": {
-     "s": 4.564,
+     "s": 4.629,
      "basis": "modelled",
      "source": "compile"
     }
@@ -7128,24 +7186,24 @@
    "family": "gradients",
    "compile": {
     "cuda": {
-     "s": 3.548,
+     "s": 3.594,
      "basis": "modelled",
      "source": "fit:pooled"
     },
     "hip": {
-     "s": 5.873,
+     "s": 5.963,
      "basis": "modelled",
      "source": "fit:pooled"
     }
    },
    "gpu": {
     "cuda": {
-     "s": 3.548,
+     "s": 3.594,
      "basis": "modelled",
      "source": "compile"
     },
     "hip": {
-     "s": 5.873,
+     "s": 5.963,
      "basis": "modelled",
      "source": "compile"
     }
@@ -7159,24 +7217,24 @@
    "family": "gradients",
    "compile": {
     "cuda": {
-     "s": 4.543,
+     "s": 4.606,
      "basis": "modelled",
      "source": "fit:pooled"
     },
     "hip": {
-     "s": 7.557,
+     "s": 7.683,
      "basis": "modelled",
      "source": "fit:pooled"
     }
    },
    "gpu": {
     "cuda": {
-     "s": 4.543,
+     "s": 4.606,
      "basis": "modelled",
      "source": "compile"
     },
     "hip": {
-     "s": 7.557,
+     "s": 7.683,
      "basis": "modelled",
      "source": "compile"
     }
@@ -7190,24 +7248,24 @@
    "family": "gradients",
    "compile": {
     "cuda": {
-     "s": 5.816,
+     "s": 5.904,
      "basis": "modelled",
      "source": "fit:pooled"
     },
     "hip": {
-     "s": 9.724,
+     "s": 9.899,
      "basis": "modelled",
      "source": "fit:pooled"
     }
    },
    "gpu": {
     "cuda": {
-     "s": 5.816,
+     "s": 5.904,
      "basis": "modelled",
      "source": "compile"
     },
     "hip": {
-     "s": 9.724,
+     "s": 9.899,
      "basis": "modelled",
      "source": "compile"
     }
@@ -7221,24 +7279,24 @@
    "family": "gradients",
    "compile": {
     "cuda": {
-     "s": 7.446,
+     "s": 7.566,
      "basis": "modelled",
      "source": "fit:pooled"
     },
     "hip": {
-     "s": 12.513,
+     "s": 12.753,
      "basis": "modelled",
      "source": "fit:pooled"
     }
    },
    "gpu": {
     "cuda": {
-     "s": 7.446,
+     "s": 7.566,
      "basis": "modelled",
      "source": "compile"
     },
     "hip": {
-     "s": 12.513,
+     "s": 12.753,
      "basis": "modelled",
      "source": "compile"
     }
@@ -7252,24 +7310,24 @@
    "family": "gradients",
    "compile": {
     "cuda": {
-     "s": 9.533,
+     "s": 9.697,
      "basis": "modelled",
      "source": "fit:pooled"
     },
     "hip": {
-     "s": 16.101,
+     "s": 16.431,
      "basis": "modelled",
      "source": "fit:pooled"
     }
    },
    "gpu": {
     "cuda": {
-     "s": 9.533,
+     "s": 9.697,
      "basis": "modelled",
      "source": "compile"
     },
     "hip": {
-     "s": 16.101,
+     "s": 16.431,
      "basis": "modelled",
      "source": "compile"
     }
@@ -7345,24 +7403,24 @@
    "family": "hessians",
    "compile": {
     "cuda": {
-     "s": 2.777,
-     "basis": "measured",
-     "source": "1 cases"
+     "s": 2.246,
+     "basis": "modelled",
+     "source": "fit:hessians"
     },
     "hip": {
-     "s": 2.79,
-     "basis": "measured",
-     "source": "1 cases"
+     "s": 3.809,
+     "basis": "modelled",
+     "source": "fit:hessians"
     }
    },
    "gpu": {
     "cuda": {
-     "s": 2.777,
+     "s": 2.246,
      "basis": "modelled",
      "source": "compile"
     },
     "hip": {
-     "s": 2.79,
+     "s": 3.809,
      "basis": "modelled",
      "source": "compile"
     }
@@ -7376,24 +7434,24 @@
    "family": "hessians",
    "compile": {
     "cuda": {
-     "s": 4.485,
+     "s": 3.02,
      "basis": "modelled",
-     "source": "fit:hessians/mmd/jab/d2, extrapolated past L 2"
+     "source": "fit:hessians"
     },
     "hip": {
-     "s": 3.64,
+     "s": 5.083,
      "basis": "modelled",
-     "source": "fit:hessians/mmd/jab/d2, extrapolated past L 2"
+     "source": "fit:hessians"
     }
    },
    "gpu": {
     "cuda": {
-     "s": 4.485,
+     "s": 3.02,
      "basis": "modelled",
      "source": "compile"
     },
     "hip": {
-     "s": 3.64,
+     "s": 5.083,
      "basis": "modelled",
      "source": "compile"
     }
@@ -7407,24 +7465,86 @@
    "family": "hessians",
    "compile": {
     "cuda": {
-     "s": 7.9,
+     "s": 4.059,
      "basis": "modelled",
-     "source": "fit:hessians/mmd/jab/d2, extrapolated past L 2"
+     "source": "fit:hessians"
     },
     "hip": {
-     "s": 4.917,
+     "s": 6.784,
      "basis": "modelled",
-     "source": "fit:hessians/mmd/jab/d2, extrapolated past L 2"
+     "source": "fit:hessians"
     }
    },
    "gpu": {
     "cuda": {
-     "s": 7.9,
+     "s": 4.059,
      "basis": "modelled",
      "source": "compile"
     },
     "hip": {
-     "s": 4.917,
+     "s": 6.784,
+     "basis": "modelled",
+     "source": "compile"
+    }
+   }
+  },
+  {
+   "engine": "mmd",
+   "quantity": "jab",
+   "deriv": 2,
+   "L": 5,
+   "family": "hessians",
+   "compile": {
+    "cuda": {
+     "s": 5.457,
+     "basis": "modelled",
+     "source": "fit:hessians, extrapolated past L 4"
+    },
+    "hip": {
+     "s": 9.055,
+     "basis": "modelled",
+     "source": "fit:hessians, extrapolated past L 4"
+    }
+   },
+   "gpu": {
+    "cuda": {
+     "s": 5.457,
+     "basis": "modelled",
+     "source": "compile"
+    },
+    "hip": {
+     "s": 9.055,
+     "basis": "modelled",
+     "source": "compile"
+    }
+   }
+  },
+  {
+   "engine": "mmd",
+   "quantity": "jab",
+   "deriv": 2,
+   "L": 6,
+   "family": "hessians",
+   "compile": {
+    "cuda": {
+     "s": 7.336,
+     "basis": "modelled",
+     "source": "fit:hessians, extrapolated past L 4"
+    },
+    "hip": {
+     "s": 12.084,
+     "basis": "modelled",
+     "source": "fit:hessians, extrapolated past L 4"
+    }
+   },
+   "gpu": {
+    "cuda": {
+     "s": 7.336,
+     "basis": "modelled",
+     "source": "compile"
+    },
+    "hip": {
+     "s": 12.084,
      "basis": "modelled",
      "source": "compile"
     }
@@ -7438,24 +7558,24 @@
    "family": "hessians",
    "compile": {
     "cuda": {
-     "s": 1.23,
+     "s": 1.243,
      "basis": "modelled",
      "source": "fit:hessians"
     },
     "hip": {
-     "s": 2.103,
+     "s": 2.138,
      "basis": "modelled",
      "source": "fit:hessians"
     }
    },
    "gpu": {
     "cuda": {
-     "s": 1.23,
+     "s": 1.243,
      "basis": "modelled",
      "source": "compile"
     },
     "hip": {
-     "s": 2.103,
+     "s": 2.138,
      "basis": "modelled",
      "source": "compile"
     }
@@ -7469,24 +7589,24 @@
    "family": "hessians",
    "compile": {
     "cuda": {
-     "s": 1.619,
+     "s": 1.671,
      "basis": "modelled",
      "source": "fit:hessians"
     },
     "hip": {
-     "s": 2.716,
+     "s": 2.854,
      "basis": "modelled",
      "source": "fit:hessians"
     }
    },
    "gpu": {
     "cuda": {
-     "s": 1.619,
+     "s": 1.671,
      "basis": "modelled",
      "source": "compile"
     },
     "hip": {
-     "s": 2.716,
+     "s": 2.854,
      "basis": "modelled",
      "source": "compile"
     }
@@ -7500,24 +7620,24 @@
    "family": "hessians",
    "compile": {
     "cuda": {
-     "s": 2.13,
+     "s": 2.246,
      "basis": "modelled",
      "source": "fit:hessians"
     },
     "hip": {
-     "s": 3.507,
+     "s": 3.809,
      "basis": "modelled",
      "source": "fit:hessians"
     }
    },
    "gpu": {
     "cuda": {
-     "s": 2.13,
+     "s": 2.246,
      "basis": "modelled",
      "source": "compile"
     },
     "hip": {
-     "s": 3.507,
+     "s": 3.809,
      "basis": "modelled",
      "source": "compile"
     }
@@ -7531,24 +7651,24 @@
    "family": "hessians",
    "compile": {
     "cuda": {
-     "s": 2.804,
+     "s": 3.02,
      "basis": "modelled",
      "source": "fit:hessians"
     },
     "hip": {
-     "s": 4.528,
+     "s": 5.083,
      "basis": "modelled",
      "source": "fit:hessians"
     }
    },
    "gpu": {
     "cuda": {
-     "s": 2.804,
+     "s": 3.02,
      "basis": "modelled",
      "source": "compile"
     },
     "hip": {
-     "s": 4.528,
+     "s": 5.083,
      "basis": "modelled",
      "source": "compile"
     }
@@ -7562,24 +7682,24 @@
    "family": "hessians",
    "compile": {
     "cuda": {
-     "s": 3.69,
+     "s": 4.059,
      "basis": "modelled",
      "source": "fit:hessians"
     },
     "hip": {
-     "s": 5.846,
+     "s": 6.784,
      "basis": "modelled",
      "source": "fit:hessians"
     }
    },
    "gpu": {
     "cuda": {
-     "s": 3.69,
+     "s": 4.059,
      "basis": "modelled",
      "source": "compile"
     },
     "hip": {
-     "s": 5.846,
+     "s": 6.784,
      "basis": "modelled",
      "source": "compile"
     }
@@ -7593,24 +7713,24 @@
    "family": "hessians",
    "compile": {
     "cuda": {
-     "s": 4.857,
+     "s": 5.457,
      "basis": "modelled",
      "source": "fit:hessians, extrapolated past L 4"
     },
     "hip": {
-     "s": 7.549,
+     "s": 9.055,
      "basis": "modelled",
      "source": "fit:hessians, extrapolated past L 4"
     }
    },
    "gpu": {
     "cuda": {
-     "s": 4.857,
+     "s": 5.457,
      "basis": "modelled",
      "source": "compile"
     },
     "hip": {
-     "s": 7.549,
+     "s": 9.055,
      "basis": "modelled",
      "source": "compile"
     }
@@ -7624,24 +7744,24 @@
    "family": "hessians",
    "compile": {
     "cuda": {
-     "s": 6.392,
+     "s": 7.336,
      "basis": "modelled",
      "source": "fit:hessians, extrapolated past L 4"
     },
     "hip": {
-     "s": 9.747,
+     "s": 12.084,
      "basis": "modelled",
      "source": "fit:hessians, extrapolated past L 4"
     }
    },
    "gpu": {
     "cuda": {
-     "s": 6.392,
+     "s": 7.336,
      "basis": "modelled",
      "source": "compile"
     },
     "hip": {
-     "s": 9.747,
+     "s": 12.084,
      "basis": "modelled",
      "source": "compile"
     }
@@ -7965,24 +8085,24 @@
    "family": "gradients",
    "compile": {
     "cuda": {
-     "s": 2.165,
+     "s": 2.188,
      "basis": "modelled",
      "source": "fit:pooled"
     },
     "hip": {
-     "s": 3.547,
+     "s": 3.592,
      "basis": "modelled",
      "source": "fit:pooled"
     }
    },
    "gpu": {
     "cuda": {
-     "s": 2.165,
+     "s": 2.188,
      "basis": "modelled",
      "source": "compile"
     },
     "hip": {
-     "s": 3.547,
+     "s": 3.592,
      "basis": "modelled",
      "source": "compile"
     }
@@ -7996,24 +8116,24 @@
    "family": "gradients",
    "compile": {
     "cuda": {
-     "s": 2.771,
+     "s": 2.804,
      "basis": "modelled",
      "source": "fit:pooled"
     },
     "hip": {
-     "s": 4.564,
+     "s": 4.629,
      "basis": "modelled",
      "source": "fit:pooled"
     }
    },
    "gpu": {
     "cuda": {
-     "s": 2.771,
+     "s": 2.804,
      "basis": "modelled",
      "source": "compile"
     },
     "hip": {
-     "s": 4.564,
+     "s": 4.629,
      "basis": "modelled",
      "source": "compile"
     }
@@ -8027,24 +8147,24 @@
    "family": "gradients",
    "compile": {
     "cuda": {
-     "s": 3.548,
+     "s": 3.594,
      "basis": "modelled",
      "source": "fit:pooled"
     },
     "hip": {
-     "s": 5.873,
+     "s": 5.963,
      "basis": "modelled",
      "source": "fit:pooled"
     }
    },
    "gpu": {
     "cuda": {
-     "s": 3.548,
+     "s": 3.594,
      "basis": "modelled",
      "source": "compile"
     },
     "hip": {
-     "s": 5.873,
+     "s": 5.963,
      "basis": "modelled",
      "source": "compile"
     }
@@ -8058,24 +8178,24 @@
    "family": "gradients",
    "compile": {
     "cuda": {
-     "s": 4.543,
+     "s": 4.606,
      "basis": "modelled",
      "source": "fit:pooled"
     },
     "hip": {
-     "s": 7.557,
+     "s": 7.683,
      "basis": "modelled",
      "source": "fit:pooled"
     }
    },
    "gpu": {
     "cuda": {
-     "s": 4.543,
+     "s": 4.606,
      "basis": "modelled",
      "source": "compile"
     },
     "hip": {
-     "s": 7.557,
+     "s": 7.683,
      "basis": "modelled",
      "source": "compile"
     }
@@ -8089,24 +8209,24 @@
    "family": "gradients",
    "compile": {
     "cuda": {
-     "s": 5.816,
+     "s": 5.904,
      "basis": "modelled",
      "source": "fit:pooled"
     },
     "hip": {
-     "s": 9.724,
+     "s": 9.899,
      "basis": "modelled",
      "source": "fit:pooled"
     }
    },
    "gpu": {
     "cuda": {
-     "s": 5.816,
+     "s": 5.904,
      "basis": "modelled",
      "source": "compile"
     },
     "hip": {
-     "s": 9.724,
+     "s": 9.899,
      "basis": "modelled",
      "source": "compile"
     }
@@ -8120,24 +8240,24 @@
    "family": "gradients",
    "compile": {
     "cuda": {
-     "s": 7.446,
+     "s": 7.566,
      "basis": "modelled",
      "source": "fit:pooled"
     },
     "hip": {
-     "s": 12.513,
+     "s": 12.753,
      "basis": "modelled",
      "source": "fit:pooled"
     }
    },
    "gpu": {
     "cuda": {
-     "s": 7.446,
+     "s": 7.566,
      "basis": "modelled",
      "source": "compile"
     },
     "hip": {
-     "s": 12.513,
+     "s": 12.753,
      "basis": "modelled",
      "source": "compile"
     }
@@ -8151,24 +8271,24 @@
    "family": "gradients",
    "compile": {
     "cuda": {
-     "s": 9.533,
+     "s": 9.697,
      "basis": "modelled",
      "source": "fit:pooled"
     },
     "hip": {
-     "s": 16.101,
+     "s": 16.431,
      "basis": "modelled",
      "source": "fit:pooled"
     }
    },
    "gpu": {
     "cuda": {
-     "s": 9.533,
+     "s": 9.697,
      "basis": "modelled",
      "source": "compile"
     },
     "hip": {
-     "s": 16.101,
+     "s": 16.431,
      "basis": "modelled",
      "source": "compile"
     }
@@ -8182,24 +8302,24 @@
    "family": "gradients",
    "compile": {
     "cuda": {
-     "s": 12.205,
+     "s": 12.428,
      "basis": "modelled",
      "source": "fit:pooled"
     },
     "hip": {
-     "s": 20.719,
+     "s": 21.17,
      "basis": "modelled",
      "source": "fit:pooled"
     }
    },
    "gpu": {
     "cuda": {
-     "s": 12.205,
+     "s": 12.428,
      "basis": "modelled",
      "source": "compile"
     },
     "hip": {
-     "s": 20.719,
+     "s": 21.17,
      "basis": "modelled",
      "source": "compile"
     }
@@ -8213,24 +8333,24 @@
    "family": "gradients",
    "compile": {
     "cuda": {
-     "s": 15.626,
+     "s": 15.928,
      "basis": "modelled",
      "source": "fit:pooled"
     },
     "hip": {
-     "s": 26.661,
+     "s": 27.275,
      "basis": "modelled",
      "source": "fit:pooled"
     }
    },
    "gpu": {
     "cuda": {
-     "s": 15.626,
+     "s": 15.928,
      "basis": "modelled",
      "source": "compile"
     },
     "hip": {
-     "s": 26.661,
+     "s": 27.275,
      "basis": "modelled",
      "source": "compile"
     }
@@ -8244,24 +8364,24 @@
    "family": "gradients",
    "compile": {
     "cuda": {
-     "s": 20.006,
+     "s": 20.414,
      "basis": "modelled",
      "source": "fit:pooled, extrapolated past L 8"
     },
     "hip": {
-     "s": 34.307,
+     "s": 35.14,
      "basis": "modelled",
      "source": "fit:pooled, extrapolated past L 8"
     }
    },
    "gpu": {
     "cuda": {
-     "s": 20.006,
+     "s": 20.414,
      "basis": "modelled",
      "source": "compile"
     },
     "hip": {
-     "s": 34.307,
+     "s": 35.14,
      "basis": "modelled",
      "source": "compile"
     }
@@ -8275,24 +8395,24 @@
    "family": "gradients",
    "compile": {
     "cuda": {
-     "s": 25.613,
+     "s": 26.163,
      "basis": "modelled",
      "source": "fit:pooled, extrapolated past L 8"
     },
     "hip": {
-     "s": 44.145,
+     "s": 45.274,
      "basis": "modelled",
      "source": "fit:pooled, extrapolated past L 8"
     }
    },
    "gpu": {
     "cuda": {
-     "s": 25.613,
+     "s": 26.163,
      "basis": "modelled",
      "source": "compile"
     },
     "hip": {
-     "s": 44.145,
+     "s": 45.274,
      "basis": "modelled",
      "source": "compile"
     }
@@ -8306,24 +8426,24 @@
    "family": "gradients",
    "compile": {
     "cuda": {
-     "s": 32.792,
+     "s": 33.531,
      "basis": "modelled",
      "source": "fit:pooled, extrapolated past L 8"
     },
     "hip": {
-     "s": 56.805,
+     "s": 58.33,
      "basis": "modelled",
      "source": "fit:pooled, extrapolated past L 8"
     }
    },
    "gpu": {
     "cuda": {
-     "s": 32.792,
+     "s": 33.531,
      "basis": "modelled",
      "source": "compile"
     },
     "hip": {
-     "s": 56.805,
+     "s": 58.33,
      "basis": "modelled",
      "source": "compile"
     }
@@ -8337,24 +8457,24 @@
    "family": "gradients",
    "compile": {
     "cuda": {
-     "s": 41.983,
+     "s": 42.974,
      "basis": "modelled",
      "source": "fit:pooled, extrapolated past L 8"
     },
     "hip": {
-     "s": 73.095,
+     "s": 75.152,
      "basis": "modelled",
      "source": "fit:pooled, extrapolated past L 8"
     }
    },
    "gpu": {
     "cuda": {
-     "s": 41.983,
+     "s": 42.974,
      "basis": "modelled",
      "source": "compile"
     },
     "hip": {
-     "s": 73.095,
+     "s": 75.152,
      "basis": "modelled",
      "source": "compile"
     }
@@ -8430,24 +8550,24 @@
    "family": "hessians",
    "compile": {
     "cuda": {
-     "s": 2.13,
+     "s": 2.246,
      "basis": "modelled",
      "source": "fit:hessians"
     },
     "hip": {
-     "s": 3.507,
+     "s": 3.809,
      "basis": "modelled",
      "source": "fit:hessians"
     }
    },
    "gpu": {
     "cuda": {
-     "s": 2.13,
+     "s": 2.246,
      "basis": "modelled",
      "source": "compile"
     },
     "hip": {
-     "s": 3.507,
+     "s": 3.809,
      "basis": "modelled",
      "source": "compile"
     }
@@ -8461,24 +8581,24 @@
    "family": "hessians",
    "compile": {
     "cuda": {
-     "s": 2.804,
+     "s": 3.02,
      "basis": "modelled",
      "source": "fit:hessians"
     },
     "hip": {
-     "s": 4.528,
+     "s": 5.083,
      "basis": "modelled",
      "source": "fit:hessians"
     }
    },
    "gpu": {
     "cuda": {
-     "s": 2.804,
+     "s": 3.02,
      "basis": "modelled",
      "source": "compile"
     },
     "hip": {
-     "s": 4.528,
+     "s": 5.083,
      "basis": "modelled",
      "source": "compile"
     }
@@ -8492,24 +8612,24 @@
    "family": "hessians",
    "compile": {
     "cuda": {
-     "s": 3.69,
+     "s": 4.059,
      "basis": "modelled",
      "source": "fit:hessians"
     },
     "hip": {
-     "s": 5.846,
+     "s": 6.784,
      "basis": "modelled",
      "source": "fit:hessians"
     }
    },
    "gpu": {
     "cuda": {
-     "s": 3.69,
+     "s": 4.059,
      "basis": "modelled",
      "source": "compile"
     },
     "hip": {
-     "s": 5.846,
+     "s": 6.784,
      "basis": "modelled",
      "source": "compile"
     }
@@ -8523,24 +8643,24 @@
    "family": "hessians",
    "compile": {
     "cuda": {
-     "s": 4.857,
+     "s": 5.457,
      "basis": "modelled",
      "source": "fit:hessians, extrapolated past L 4"
     },
     "hip": {
-     "s": 7.549,
+     "s": 9.055,
      "basis": "modelled",
      "source": "fit:hessians, extrapolated past L 4"
     }
    },
    "gpu": {
     "cuda": {
-     "s": 4.857,
+     "s": 5.457,
      "basis": "modelled",
      "source": "compile"
     },
     "hip": {
-     "s": 7.549,
+     "s": 9.055,
      "basis": "modelled",
      "source": "compile"
     }
@@ -8554,24 +8674,24 @@
    "family": "hessians",
    "compile": {
     "cuda": {
-     "s": 6.392,
+     "s": 7.336,
      "basis": "modelled",
      "source": "fit:hessians, extrapolated past L 4"
     },
     "hip": {
-     "s": 9.747,
+     "s": 12.084,
      "basis": "modelled",
      "source": "fit:hessians, extrapolated past L 4"
     }
    },
    "gpu": {
     "cuda": {
-     "s": 6.392,
+     "s": 7.336,
      "basis": "modelled",
      "source": "compile"
     },
     "hip": {
-     "s": 9.747,
+     "s": 12.084,
      "basis": "modelled",
      "source": "compile"
     }
@@ -8585,24 +8705,24 @@
    "family": "hessians",
    "compile": {
     "cuda": {
-     "s": 8.413,
+     "s": 9.862,
      "basis": "modelled",
      "source": "fit:hessians, extrapolated past L 4"
     },
     "hip": {
-     "s": 12.586,
+     "s": 16.128,
      "basis": "modelled",
      "source": "fit:hessians, extrapolated past L 4"
     }
    },
    "gpu": {
     "cuda": {
-     "s": 8.413,
+     "s": 9.862,
      "basis": "modelled",
      "source": "compile"
     },
     "hip": {
-     "s": 12.586,
+     "s": 16.128,
      "basis": "modelled",
      "source": "compile"
     }
@@ -8616,24 +8736,24 @@
    "family": "hessians",
    "compile": {
     "cuda": {
-     "s": 11.072,
+     "s": 13.257,
      "basis": "modelled",
      "source": "fit:hessians, extrapolated past L 4"
     },
     "hip": {
-     "s": 16.251,
+     "s": 21.525,
      "basis": "modelled",
      "source": "fit:hessians, extrapolated past L 4"
     }
    },
    "gpu": {
     "cuda": {
-     "s": 11.072,
+     "s": 13.257,
      "basis": "modelled",
      "source": "compile"
     },
     "hip": {
-     "s": 16.251,
+     "s": 21.525,
      "basis": "modelled",
      "source": "compile"
     }
@@ -8647,24 +8767,24 @@
    "family": "hessians",
    "compile": {
     "cuda": {
-     "s": 14.572,
+     "s": 17.822,
      "basis": "modelled",
      "source": "fit:hessians, extrapolated past L 4"
     },
     "hip": {
-     "s": 20.984,
+     "s": 28.728,
      "basis": "modelled",
      "source": "fit:hessians, extrapolated past L 4"
     }
    },
    "gpu": {
     "cuda": {
-     "s": 14.572,
+     "s": 17.822,
      "basis": "modelled",
      "source": "compile"
     },
     "hip": {
-     "s": 20.984,
+     "s": 28.728,
      "basis": "modelled",
      "source": "compile"
     }
@@ -8678,24 +8798,24 @@
    "family": "hessians",
    "compile": {
     "cuda": {
-     "s": 19.179,
+     "s": 23.957,
      "basis": "modelled",
      "source": "fit:hessians, extrapolated past L 4"
     },
     "hip": {
-     "s": 27.094,
+     "s": 38.341,
      "basis": "modelled",
      "source": "fit:hessians, extrapolated past L 4"
     }
    },
    "gpu": {
     "cuda": {
-     "s": 19.179,
+     "s": 23.957,
      "basis": "modelled",
      "source": "compile"
     },
     "hip": {
-     "s": 27.094,
+     "s": 38.341,
      "basis": "modelled",
      "source": "compile"
     }
@@ -8709,24 +8829,24 @@
    "family": "hessians",
    "compile": {
     "cuda": {
-     "s": 25.242,
+     "s": 32.206,
      "basis": "modelled",
      "source": "fit:hessians, extrapolated past L 4"
     },
     "hip": {
-     "s": 34.985,
+     "s": 51.171,
      "basis": "modelled",
      "source": "fit:hessians, extrapolated past L 4"
     }
    },
    "gpu": {
     "cuda": {
-     "s": 25.242,
+     "s": 32.206,
      "basis": "modelled",
      "source": "compile"
     },
     "hip": {
-     "s": 34.985,
+     "s": 51.171,
      "basis": "modelled",
      "source": "compile"
     }
@@ -8740,24 +8860,24 @@
    "family": "hessians",
    "compile": {
     "cuda": {
-     "s": 33.221,
+     "s": 43.294,
      "basis": "modelled",
      "source": "fit:hessians, extrapolated past L 4"
     },
     "hip": {
-     "s": 45.173,
+     "s": 68.295,
      "basis": "modelled",
      "source": "fit:hessians, extrapolated past L 4"
     }
    },
    "gpu": {
     "cuda": {
-     "s": 33.221,
+     "s": 43.294,
      "basis": "modelled",
      "source": "compile"
     },
     "hip": {
-     "s": 45.173,
+     "s": 68.295,
      "basis": "modelled",
      "source": "compile"
     }
@@ -8771,24 +8891,24 @@
    "family": "hessians",
    "compile": {
     "cuda": {
-     "s": 1.23,
+     "s": 1.243,
      "basis": "modelled",
      "source": "fit:hessians"
     },
     "hip": {
-     "s": 2.103,
+     "s": 2.138,
      "basis": "modelled",
      "source": "fit:hessians"
     }
    },
    "gpu": {
     "cuda": {
-     "s": 1.23,
+     "s": 1.243,
      "basis": "modelled",
      "source": "compile"
     },
     "hip": {
-     "s": 2.103,
+     "s": 2.138,
      "basis": "modelled",
      "source": "compile"
     }
@@ -8802,24 +8922,24 @@
    "family": "hessians",
    "compile": {
     "cuda": {
-     "s": 1.619,
+     "s": 1.671,
      "basis": "modelled",
      "source": "fit:hessians"
     },
     "hip": {
-     "s": 2.716,
+     "s": 2.854,
      "basis": "modelled",
      "source": "fit:hessians"
     }
    },
    "gpu": {
     "cuda": {
-     "s": 1.619,
+     "s": 1.671,
      "basis": "modelled",
      "source": "compile"
     },
     "hip": {
-     "s": 2.716,
+     "s": 2.854,
      "basis": "modelled",
      "source": "compile"
     }
@@ -8833,24 +8953,24 @@
    "family": "hessians",
    "compile": {
     "cuda": {
-     "s": 2.13,
+     "s": 2.246,
      "basis": "modelled",
      "source": "fit:hessians"
     },
     "hip": {
-     "s": 3.507,
+     "s": 3.809,
      "basis": "modelled",
      "source": "fit:hessians"
     }
    },
    "gpu": {
     "cuda": {
-     "s": 2.13,
+     "s": 2.246,
      "basis": "modelled",
      "source": "compile"
     },
     "hip": {
-     "s": 3.507,
+     "s": 3.809,
      "basis": "modelled",
      "source": "compile"
     }
@@ -8864,24 +8984,24 @@
    "family": "hessians",
    "compile": {
     "cuda": {
-     "s": 2.804,
+     "s": 3.02,
      "basis": "modelled",
      "source": "fit:hessians"
     },
     "hip": {
-     "s": 4.528,
+     "s": 5.083,
      "basis": "modelled",
      "source": "fit:hessians"
     }
    },
    "gpu": {
     "cuda": {
-     "s": 2.804,
+     "s": 3.02,
      "basis": "modelled",
      "source": "compile"
     },
     "hip": {
-     "s": 4.528,
+     "s": 5.083,
      "basis": "modelled",
      "source": "compile"
     }
@@ -8895,24 +9015,24 @@
    "family": "hessians",
    "compile": {
     "cuda": {
-     "s": 3.69,
+     "s": 4.059,
      "basis": "modelled",
      "source": "fit:hessians"
     },
     "hip": {
-     "s": 5.846,
+     "s": 6.784,
      "basis": "modelled",
      "source": "fit:hessians"
     }
    },
    "gpu": {
     "cuda": {
-     "s": 3.69,
+     "s": 4.059,
      "basis": "modelled",
      "source": "compile"
     },
     "hip": {
-     "s": 5.846,
+     "s": 6.784,
      "basis": "modelled",
      "source": "compile"
     }
@@ -8926,24 +9046,24 @@
    "family": "hessians",
    "compile": {
     "cuda": {
-     "s": 4.857,
+     "s": 5.457,
      "basis": "modelled",
      "source": "fit:hessians, extrapolated past L 4"
     },
     "hip": {
-     "s": 7.549,
+     "s": 9.055,
      "basis": "modelled",
      "source": "fit:hessians, extrapolated past L 4"
     }
    },
    "gpu": {
     "cuda": {
-     "s": 4.857,
+     "s": 5.457,
      "basis": "modelled",
      "source": "compile"
     },
     "hip": {
-     "s": 7.549,
+     "s": 9.055,
      "basis": "modelled",
      "source": "compile"
     }
@@ -8957,24 +9077,24 @@
    "family": "hessians",
    "compile": {
     "cuda": {
-     "s": 6.392,
+     "s": 7.336,
      "basis": "modelled",
      "source": "fit:hessians, extrapolated past L 4"
     },
     "hip": {
-     "s": 9.747,
+     "s": 12.084,
      "basis": "modelled",
      "source": "fit:hessians, extrapolated past L 4"
     }
    },
    "gpu": {
     "cuda": {
-     "s": 6.392,
+     "s": 7.336,
      "basis": "modelled",
      "source": "compile"
     },
     "hip": {
-     "s": 9.747,
+     "s": 12.084,
      "basis": "modelled",
      "source": "compile"
     }
@@ -8988,24 +9108,24 @@
    "family": "hessians",
    "compile": {
     "cuda": {
-     "s": 8.413,
+     "s": 9.862,
      "basis": "modelled",
      "source": "fit:hessians, extrapolated past L 4"
     },
     "hip": {
-     "s": 12.586,
+     "s": 16.128,
      "basis": "modelled",
      "source": "fit:hessians, extrapolated past L 4"
     }
    },
    "gpu": {
     "cuda": {
-     "s": 8.413,
+     "s": 9.862,
      "basis": "modelled",
      "source": "compile"
     },
     "hip": {
-     "s": 12.586,
+     "s": 16.128,
      "basis": "modelled",
      "source": "compile"
     }
@@ -9019,24 +9139,24 @@
    "family": "hessians",
    "compile": {
     "cuda": {
-     "s": 11.072,
+     "s": 13.257,
      "basis": "modelled",
      "source": "fit:hessians, extrapolated past L 4"
     },
     "hip": {
-     "s": 16.251,
+     "s": 21.525,
      "basis": "modelled",
      "source": "fit:hessians, extrapolated past L 4"
     }
    },
    "gpu": {
     "cuda": {
-     "s": 11.072,
+     "s": 13.257,
      "basis": "modelled",
      "source": "compile"
     },
     "hip": {
-     "s": 16.251,
+     "s": 21.525,
      "basis": "modelled",
      "source": "compile"
     }
@@ -9050,24 +9170,24 @@
    "family": "hessians",
    "compile": {
     "cuda": {
-     "s": 33.221,
+     "s": 43.294,
      "basis": "modelled",
      "source": "fit:hessians, extrapolated past L 4"
     },
     "hip": {
-     "s": 45.173,
+     "s": 68.295,
      "basis": "modelled",
      "source": "fit:hessians, extrapolated past L 4"
     }
    },
    "gpu": {
     "cuda": {
-     "s": 33.221,
+     "s": 43.294,
      "basis": "modelled",
      "source": "compile"
     },
     "hip": {
-     "s": 45.173,
+     "s": 68.295,
      "basis": "modelled",
      "source": "compile"
     }
@@ -9081,24 +9201,24 @@
    "family": "hessians",
    "compile": {
     "cuda": {
-     "s": 1.23,
+     "s": 1.243,
      "basis": "modelled",
      "source": "fit:hessians"
     },
     "hip": {
-     "s": 2.103,
+     "s": 2.138,
      "basis": "modelled",
      "source": "fit:hessians"
     }
    },
    "gpu": {
     "cuda": {
-     "s": 1.23,
+     "s": 1.243,
      "basis": "modelled",
      "source": "compile"
     },
     "hip": {
-     "s": 2.103,
+     "s": 2.138,
      "basis": "modelled",
      "source": "compile"
     }
@@ -9112,24 +9232,24 @@
    "family": "hessians",
    "compile": {
     "cuda": {
-     "s": 1.619,
+     "s": 1.671,
      "basis": "modelled",
      "source": "fit:hessians"
     },
     "hip": {
-     "s": 2.716,
+     "s": 2.854,
      "basis": "modelled",
      "source": "fit:hessians"
     }
    },
    "gpu": {
     "cuda": {
-     "s": 1.619,
+     "s": 1.671,
      "basis": "modelled",
      "source": "compile"
     },
     "hip": {
-     "s": 2.716,
+     "s": 2.854,
      "basis": "modelled",
      "source": "compile"
     }
@@ -9143,24 +9263,24 @@
    "family": "hessians",
    "compile": {
     "cuda": {
-     "s": 2.13,
+     "s": 2.246,
      "basis": "modelled",
      "source": "fit:hessians"
     },
     "hip": {
-     "s": 3.507,
+     "s": 3.809,
      "basis": "modelled",
      "source": "fit:hessians"
     }
    },
    "gpu": {
     "cuda": {
-     "s": 2.13,
+     "s": 2.246,
      "basis": "modelled",
      "source": "compile"
     },
     "hip": {
-     "s": 3.507,
+     "s": 3.809,
      "basis": "modelled",
      "source": "compile"
     }
@@ -9174,24 +9294,24 @@
    "family": "hessians",
    "compile": {
     "cuda": {
-     "s": 2.804,
+     "s": 3.02,
      "basis": "modelled",
      "source": "fit:hessians"
     },
     "hip": {
-     "s": 4.528,
+     "s": 5.083,
      "basis": "modelled",
      "source": "fit:hessians"
     }
    },
    "gpu": {
     "cuda": {
-     "s": 2.804,
+     "s": 3.02,
      "basis": "modelled",
      "source": "compile"
     },
     "hip": {
-     "s": 4.528,
+     "s": 5.083,
      "basis": "modelled",
      "source": "compile"
     }
@@ -9205,24 +9325,24 @@
    "family": "hessians",
    "compile": {
     "cuda": {
-     "s": 3.69,
+     "s": 4.059,
      "basis": "modelled",
      "source": "fit:hessians"
     },
     "hip": {
-     "s": 5.846,
+     "s": 6.784,
      "basis": "modelled",
      "source": "fit:hessians"
     }
    },
    "gpu": {
     "cuda": {
-     "s": 3.69,
+     "s": 4.059,
      "basis": "modelled",
      "source": "compile"
     },
     "hip": {
-     "s": 5.846,
+     "s": 6.784,
      "basis": "modelled",
      "source": "compile"
     }
@@ -9236,24 +9356,24 @@
    "family": "hessians",
    "compile": {
     "cuda": {
-     "s": 4.857,
+     "s": 5.457,
      "basis": "modelled",
      "source": "fit:hessians, extrapolated past L 4"
     },
     "hip": {
-     "s": 7.549,
+     "s": 9.055,
      "basis": "modelled",
      "source": "fit:hessians, extrapolated past L 4"
     }
    },
    "gpu": {
     "cuda": {
-     "s": 4.857,
+     "s": 5.457,
      "basis": "modelled",
      "source": "compile"
     },
     "hip": {
-     "s": 7.549,
+     "s": 9.055,
      "basis": "modelled",
      "source": "compile"
     }
@@ -9267,24 +9387,24 @@
    "family": "hessians",
    "compile": {
     "cuda": {
-     "s": 6.392,
+     "s": 7.336,
      "basis": "modelled",
      "source": "fit:hessians, extrapolated past L 4"
     },
     "hip": {
-     "s": 9.747,
+     "s": 12.084,
      "basis": "modelled",
      "source": "fit:hessians, extrapolated past L 4"
     }
    },
    "gpu": {
     "cuda": {
-     "s": 6.392,
+     "s": 7.336,
      "basis": "modelled",
      "source": "compile"
     },
     "hip": {
-     "s": 9.747,
+     "s": 12.084,
      "basis": "modelled",
      "source": "compile"
     }
@@ -9298,24 +9418,24 @@
    "family": "hessians",
    "compile": {
     "cuda": {
-     "s": 8.413,
+     "s": 9.862,
      "basis": "modelled",
      "source": "fit:hessians, extrapolated past L 4"
     },
     "hip": {
-     "s": 12.586,
+     "s": 16.128,
      "basis": "modelled",
      "source": "fit:hessians, extrapolated past L 4"
     }
    },
    "gpu": {
     "cuda": {
-     "s": 8.413,
+     "s": 9.862,
      "basis": "modelled",
      "source": "compile"
     },
     "hip": {
-     "s": 12.586,
+     "s": 16.128,
      "basis": "modelled",
      "source": "compile"
     }
@@ -9329,24 +9449,24 @@
    "family": "hessians",
    "compile": {
     "cuda": {
-     "s": 11.072,
+     "s": 13.257,
      "basis": "modelled",
      "source": "fit:hessians, extrapolated past L 4"
     },
     "hip": {
-     "s": 16.251,
+     "s": 21.525,
      "basis": "modelled",
      "source": "fit:hessians, extrapolated past L 4"
     }
    },
    "gpu": {
     "cuda": {
-     "s": 11.072,
+     "s": 13.257,
      "basis": "modelled",
      "source": "compile"
     },
     "hip": {
-     "s": 16.251,
+     "s": 21.525,
      "basis": "modelled",
      "source": "compile"
     }
@@ -9360,24 +9480,24 @@
    "family": "hessians",
    "compile": {
     "cuda": {
-     "s": 33.221,
+     "s": 43.294,
      "basis": "modelled",
      "source": "fit:hessians, extrapolated past L 4"
     },
     "hip": {
-     "s": 45.173,
+     "s": 68.295,
      "basis": "modelled",
      "source": "fit:hessians, extrapolated past L 4"
     }
    },
    "gpu": {
     "cuda": {
-     "s": 33.221,
+     "s": 43.294,
      "basis": "modelled",
      "source": "compile"
     },
     "hip": {
-     "s": 45.173,
+     "s": 68.295,
      "basis": "modelled",
      "source": "compile"
     }
@@ -9794,24 +9914,24 @@
    "family": "gradients",
    "compile": {
     "cuda": {
-     "s": 2.165,
+     "s": 2.188,
      "basis": "modelled",
      "source": "fit:pooled"
     },
     "hip": {
-     "s": 3.547,
+     "s": 3.592,
      "basis": "modelled",
      "source": "fit:pooled"
     }
    },
    "gpu": {
     "cuda": {
-     "s": 2.165,
+     "s": 2.188,
      "basis": "modelled",
      "source": "compile"
     },
     "hip": {
-     "s": 3.547,
+     "s": 3.592,
      "basis": "modelled",
      "source": "compile"
     }
@@ -9825,24 +9945,24 @@
    "family": "gradients",
    "compile": {
     "cuda": {
-     "s": 2.771,
+     "s": 2.804,
      "basis": "modelled",
      "source": "fit:pooled"
     },
     "hip": {
-     "s": 4.564,
+     "s": 4.629,
      "basis": "modelled",
      "source": "fit:pooled"
     }
    },
    "gpu": {
     "cuda": {
-     "s": 2.771,
+     "s": 2.804,
      "basis": "modelled",
      "source": "compile"
     },
     "hip": {
-     "s": 4.564,
+     "s": 4.629,
      "basis": "modelled",
      "source": "compile"
     }
@@ -9856,24 +9976,24 @@
    "family": "gradients",
    "compile": {
     "cuda": {
-     "s": 3.548,
+     "s": 3.594,
      "basis": "modelled",
      "source": "fit:pooled"
     },
     "hip": {
-     "s": 5.873,
+     "s": 5.963,
      "basis": "modelled",
      "source": "fit:pooled"
     }
    },
    "gpu": {
     "cuda": {
-     "s": 3.548,
+     "s": 3.594,
      "basis": "modelled",
      "source": "compile"
     },
     "hip": {
-     "s": 5.873,
+     "s": 5.963,
      "basis": "modelled",
      "source": "compile"
     }
@@ -9887,24 +10007,24 @@
    "family": "gradients",
    "compile": {
     "cuda": {
-     "s": 4.543,
+     "s": 4.606,
      "basis": "modelled",
      "source": "fit:pooled"
     },
     "hip": {
-     "s": 7.557,
+     "s": 7.683,
      "basis": "modelled",
      "source": "fit:pooled"
     }
    },
    "gpu": {
     "cuda": {
-     "s": 4.543,
+     "s": 4.606,
      "basis": "modelled",
      "source": "compile"
     },
     "hip": {
-     "s": 7.557,
+     "s": 7.683,
      "basis": "modelled",
      "source": "compile"
     }
@@ -9918,24 +10038,24 @@
    "family": "gradients",
    "compile": {
     "cuda": {
-     "s": 5.816,
+     "s": 5.904,
      "basis": "modelled",
      "source": "fit:pooled"
     },
     "hip": {
-     "s": 9.724,
+     "s": 9.899,
      "basis": "modelled",
      "source": "fit:pooled"
     }
    },
    "gpu": {
     "cuda": {
-     "s": 5.816,
+     "s": 5.904,
      "basis": "modelled",
      "source": "compile"
     },
     "hip": {
-     "s": 9.724,
+     "s": 9.899,
      "basis": "modelled",
      "source": "compile"
     }
@@ -9949,24 +10069,24 @@
    "family": "gradients",
    "compile": {
     "cuda": {
-     "s": 7.446,
+     "s": 7.566,
      "basis": "modelled",
      "source": "fit:pooled"
     },
     "hip": {
-     "s": 12.513,
+     "s": 12.753,
      "basis": "modelled",
      "source": "fit:pooled"
     }
    },
    "gpu": {
     "cuda": {
-     "s": 7.446,
+     "s": 7.566,
      "basis": "modelled",
      "source": "compile"
     },
     "hip": {
-     "s": 12.513,
+     "s": 12.753,
      "basis": "modelled",
      "source": "compile"
     }
@@ -9980,24 +10100,24 @@
    "family": "gradients",
    "compile": {
     "cuda": {
-     "s": 9.533,
+     "s": 9.697,
      "basis": "modelled",
      "source": "fit:pooled"
     },
     "hip": {
-     "s": 16.101,
+     "s": 16.431,
      "basis": "modelled",
      "source": "fit:pooled"
     }
    },
    "gpu": {
     "cuda": {
-     "s": 9.533,
+     "s": 9.697,
      "basis": "modelled",
      "source": "compile"
     },
     "hip": {
-     "s": 16.101,
+     "s": 16.431,
      "basis": "modelled",
      "source": "compile"
     }
@@ -10011,24 +10131,24 @@
    "family": "gradients",
    "compile": {
     "cuda": {
-     "s": 12.205,
+     "s": 12.428,
      "basis": "modelled",
      "source": "fit:pooled"
     },
     "hip": {
-     "s": 20.719,
+     "s": 21.17,
      "basis": "modelled",
      "source": "fit:pooled"
     }
    },
    "gpu": {
     "cuda": {
-     "s": 12.205,
+     "s": 12.428,
      "basis": "modelled",
      "source": "compile"
     },
     "hip": {
-     "s": 20.719,
+     "s": 21.17,
      "basis": "modelled",
      "source": "compile"
     }
@@ -10042,24 +10162,24 @@
    "family": "gradients",
    "compile": {
     "cuda": {
-     "s": 15.626,
+     "s": 15.928,
      "basis": "modelled",
      "source": "fit:pooled"
     },
     "hip": {
-     "s": 26.661,
+     "s": 27.275,
      "basis": "modelled",
      "source": "fit:pooled"
     }
    },
    "gpu": {
     "cuda": {
-     "s": 15.626,
+     "s": 15.928,
      "basis": "modelled",
      "source": "compile"
     },
     "hip": {
-     "s": 26.661,
+     "s": 27.275,
      "basis": "modelled",
      "source": "compile"
     }
@@ -10073,24 +10193,24 @@
    "family": "gradients",
    "compile": {
     "cuda": {
-     "s": 20.006,
+     "s": 20.414,
      "basis": "modelled",
      "source": "fit:pooled, extrapolated past L 8"
     },
     "hip": {
-     "s": 34.307,
+     "s": 35.14,
      "basis": "modelled",
      "source": "fit:pooled, extrapolated past L 8"
     }
    },
    "gpu": {
     "cuda": {
-     "s": 20.006,
+     "s": 20.414,
      "basis": "modelled",
      "source": "compile"
     },
     "hip": {
-     "s": 34.307,
+     "s": 35.14,
      "basis": "modelled",
      "source": "compile"
     }
@@ -10104,24 +10224,24 @@
    "family": "gradients",
    "compile": {
     "cuda": {
-     "s": 25.613,
+     "s": 26.163,
      "basis": "modelled",
      "source": "fit:pooled, extrapolated past L 8"
     },
     "hip": {
-     "s": 44.145,
+     "s": 45.274,
      "basis": "modelled",
      "source": "fit:pooled, extrapolated past L 8"
     }
    },
    "gpu": {
     "cuda": {
-     "s": 25.613,
+     "s": 26.163,
      "basis": "modelled",
      "source": "compile"
     },
     "hip": {
-     "s": 44.145,
+     "s": 45.274,
      "basis": "modelled",
      "source": "compile"
     }
@@ -10135,24 +10255,24 @@
    "family": "gradients",
    "compile": {
     "cuda": {
-     "s": 32.792,
+     "s": 33.531,
      "basis": "modelled",
      "source": "fit:pooled, extrapolated past L 8"
     },
     "hip": {
-     "s": 56.805,
+     "s": 58.33,
      "basis": "modelled",
      "source": "fit:pooled, extrapolated past L 8"
     }
    },
    "gpu": {
     "cuda": {
-     "s": 32.792,
+     "s": 33.531,
      "basis": "modelled",
      "source": "compile"
     },
     "hip": {
-     "s": 56.805,
+     "s": 58.33,
      "basis": "modelled",
      "source": "compile"
     }
@@ -10166,24 +10286,24 @@
    "family": "gradients",
    "compile": {
     "cuda": {
-     "s": 41.983,
+     "s": 42.974,
      "basis": "modelled",
      "source": "fit:pooled, extrapolated past L 8"
     },
     "hip": {
-     "s": 73.095,
+     "s": 75.152,
      "basis": "modelled",
      "source": "fit:pooled, extrapolated past L 8"
     }
    },
    "gpu": {
     "cuda": {
-     "s": 41.983,
+     "s": 42.974,
      "basis": "modelled",
      "source": "compile"
     },
     "hip": {
-     "s": 73.095,
+     "s": 75.152,
      "basis": "modelled",
      "source": "compile"
     }
@@ -11468,24 +11588,24 @@
    "family": "gradients",
    "compile": {
     "cuda": {
-     "s": 2.165,
+     "s": 2.188,
      "basis": "modelled",
      "source": "fit:pooled"
     },
     "hip": {
-     "s": 3.547,
+     "s": 3.592,
      "basis": "modelled",
      "source": "fit:pooled"
     }
    },
    "gpu": {
     "cuda": {
-     "s": 2.165,
+     "s": 2.188,
      "basis": "modelled",
      "source": "compile"
     },
     "hip": {
-     "s": 3.547,
+     "s": 3.592,
      "basis": "modelled",
      "source": "compile"
     }
@@ -11499,24 +11619,24 @@
    "family": "gradients",
    "compile": {
     "cuda": {
-     "s": 2.771,
+     "s": 2.804,
      "basis": "modelled",
      "source": "fit:pooled"
     },
     "hip": {
-     "s": 4.564,
+     "s": 4.629,
      "basis": "modelled",
      "source": "fit:pooled"
     }
    },
    "gpu": {
     "cuda": {
-     "s": 2.771,
+     "s": 2.804,
      "basis": "modelled",
      "source": "compile"
     },
     "hip": {
-     "s": 4.564,
+     "s": 4.629,
      "basis": "modelled",
      "source": "compile"
     }
@@ -11530,24 +11650,24 @@
    "family": "gradients",
    "compile": {
     "cuda": {
-     "s": 3.548,
+     "s": 3.594,
      "basis": "modelled",
      "source": "fit:pooled"
     },
     "hip": {
-     "s": 5.873,
+     "s": 5.963,
      "basis": "modelled",
      "source": "fit:pooled"
     }
    },
    "gpu": {
     "cuda": {
-     "s": 3.548,
+     "s": 3.594,
      "basis": "modelled",
      "source": "compile"
     },
     "hip": {
-     "s": 5.873,
+     "s": 5.963,
      "basis": "modelled",
      "source": "compile"
     }
@@ -11561,24 +11681,24 @@
    "family": "gradients",
    "compile": {
     "cuda": {
-     "s": 4.543,
+     "s": 4.606,
      "basis": "modelled",
      "source": "fit:pooled"
     },
     "hip": {
-     "s": 7.557,
+     "s": 7.683,
      "basis": "modelled",
      "source": "fit:pooled"
     }
    },
    "gpu": {
     "cuda": {
-     "s": 4.543,
+     "s": 4.606,
      "basis": "modelled",
      "source": "compile"
     },
     "hip": {
-     "s": 7.557,
+     "s": 7.683,
      "basis": "modelled",
      "source": "compile"
     }
@@ -11592,24 +11712,24 @@
    "family": "gradients",
    "compile": {
     "cuda": {
-     "s": 5.816,
+     "s": 5.904,
      "basis": "modelled",
      "source": "fit:pooled"
     },
     "hip": {
-     "s": 9.724,
+     "s": 9.899,
      "basis": "modelled",
      "source": "fit:pooled"
     }
    },
    "gpu": {
     "cuda": {
-     "s": 5.816,
+     "s": 5.904,
      "basis": "modelled",
      "source": "compile"
     },
     "hip": {
-     "s": 9.724,
+     "s": 9.899,
      "basis": "modelled",
      "source": "compile"
     }
@@ -11623,24 +11743,24 @@
    "family": "gradients",
    "compile": {
     "cuda": {
-     "s": 7.446,
+     "s": 7.566,
      "basis": "modelled",
      "source": "fit:pooled"
     },
     "hip": {
-     "s": 12.513,
+     "s": 12.753,
      "basis": "modelled",
      "source": "fit:pooled"
     }
    },
    "gpu": {
     "cuda": {
-     "s": 7.446,
+     "s": 7.566,
      "basis": "modelled",
      "source": "compile"
     },
     "hip": {
-     "s": 12.513,
+     "s": 12.753,
      "basis": "modelled",
      "source": "compile"
     }
@@ -11654,24 +11774,24 @@
    "family": "gradients",
    "compile": {
     "cuda": {
-     "s": 9.533,
+     "s": 9.697,
      "basis": "modelled",
      "source": "fit:pooled"
     },
     "hip": {
-     "s": 16.101,
+     "s": 16.431,
      "basis": "modelled",
      "source": "fit:pooled"
     }
    },
    "gpu": {
     "cuda": {
-     "s": 9.533,
+     "s": 9.697,
      "basis": "modelled",
      "source": "compile"
     },
     "hip": {
-     "s": 16.101,
+     "s": 16.431,
      "basis": "modelled",
      "source": "compile"
     }
@@ -11685,24 +11805,24 @@
    "family": "hessians",
    "compile": {
     "cuda": {
-     "s": 1.23,
+     "s": 1.243,
      "basis": "modelled",
      "source": "fit:hessians"
     },
     "hip": {
-     "s": 2.103,
+     "s": 2.138,
      "basis": "modelled",
      "source": "fit:hessians"
     }
    },
    "gpu": {
     "cuda": {
-     "s": 1.23,
+     "s": 1.243,
      "basis": "modelled",
      "source": "compile"
     },
     "hip": {
-     "s": 2.103,
+     "s": 2.138,
      "basis": "modelled",
      "source": "compile"
     }
@@ -11716,24 +11836,24 @@
    "family": "hessians",
    "compile": {
     "cuda": {
-     "s": 1.619,
+     "s": 1.671,
      "basis": "modelled",
      "source": "fit:hessians"
     },
     "hip": {
-     "s": 2.716,
+     "s": 2.854,
      "basis": "modelled",
      "source": "fit:hessians"
     }
    },
    "gpu": {
     "cuda": {
-     "s": 1.619,
+     "s": 1.671,
      "basis": "modelled",
      "source": "compile"
     },
     "hip": {
-     "s": 2.716,
+     "s": 2.854,
      "basis": "modelled",
      "source": "compile"
     }
@@ -11747,24 +11867,24 @@
    "family": "hessians",
    "compile": {
     "cuda": {
-     "s": 2.13,
+     "s": 2.246,
      "basis": "modelled",
      "source": "fit:hessians"
     },
     "hip": {
-     "s": 3.507,
+     "s": 3.809,
      "basis": "modelled",
      "source": "fit:hessians"
     }
    },
    "gpu": {
     "cuda": {
-     "s": 2.13,
+     "s": 2.246,
      "basis": "modelled",
      "source": "compile"
     },
     "hip": {
-     "s": 3.507,
+     "s": 3.809,
      "basis": "modelled",
      "source": "compile"
     }
@@ -11778,24 +11898,24 @@
    "family": "hessians",
    "compile": {
     "cuda": {
-     "s": 2.804,
+     "s": 3.02,
      "basis": "modelled",
      "source": "fit:hessians"
     },
     "hip": {
-     "s": 4.528,
+     "s": 5.083,
      "basis": "modelled",
      "source": "fit:hessians"
     }
    },
    "gpu": {
     "cuda": {
-     "s": 2.804,
+     "s": 3.02,
      "basis": "modelled",
      "source": "compile"
     },
     "hip": {
-     "s": 4.528,
+     "s": 5.083,
      "basis": "modelled",
      "source": "compile"
     }
@@ -11809,24 +11929,24 @@
    "family": "hessians",
    "compile": {
     "cuda": {
-     "s": 3.69,
+     "s": 4.059,
      "basis": "modelled",
      "source": "fit:hessians"
     },
     "hip": {
-     "s": 5.846,
+     "s": 6.784,
      "basis": "modelled",
      "source": "fit:hessians"
     }
    },
    "gpu": {
     "cuda": {
-     "s": 3.69,
+     "s": 4.059,
      "basis": "modelled",
      "source": "compile"
     },
     "hip": {
-     "s": 5.846,
+     "s": 6.784,
      "basis": "modelled",
      "source": "compile"
     }
@@ -12150,24 +12270,24 @@
    "family": "gradients",
    "compile": {
     "cuda": {
-     "s": 2.165,
+     "s": 2.188,
      "basis": "modelled",
      "source": "fit:pooled"
     },
     "hip": {
-     "s": 3.547,
+     "s": 3.592,
      "basis": "modelled",
      "source": "fit:pooled"
     }
    },
    "gpu": {
     "cuda": {
-     "s": 2.165,
+     "s": 2.188,
      "basis": "modelled",
      "source": "compile"
     },
     "hip": {
-     "s": 3.547,
+     "s": 3.592,
      "basis": "modelled",
      "source": "compile"
     }
@@ -12181,24 +12301,24 @@
    "family": "gradients",
    "compile": {
     "cuda": {
-     "s": 2.771,
+     "s": 2.804,
      "basis": "modelled",
      "source": "fit:pooled"
     },
     "hip": {
-     "s": 4.564,
+     "s": 4.629,
      "basis": "modelled",
      "source": "fit:pooled"
     }
    },
    "gpu": {
     "cuda": {
-     "s": 2.771,
+     "s": 2.804,
      "basis": "modelled",
      "source": "compile"
     },
     "hip": {
-     "s": 4.564,
+     "s": 4.629,
      "basis": "modelled",
      "source": "compile"
     }
@@ -12212,24 +12332,24 @@
    "family": "gradients",
    "compile": {
     "cuda": {
-     "s": 3.548,
+     "s": 3.594,
      "basis": "modelled",
      "source": "fit:pooled"
     },
     "hip": {
-     "s": 5.873,
+     "s": 5.963,
      "basis": "modelled",
      "source": "fit:pooled"
     }
    },
    "gpu": {
     "cuda": {
-     "s": 3.548,
+     "s": 3.594,
      "basis": "modelled",
      "source": "compile"
     },
     "hip": {
-     "s": 5.873,
+     "s": 5.963,
      "basis": "modelled",
      "source": "compile"
     }
@@ -12243,24 +12363,24 @@
    "family": "gradients",
    "compile": {
     "cuda": {
-     "s": 4.543,
+     "s": 4.606,
      "basis": "modelled",
      "source": "fit:pooled"
     },
     "hip": {
-     "s": 7.557,
+     "s": 7.683,
      "basis": "modelled",
      "source": "fit:pooled"
     }
    },
    "gpu": {
     "cuda": {
-     "s": 4.543,
+     "s": 4.606,
      "basis": "modelled",
      "source": "compile"
     },
     "hip": {
-     "s": 7.557,
+     "s": 7.683,
      "basis": "modelled",
      "source": "compile"
     }
@@ -12274,24 +12394,24 @@
    "family": "gradients",
    "compile": {
     "cuda": {
-     "s": 5.816,
+     "s": 5.904,
      "basis": "modelled",
      "source": "fit:pooled"
     },
     "hip": {
-     "s": 9.724,
+     "s": 9.899,
      "basis": "modelled",
      "source": "fit:pooled"
     }
    },
    "gpu": {
     "cuda": {
-     "s": 5.816,
+     "s": 5.904,
      "basis": "modelled",
      "source": "compile"
     },
     "hip": {
-     "s": 9.724,
+     "s": 9.899,
      "basis": "modelled",
      "source": "compile"
     }
@@ -12305,24 +12425,24 @@
    "family": "gradients",
    "compile": {
     "cuda": {
-     "s": 7.446,
+     "s": 7.566,
      "basis": "modelled",
      "source": "fit:pooled"
     },
     "hip": {
-     "s": 12.513,
+     "s": 12.753,
      "basis": "modelled",
      "source": "fit:pooled"
     }
    },
    "gpu": {
     "cuda": {
-     "s": 7.446,
+     "s": 7.566,
      "basis": "modelled",
      "source": "compile"
     },
     "hip": {
-     "s": 12.513,
+     "s": 12.753,
      "basis": "modelled",
      "source": "compile"
     }
@@ -12336,24 +12456,24 @@
    "family": "gradients",
    "compile": {
     "cuda": {
-     "s": 9.533,
+     "s": 9.697,
      "basis": "modelled",
      "source": "fit:pooled"
     },
     "hip": {
-     "s": 16.101,
+     "s": 16.431,
      "basis": "modelled",
      "source": "fit:pooled"
     }
    },
    "gpu": {
     "cuda": {
-     "s": 9.533,
+     "s": 9.697,
      "basis": "modelled",
      "source": "compile"
     },
     "hip": {
-     "s": 16.101,
+     "s": 16.431,
      "basis": "modelled",
      "source": "compile"
     }
@@ -12367,24 +12487,24 @@
    "family": "hessians",
    "compile": {
     "cuda": {
-     "s": 1.23,
+     "s": 1.243,
      "basis": "modelled",
      "source": "fit:hessians"
     },
     "hip": {
-     "s": 2.103,
+     "s": 2.138,
      "basis": "modelled",
      "source": "fit:hessians"
     }
    },
    "gpu": {
     "cuda": {
-     "s": 1.23,
+     "s": 1.243,
      "basis": "modelled",
      "source": "compile"
     },
     "hip": {
-     "s": 2.103,
+     "s": 2.138,
      "basis": "modelled",
      "source": "compile"
     }
@@ -12398,24 +12518,24 @@
    "family": "hessians",
    "compile": {
     "cuda": {
-     "s": 1.619,
+     "s": 1.671,
      "basis": "modelled",
      "source": "fit:hessians"
     },
     "hip": {
-     "s": 2.716,
+     "s": 2.854,
      "basis": "modelled",
      "source": "fit:hessians"
     }
    },
    "gpu": {
     "cuda": {
-     "s": 1.619,
+     "s": 1.671,
      "basis": "modelled",
      "source": "compile"
     },
     "hip": {
-     "s": 2.716,
+     "s": 2.854,
      "basis": "modelled",
      "source": "compile"
     }
@@ -12429,24 +12549,24 @@
    "family": "hessians",
    "compile": {
     "cuda": {
-     "s": 2.13,
+     "s": 2.246,
      "basis": "modelled",
      "source": "fit:hessians"
     },
     "hip": {
-     "s": 3.507,
+     "s": 3.809,
      "basis": "modelled",
      "source": "fit:hessians"
     }
    },
    "gpu": {
     "cuda": {
-     "s": 2.13,
+     "s": 2.246,
      "basis": "modelled",
      "source": "compile"
     },
     "hip": {
-     "s": 3.507,
+     "s": 3.809,
      "basis": "modelled",
      "source": "compile"
     }
@@ -12460,24 +12580,24 @@
    "family": "hessians",
    "compile": {
     "cuda": {
-     "s": 2.804,
+     "s": 3.02,
      "basis": "modelled",
      "source": "fit:hessians"
     },
     "hip": {
-     "s": 4.528,
+     "s": 5.083,
      "basis": "modelled",
      "source": "fit:hessians"
     }
    },
    "gpu": {
     "cuda": {
-     "s": 2.804,
+     "s": 3.02,
      "basis": "modelled",
      "source": "compile"
     },
     "hip": {
-     "s": 4.528,
+     "s": 5.083,
      "basis": "modelled",
      "source": "compile"
     }
@@ -12491,24 +12611,24 @@
    "family": "hessians",
    "compile": {
     "cuda": {
-     "s": 3.69,
+     "s": 4.059,
      "basis": "modelled",
      "source": "fit:hessians"
     },
     "hip": {
-     "s": 5.846,
+     "s": 6.784,
      "basis": "modelled",
      "source": "fit:hessians"
     }
    },
    "gpu": {
     "cuda": {
-     "s": 3.69,
+     "s": 4.059,
      "basis": "modelled",
      "source": "compile"
     },
     "hip": {
-     "s": 5.846,
+     "s": 6.784,
      "basis": "modelled",
      "source": "compile"
     }
@@ -12739,24 +12859,24 @@
    "family": "gradients",
    "compile": {
     "cuda": {
-     "s": 2.165,
+     "s": 2.188,
      "basis": "modelled",
      "source": "fit:pooled"
     },
     "hip": {
-     "s": 3.547,
+     "s": 3.592,
      "basis": "modelled",
      "source": "fit:pooled"
     }
    },
    "gpu": {
     "cuda": {
-     "s": 2.165,
+     "s": 2.188,
      "basis": "modelled",
      "source": "compile"
     },
     "hip": {
-     "s": 3.547,
+     "s": 3.592,
      "basis": "modelled",
      "source": "compile"
     }
@@ -12770,24 +12890,24 @@
    "family": "gradients",
    "compile": {
     "cuda": {
-     "s": 2.771,
+     "s": 2.804,
      "basis": "modelled",
      "source": "fit:pooled"
     },
     "hip": {
-     "s": 4.564,
+     "s": 4.629,
      "basis": "modelled",
      "source": "fit:pooled"
     }
    },
    "gpu": {
     "cuda": {
-     "s": 2.771,
+     "s": 2.804,
      "basis": "modelled",
      "source": "compile"
     },
     "hip": {
-     "s": 4.564,
+     "s": 4.629,
      "basis": "modelled",
      "source": "compile"
     }
@@ -12801,24 +12921,24 @@
    "family": "gradients",
    "compile": {
     "cuda": {
-     "s": 3.548,
+     "s": 3.594,
      "basis": "modelled",
      "source": "fit:pooled"
     },
     "hip": {
-     "s": 5.873,
+     "s": 5.963,
      "basis": "modelled",
      "source": "fit:pooled"
     }
    },
    "gpu": {
     "cuda": {
-     "s": 3.548,
+     "s": 3.594,
      "basis": "modelled",
      "source": "compile"
     },
     "hip": {
-     "s": 5.873,
+     "s": 5.963,
      "basis": "modelled",
      "source": "compile"
     }
@@ -12832,24 +12952,24 @@
    "family": "gradients",
    "compile": {
     "cuda": {
-     "s": 4.543,
+     "s": 4.606,
      "basis": "modelled",
      "source": "fit:pooled"
     },
     "hip": {
-     "s": 7.557,
+     "s": 7.683,
      "basis": "modelled",
      "source": "fit:pooled"
     }
    },
    "gpu": {
     "cuda": {
-     "s": 4.543,
+     "s": 4.606,
      "basis": "modelled",
      "source": "compile"
     },
     "hip": {
-     "s": 7.557,
+     "s": 7.683,
      "basis": "modelled",
      "source": "compile"
     }
@@ -12863,24 +12983,24 @@
    "family": "gradients",
    "compile": {
     "cuda": {
-     "s": 5.816,
+     "s": 5.904,
      "basis": "modelled",
      "source": "fit:pooled"
     },
     "hip": {
-     "s": 9.724,
+     "s": 9.899,
      "basis": "modelled",
      "source": "fit:pooled"
     }
    },
    "gpu": {
     "cuda": {
-     "s": 5.816,
+     "s": 5.904,
      "basis": "modelled",
      "source": "compile"
     },
     "hip": {
-     "s": 9.724,
+     "s": 9.899,
      "basis": "modelled",
      "source": "compile"
     }
@@ -12894,24 +13014,24 @@
    "family": "gradients",
    "compile": {
     "cuda": {
-     "s": 7.446,
+     "s": 7.566,
      "basis": "modelled",
      "source": "fit:pooled"
     },
     "hip": {
-     "s": 12.513,
+     "s": 12.753,
      "basis": "modelled",
      "source": "fit:pooled"
     }
    },
    "gpu": {
     "cuda": {
-     "s": 7.446,
+     "s": 7.566,
      "basis": "modelled",
      "source": "compile"
     },
     "hip": {
-     "s": 12.513,
+     "s": 12.753,
      "basis": "modelled",
      "source": "compile"
     }
@@ -12925,24 +13045,24 @@
    "family": "gradients",
    "compile": {
     "cuda": {
-     "s": 9.533,
+     "s": 9.697,
      "basis": "modelled",
      "source": "fit:pooled"
     },
     "hip": {
-     "s": 16.101,
+     "s": 16.431,
      "basis": "modelled",
      "source": "fit:pooled"
     }
    },
    "gpu": {
     "cuda": {
-     "s": 9.533,
+     "s": 9.697,
      "basis": "modelled",
      "source": "compile"
     },
     "hip": {
-     "s": 16.101,
+     "s": 16.431,
      "basis": "modelled",
      "source": "compile"
     }
@@ -12956,24 +13076,24 @@
    "family": "hessians",
    "compile": {
     "cuda": {
-     "s": 1.23,
+     "s": 1.243,
      "basis": "modelled",
      "source": "fit:hessians"
     },
     "hip": {
-     "s": 2.103,
+     "s": 2.138,
      "basis": "modelled",
      "source": "fit:hessians"
     }
    },
    "gpu": {
     "cuda": {
-     "s": 1.23,
+     "s": 1.243,
      "basis": "modelled",
      "source": "compile"
     },
     "hip": {
-     "s": 2.103,
+     "s": 2.138,
      "basis": "modelled",
      "source": "compile"
     }
@@ -12987,24 +13107,24 @@
    "family": "hessians",
    "compile": {
     "cuda": {
-     "s": 1.619,
+     "s": 1.671,
      "basis": "modelled",
      "source": "fit:hessians"
     },
     "hip": {
-     "s": 2.716,
+     "s": 2.854,
      "basis": "modelled",
      "source": "fit:hessians"
     }
    },
    "gpu": {
     "cuda": {
-     "s": 1.619,
+     "s": 1.671,
      "basis": "modelled",
      "source": "compile"
     },
     "hip": {
-     "s": 2.716,
+     "s": 2.854,
      "basis": "modelled",
      "source": "compile"
     }
@@ -13018,24 +13138,24 @@
    "family": "hessians",
    "compile": {
     "cuda": {
-     "s": 2.13,
+     "s": 2.246,
      "basis": "modelled",
      "source": "fit:hessians"
     },
     "hip": {
-     "s": 3.507,
+     "s": 3.809,
      "basis": "modelled",
      "source": "fit:hessians"
     }
    },
    "gpu": {
     "cuda": {
-     "s": 2.13,
+     "s": 2.246,
      "basis": "modelled",
      "source": "compile"
     },
     "hip": {
-     "s": 3.507,
+     "s": 3.809,
      "basis": "modelled",
      "source": "compile"
     }
@@ -13049,24 +13169,24 @@
    "family": "hessians",
    "compile": {
     "cuda": {
-     "s": 2.804,
+     "s": 3.02,
      "basis": "modelled",
      "source": "fit:hessians"
     },
     "hip": {
-     "s": 4.528,
+     "s": 5.083,
      "basis": "modelled",
      "source": "fit:hessians"
     }
    },
    "gpu": {
     "cuda": {
-     "s": 2.804,
+     "s": 3.02,
      "basis": "modelled",
      "source": "compile"
     },
     "hip": {
-     "s": 4.528,
+     "s": 5.083,
      "basis": "modelled",
      "source": "compile"
     }
@@ -13080,24 +13200,24 @@
    "family": "hessians",
    "compile": {
     "cuda": {
-     "s": 3.69,
+     "s": 4.059,
      "basis": "modelled",
      "source": "fit:hessians"
     },
     "hip": {
-     "s": 5.846,
+     "s": 6.784,
      "basis": "modelled",
      "source": "fit:hessians"
     }
    },
    "gpu": {
     "cuda": {
-     "s": 3.69,
+     "s": 4.059,
      "basis": "modelled",
      "source": "compile"
     },
     "hip": {
-     "s": 5.846,
+     "s": 6.784,
      "basis": "modelled",
      "source": "compile"
     }
@@ -13111,24 +13231,24 @@
    "family": "hessians",
    "compile": {
     "cuda": {
-     "s": 6.392,
+     "s": 7.336,
      "basis": "modelled",
      "source": "fit:hessians, extrapolated past L 4"
     },
     "hip": {
-     "s": 9.747,
+     "s": 12.084,
      "basis": "modelled",
      "source": "fit:hessians, extrapolated past L 4"
     }
    },
    "gpu": {
     "cuda": {
-     "s": 6.392,
+     "s": 7.336,
      "basis": "modelled",
      "source": "compile"
     },
     "hip": {
-     "s": 9.747,
+     "s": 12.084,
      "basis": "modelled",
      "source": "compile"
     }

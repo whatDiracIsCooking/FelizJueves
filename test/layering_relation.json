@@ -2185,7 +2185,9 @@
   ],
   "hessian.kernel_hdq": [
    "gradient.kernel_g1e",
+   "hessian.kernel_h1e",
    "ir",
+   "mmd.e_fragment",
    "plan",
    "plan.__main__",
    "plan.batching",
@@ -2204,6 +2206,8 @@
   ],
   "hessian.kernel_hjab": [
    "gradient.kernel_g1e",
+   "hessian.kernel_h1e",
+   "hessian.kernel_hdq",
    "ir",
    "mmd.e_fragment",
    "plan",

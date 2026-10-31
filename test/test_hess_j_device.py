@@ -6,17 +6,23 @@ densities, `Target.DQ` at d1) and `hjab_` (the skeleton `d2 E_J`,
 The inputs are test_kernel_hessian.py's, so the card is held to the same
 host the interpreted kernels are held to:
 
-- `hdq`, PER KET CLASS, every ordered class through (dd) on its three-atom
-  s, p, d basis: one launch over every record of the class, `D1[6, n_rec,
-  n_q1]`, against `host.ket_derivative_records`.
-- `hjab`, PER BRA CLASS, the same classes and basis: one launch, `Jp2` and
+- `hdq`, PER KET CLASS, every ordered class through (ff) -- through (dd)
+  on its three-atom s, p, d basis, with an f shell on its two-atom s, p,
+  d, f basis (`SPDF`, #690) --: one launch over every record of the
+  class, `D1[6, n_rec, n_q1]`, against `host.ket_derivative_records`, in
+  its default form (rolled from `lc + ld = 5`), and every class but (ff)
+  in its other form too (the unrolled `hdq_33` is ~114 s of nvcc).
+- `hjab`, PER BRA CLASS, the same classes and bases: one launch, `Jp2` and
   `Jp1` the host's (`gradient.host.coulomb_jp`), against
-  `coulomb_hessian(..., pairs=)` of the class's pairs.
+  `coulomb_hessian(..., pairs=)` of the class's pairs, in its default form
+  (rolled from `la + lb = 3`), and through `la + lb = 3` in its other form
+  (the unrolled (dd) is ~186 s of nvcc). This is the issue's "every class
+  launches on the RTX 3080".
 - THE WHOLE `H` of H2O/STO-3G: one `hjab` launch per pair class into one
   `H`, the host's `Jp`s, against the host's whole skeleton Hessian.
 
-Every kernel launched is a pair class `l_a, l_b <= 2` (L <= 4); its `Jp`s
-are the host's at L + 1 and L + 2.
+The on-card chain, with the card's own `Jp`s, is
+test_hjab_chain_ondevice.py.
 
 THE BOUNDS, stated before any run. `hjab`: `|H_dev - H_host| <= DEV_TOL
 max(scale)`, `DEV_TOL = 1e-14` (~45 eps), `scale` the host's absolute twin,
@@ -27,14 +33,11 @@ differs by ulps). `hdq` has no atomics and no absolute twin:
 tests' bound (interpreted it is bitwise; the card's `exp` differs by
 ulps). The runs are compared with each other too.
 
-RUN ON BOTH CARDS (2026-10-27), every case passed: `hdq` worst 4.98e-16
-of `max|D1|` (`hdq_02`, the same on both), `hjab` per class 7.16e-17 of
-the scale, the whole H2O/STO-3G `d2 E_J` 9.28e-17 on both; the per-class
-launches are bit-identical run to run.
-
-NOT COVERED: `Jp2` / `Jp1` are the host's, so the on-card chain (`hdq` ->
-gather -> the raised `[p|q]` -> `hjab`) is interpreted only
-(test_kernel_hessian.py).
+RUN ON BOTH CARDS (2026-10-27, through (dd), unrolled), every case
+passed: `hdq` worst 4.98e-16 of `max|D1|` (`hdq_02`, the same on both),
+`hjab` per class 7.16e-17 of the scale, the whole H2O/STO-3G `d2 E_J`
+9.28e-17 on both; the per-class launches are bit-identical run to run.
+Through (ff), both forms: see the tree-state file (#690).
 """
 
 from __future__ import annotations
@@ -48,9 +51,9 @@ from hess_driver import HessLaunch, compile_hess, hess_steps
 from test_kernel_device import _toolchain
 from test_kernel_hessian import (
     CLASSES,
-    SPD,
     _all_pairs,
     _arrays,
+    _basis_of,
     _case,
     _density,
     _host,
@@ -62,28 +65,36 @@ from tiers import by_l
 
 from felizjueves.gradient import host as gh
 from felizjueves.hessian import host
-from felizjueves.hessian.kernel_hdq import build_hdq_kernel, n_q1
-from felizjueves.hessian.kernel_hjab import build_hjab_kernel
+from felizjueves.hessian.kernel_hdq import build_hdq_kernel, hdq_lowstack, n_q1
+from felizjueves.hessian.kernel_hjab import build_hjab_kernel, hjab_lowstack
 
 DEV_TOL = 1e-14  # of max(scale), ~45 eps (module docstring)
 DQ_TOL = 1e-13  # of max|D1| (module docstring)
+COMPILE_BUDGET_S = 120.0  # the user's per-.cu budget, each unit alone
 # split by L as test_kernel_hessian's interpreted twins are: `hdq` runs the
 # ket class raised by one, `hjab` the [p|q] with the bra raised by two, so
 # (dd)'s hjab is an L = 6 kernel (218 s of the CUDA PR gate on its own)
 HDQ_CLASSES = [by_l(c, sum(c) + 1, id=f"{c[0]}{c[1]}") for c in CLASSES]
 HJAB_CLASSES = [by_l(c, sum(c) + 2, id=f"{c[0]}{c[1]}") for c in CLASSES]
+# #690: each class's other form, where it compiles within the budget
+HDQ_OTHER = [by_l(c, sum(c) + 1, id=f"{c[0]}{c[1]}") for c in CLASSES
+             if c != (3, 3)]
+HJAB_OTHER = [by_l(c, sum(c) + 2, id=f"{c[0]}{c[1]}") for c in CLASSES
+              if sum(c) <= 3]
 
 
-def _hdq_launch(lc: int, ld: int) -> tuple[HessLaunch, int]:
-    basis, _ = SPD
-    rec = gh.records(basis, SPD[1], lc, ld)
+def _hdq_launch(lc: int, ld: int, lowstack: bool | None = None
+                ) -> tuple[HessLaunch, int]:
+    basis, nuclei = _case(_basis_of((lc, ld)))
+    rec = gh.records(basis, nuclei, lc, ld)
     n = len(rec["s_ab"])
     arrs = _arrays(rec, atoms=False) | {"M": _density(basis.n_ao)}
-    return HessLaunch(build_hdq_kernel((lc, ld)), n, arrs,
+    return HessLaunch(build_hdq_kernel((lc, ld), lowstack=lowstack), n, arrs,
                       {"n_rec": n, "n_ao": basis.n_ao}, out="D1"), n
 
 
-def _hjab_launch(name: str, la: int, lb: int) -> HessLaunch:
+def _hjab_launch(name: str, la: int, lb: int,
+                 lowstack: bool | None = None) -> HessLaunch:
     basis, nuclei = _case(name)
     rec = gh.records(basis, nuclei, la, lb)
     n = len(rec["s_ab"])
@@ -91,7 +102,8 @@ def _hjab_launch(name: str, la: int, lb: int) -> HessLaunch:
     arrs = _arrays(rec) | {"Jp2": jp2, "Jp1": jp1,
                            "M": _density(basis.n_ao),
                            "row": np.arange(n, dtype=np.int32)}
-    return HessLaunch(build_hjab_kernel((la, lb)), n, arrs, {
+    return HessLaunch(build_hjab_kernel((la, lb), lowstack=lowstack), n,
+                      arrs, {
         "n_rec": n, "n_ao": basis.n_ao, "n_atom": len(nuclei),
         "n_rows": n})
 
@@ -104,26 +116,31 @@ def _report(got, want, scale, label: str, tol: float) -> None:
           f"{spread:.2e}; bit-identical {bool(np.array_equal(got[0], got[1]))}")
 
 
-def _check_hdq(backend, cls, request, tmp_path: Path):
+def _check_hdq(backend, cls, request, tmp_path: Path,
+               lowstack: bool | None = None):
     tc = _toolchain(backend, request)
-    x, n = _hdq_launch(*cls)
+    basis, nuclei = _case(_basis_of(cls))
+    x, n = _hdq_launch(*cls, lowstack=lowstack)
     size = 6 * n * n_q1(*cls)
-    got = compile_hess([x], len(SPD[1]), backend, tc, tmp_path,
-                       n_out=size).run()
+    got = compile_hess([x], len(nuclei), backend, tc, tmp_path,
+                       n_out=size, timeout=COMPILE_BUDGET_S).run()
     want = np.array(host.ket_derivative_records(
-        SPD[0], _density(SPD[0].n_ao), *cls)).ravel()
+        basis, _density(basis.n_ao), *cls)).ravel()
     assert want.size == size
-    _report(got, want, np.abs(want).max(), f"{backend} hdq_{cls[0]}{cls[1]}",
-            DQ_TOL)
+    form = "rolled" if (hdq_lowstack(cls) if lowstack is None
+                        else lowstack) else "unrolled"
+    _report(got, want, np.abs(want).max(),
+            f"{backend} hdq_{cls[0]}{cls[1]} ({form})", DQ_TOL)
 
 
 def _check_hjab(backend, name, classes, request, tmp_path: Path,
-                label: str):
+                label: str, lowstack: bool | None = None):
     tc = _toolchain(backend, request)
     basis, nuclei = _case(name)
     nat = len(nuclei)
-    xs = [_hjab_launch(name, la, lb) for la, lb in classes]
-    got = compile_hess(xs, nat, backend, tc, tmp_path).run()
+    xs = [_hjab_launch(name, la, lb, lowstack) for la, lb in classes]
+    got = compile_hess(xs, nat, backend, tc, tmp_path,
+                       timeout=COMPILE_BUDGET_S).run()
     pairs = [p for c in classes for p in gh.class_pairs(basis, *c)]
     if set(pairs) == set(_all_pairs(name)):
         pairs = None
@@ -148,18 +165,59 @@ def test_hip_hdq_matches_the_host(cls, request, tmp_path) -> None:
 
 @pytest.mark.cuda
 @pytest.mark.gpu
+@pytest.mark.parametrize("cls", HDQ_OTHER)
+def test_cuda_hdq_other_form_matches_the_host(cls, request,
+                                              tmp_path) -> None:
+    _check_hdq("cuda", cls, request, tmp_path, not hdq_lowstack(cls))
+
+
+@pytest.mark.hip
+@pytest.mark.gpu
+@pytest.mark.parametrize("cls", HDQ_OTHER)
+def test_hip_hdq_other_form_matches_the_host(cls, request,
+                                             tmp_path) -> None:
+    _check_hdq("hip", cls, request, tmp_path, not hdq_lowstack(cls))
+
+
+def _label(cls, lowstack) -> str:
+    low = hjab_lowstack(cls) if lowstack is None else lowstack
+    return f"hjab_{cls[0]}{cls[1]} ({'rolled' if low else 'unrolled'})"
+
+
+@pytest.mark.cuda
+@pytest.mark.gpu
 @pytest.mark.parametrize("cls", HJAB_CLASSES)
 def test_cuda_hjab_class_matches_the_host(cls, request, tmp_path) -> None:
-    _check_hjab("cuda", "spd", [cls], request, tmp_path,
-                f"hjab_{cls[0]}{cls[1]}")
+    _check_hjab("cuda", _basis_of(cls), [cls], request, tmp_path,
+                _label(cls, None))
 
 
 @pytest.mark.hip
 @pytest.mark.gpu
 @pytest.mark.parametrize("cls", HJAB_CLASSES)
 def test_hip_hjab_class_matches_the_host(cls, request, tmp_path) -> None:
-    _check_hjab("hip", "spd", [cls], request, tmp_path,
-                f"hjab_{cls[0]}{cls[1]}")
+    _check_hjab("hip", _basis_of(cls), [cls], request, tmp_path,
+                _label(cls, None))
+
+
+@pytest.mark.cuda
+@pytest.mark.gpu
+@pytest.mark.parametrize("cls", HJAB_OTHER)
+def test_cuda_hjab_other_form_matches_the_host(cls, request,
+                                               tmp_path) -> None:
+    low = not hjab_lowstack(cls)
+    _check_hjab("cuda", _basis_of(cls), [cls], request, tmp_path,
+                _label(cls, low), low)
+
+
+@pytest.mark.hip
+@pytest.mark.gpu
+@pytest.mark.parametrize("cls", HJAB_OTHER)
+def test_hip_hjab_other_form_matches_the_host(cls, request,
+                                              tmp_path) -> None:
+    low = not hjab_lowstack(cls)
+    _check_hjab("hip", _basis_of(cls), [cls], request, tmp_path,
+                _label(cls, low), low)
 
 
 @pytest.mark.cuda
@@ -192,7 +250,8 @@ def test_every_hdq_launch_names_the_kernels_arguments(cls) -> None:
 @pytest.mark.parametrize("cls", HJAB_CLASSES)
 def test_every_hjab_launch_names_the_kernels_arguments(cls) -> None:
     """The `hjab` launch's runner spec, built host-side: `H` the output."""
-    nat = len(_case("spd")[1])
-    (spec,) = chain_specs(hess_steps([_hjab_launch("spd", *cls)]), "H",
+    name = _basis_of(cls)
+    nat = len(_case(name)[1])
+    (spec,) = chain_specs(hess_steps([_hjab_launch(name, *cls)]), "H",
                           np.zeros((nat, 3, nat, 3)))
     assert [a["name"] for a in spec["args"] if "out" in a] == ["H"]

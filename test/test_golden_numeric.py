@@ -60,6 +60,8 @@ METRICS = tuple(n for n in NPY if golden.entry(n).what == "metric")
 IP1 = tuple(n for n in NPY if golden.entry(n).what.startswith("metric.d1."))
 JX = tuple(n for n in NPY if golden.entry(n).quantity == "jx")
 HKX = tuple(n for n in NPY if golden.entry(n).what == "k.d2")
+HJAB = tuple(n for n in NPY if golden.entry(n).quantity == "jab")
+D2 = frozenset({"k.d2", "jab.d2", "jab.d2.abs"})  # natm x 3 x natm x 3
 
 
 def test_the_manifest_the_recipe_and_the_files_agree():
@@ -71,11 +73,15 @@ def test_the_seed_is_j_and_the_metric_both_kinds():
     kinds = {(golden.entry(n).quantity, golden.entry(n).kind)
              for n in golden.entries()}
     assert kinds == {("j", "npy"), ("j", "fixture"), ("metric", "npy"),
-                     ("metric", "fixture"), ("jx", "npy"), ("k", "npy")}
+                     ("metric", "fixture"), ("jx", "npy"), ("k", "npy"),
+                     ("jab", "npy")}
     assert set(J_FAST + J_SLOW) | set(METRICS) | set(IP1) | set(JX) | set(
-        HKX) == set(NPY)
+        HKX) | set(HJAB) == set(NPY)
     # #691's skeleton exchange Hessian, STO-3G and cc-pVDZ
     assert len(HKX) == 2
+    # #690's skeleton Coulomb Hessian and its absolute twin, the same two
+    assert sorted(golden.entry(n).what for n in HJAB) == [
+        "jab.d2", "jab.d2", "jab.d2.abs", "jab.d2.abs"]
     # #693's three axes of one uncontracted d1 metric
     assert sorted(golden.entry(n).component for n in IP1) == ["x", "y", "z"]
     assert {golden.entry(n).what for n in JX} == {"jx1", "jx"}
@@ -117,7 +123,7 @@ def test_an_npy_entrys_inputs_are_its_fixtures(name):
     rec = golden.record(name)
     basis = golden.basis(name)
     n_atom = len(golden.atoms(name))
-    if e.what == "k.d2":  # #691: a nuclear Hessian, natm x 3 x natm x 3
+    if e.what in D2:  # #691, #690: a nuclear Hessian, natm x 3 x natm x 3
         assert golden.want(name).shape == (n_atom, 3, n_atom, 3)
         assert rec["shape"] == [n_atom, 3, n_atom, 3]
     else:

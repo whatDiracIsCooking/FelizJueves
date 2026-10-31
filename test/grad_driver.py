@@ -287,14 +287,15 @@ GJAB_DOUBLES = 10  # per record: zeta_ab XPA(3) XPB(3) s ea_bra eb_ket
 GJAB_INTS = 5  # per record: off_a off_b row atom_a atom_b
 
 
-def raised_plan(plan: LaunchPlan) -> LaunchPlan:
-    """`plan` with every bra class `lp` raised to `lp + 1` (module
-    docstring, "THE CHAIN ON THE CARD"): the same bra records and blocks,
-    the same sorted kets and batch count, `class_spec(lp + 1, lq)`'s
-    kernels. Raising is injective in `lp`, so no two bra classes merge."""
+def raised_plan(plan: LaunchPlan, by: int = 1) -> LaunchPlan:
+    """`plan` with every bra class `lp` raised to `lp + by` (module
+    docstring, "THE CHAIN ON THE CARD"; the Coulomb Hessian's `Jp2`, #690,
+    is `by=2`): the same bra records and blocks, the same sorted kets and
+    batch count, `class_spec(lp + by, lq)`'s kernels. Raising is injective
+    in `lp`, so no two bra classes merge."""
     out = []
     for cl in plan:
-        lp = cl.lp + 1
+        lp = cl.lp + by
         out.append(ClassLaunch(
             lp, cl.lq, cl.n_batches,
             tuple(replace(r, L=lp) for r in cl.bras), cl.kets,

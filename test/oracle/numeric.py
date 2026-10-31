@@ -116,15 +116,32 @@ QUANTITIES = {
              "(experimental/mmd/hessian/check.py's assembly), checked "
              "symmetric and translationally invariant to 1e-12 of its max "
              "before it is written"),
+    # #690: the skeleton Coulomb Hessian.
+    "jab.d2": ("the skeleton Coulomb-energy Hessian for the referenced "
+               "density, H[A, k, B, l] = d2 E_J / dR_{A,k} dR_{B,l}, E_J = "
+               "1/2 sum D_ab D_cd (ab|cd), D fixed, natm x 3 x natm x 3: "
+               "libcint's int2e_ipip1_cart / int2e_ipvip1_cart / "
+               "int2e_ip1ip2_cart placed on the 16 ordered position pairs by "
+               "the 8-fold symmetry and contracted with D (x) D in J's "
+               "pairing per atom pair (the k.d2 entries' assembly), checked "
+               "symmetric to 1e-12 of its max and translationally "
+               "invariant to 1e-14 of its absolute twin's max (it cancels "
+               "to ~1/650-1/1800 of the twin) before it is written"),
+    "jab.d2.abs": ("the ABSOLUTE TWIN of the jab.d2 entry beside it: the "
+                   "same assembly with every libcint tensor element and "
+                   "every weight in |.| (the size of what cancels, the "
+                   "scale a d2 E_J is judged against), natm x 3 x natm x "
+                   "3, checked symmetric before it is written"),
 }
 
 # The basis file's directory, by registry quantity: an orbital set for J,
 # J^X and the exchange Hessian, a fitting set for the metric.
 DIRECTORY = {"j": bse.ORBITAL, "metric": bse.AUXILIARY, "jx": bse.ORBITAL,
-             "k": bse.ORBITAL}
+             "k": bse.ORBITAL, "jab": bse.ORBITAL}
 
 # The quantities whose array is built for the molecule fixture's density.
-WITH_DENSITY = frozenset({"j", "jx1", "jx", "k.d2"})
+WITH_DENSITY = frozenset({"j", "jx1", "jx", "k.d2", "jab.d2",
+                          "jab.d2.abs"})
 
 
 class GoldenError(ValueError):
@@ -260,6 +277,24 @@ ENTRIES: tuple[Entry, ...] = (
           "data/basis/cc-pVDZ.json as the file states it, for "
           "h2o_ccpvdz_j's density",
           basis="cc-pVDZ", molecule="h2o_ccpvdz_j"),
+    # #690: the skeleton Coulomb Hessian d2 E_J over the same files,
+    # molecule and density; keyed by the top hjab bra class each build
+    # reaches, (pp) and (dd).
+    Entry("hjab_h2o_sto3g_bse", ("mmd", "jab", 2, 2),
+          f"d2 E_J (skeleton Coulomb Hessian) of {_H2O}, in "
+          "data/basis/sto-3g.json, for h2o_sto3g_j's density",
+          basis="STO-3G", molecule="h2o_sto3g_j"),
+    Entry("hjab_h2o_sto3g_bse_abs", ("mmd", "jab", 2, 2),
+          "the absolute twin of hjab_h2o_sto3g_bse (its scale)",
+          basis="STO-3G", molecule="h2o_sto3g_j", form="jab.d2.abs"),
+    Entry("hjab_h2o_ccpvdz_bse", ("mmd", "jab", 2, 4),
+          f"d2 E_J (skeleton Coulomb Hessian) of {_H2O}, in "
+          "data/basis/cc-pVDZ.json as the file states it, for "
+          "h2o_ccpvdz_j's density",
+          basis="cc-pVDZ", molecule="h2o_ccpvdz_j"),
+    Entry("hjab_h2o_ccpvdz_bse_abs", ("mmd", "jab", 2, 4),
+          "the absolute twin of hjab_h2o_ccpvdz_bse (its scale)",
+          basis="cc-pVDZ", molecule="h2o_ccpvdz_j", form="jab.d2.abs"),
 )
 
 BY_NAME = {e.name: e for e in ENTRIES}
@@ -332,8 +367,8 @@ def density(name: str) -> np.ndarray:
     one."""
     e = entry(name)
     if e.kind != "npy" or e.what not in WITH_DENSITY:
-        raise GoldenError(f"{name}: only a j, jx or k.d2 npy entry has a "
-                          "density")
+        raise GoldenError(f"{name}: only a j, jx, k.d2 or jab.d2 npy "
+                          "entry has a density")
     return _molecule(e.molecule).density
 
 
