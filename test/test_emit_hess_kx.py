@@ -36,7 +36,12 @@ from test_emit_grad import BACKEND, GOLDEN, _run, compile_kernel
 from tiers import by_l
 
 from felizjueves.emit import __main__ as emit_cli
-from felizjueves.hessian.kernel_kx import FORMS, build_kx_kernel, kx_spec
+from felizjueves.hessian.kernel_kx import (
+    FORMS,
+    build_kx_kernel,
+    kx_name,
+    kx_spec,
+)
 from felizjueves.ir import Raw, walk
 from felizjueves.spec import Target
 
@@ -50,7 +55,10 @@ COMPILE_BUDGET_S = 30.0  # data/measured/kx.json's declared budget
 
 
 def _name(spec) -> str:
-    return build_kx_kernel(spec).name
+    # `kx_name` is the name the builder gives (it names its kernel with it,
+    # and test_kernel_kx.py pins the two equal), without building the
+    # kernel: this names every case's id at collection, 540 builds a worker.
+    return kx_name(spec)
 
 
 def _text(spec, backend: str) -> str:

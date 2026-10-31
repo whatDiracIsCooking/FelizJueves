@@ -31,6 +31,7 @@ Pure Python floats: `src/felizjueves` has no runtime dependencies.
 from __future__ import annotations
 
 import math
+from functools import cache
 
 Vec = tuple[float, float, float]
 Ang = tuple[int, int, int]
@@ -83,6 +84,13 @@ def hermite_order(total_am: int) -> tuple[Ang, ...]:
     may not import `plan`; the test asserts the two are equal.
     """
     _check_am("total_am", total_am)
+    return _hermite_order(total_am)
+
+
+@cache
+def _hermite_order(total_am: int) -> tuple[Ang, ...]:
+    # Behind `hermite_order`'s check, so a 1.0 or a True is refused, never
+    # served the int's entry; the tuple is immutable, so sharing it is safe.
     return tuple(
         (tx, ty, n - tx - ty)
         for n in range(total_am + 1)

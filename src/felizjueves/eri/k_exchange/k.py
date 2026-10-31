@@ -344,6 +344,9 @@ def _k_quartet(bra: EPair, ket: EPair, dcd: Sequence[float], *, pq: PQ,
     qs = hermite_order(ket.la + ket.lb)
     K = [[0.0] * nb for _ in range(na)]
     S = [[0.0] * nb for _ in range(na)]
+    # Each ket record's dressed rows, formed once on first use rather than
+    # again for every bra record: the same call, so the same floats.
+    e_bds: dict[tuple[int, int, int], list[float]] = {}
     for ibr, brec in enumerate(bra.recs):  # one bra pair record (a, c)
         P, zeta, _ = brec
         e_ac = [_dressed(brec, a, c, bra.A, bra.B) for a in ca for c in cc]
@@ -356,7 +359,10 @@ def _k_quartet(bra: EPair, ket: EPair, dcd: Sequence[float], *, pq: PQ,
             m = [[pq(p, q, PQv, theta) for q in qs] for p in ps]
             for ib, b in enumerate(cb):
                 for id_, d in enumerate(cd):  # the (b, d) loop
-                    e_bd = _dressed(krec, b, d, ket.A, ket.B)
+                    e_bd = e_bds.get((ikr, ib, id_))
+                    if e_bd is None:
+                        e_bd = e_bds[ikr, ib, id_] = _dressed(
+                            krec, b, d, ket.A, ket.B)
                     # stage 1: one column I[p], rebuilt per (b, d) row
                     col = []
                     col_abs = []
