@@ -105,7 +105,7 @@ on THIS host the CUDA 13.0 toolkit happens to be installed natively, so
 
 | Tier | Command | What a green run means |
 |---|---|---|
-| **gate** | `devtools/gate.sh` | **the one check that blocks a merge** (#656; the `pr` skill runs it and pastes its `summary.md` -- seed, budgets, every case drawn -- into the PR). lint + fast + the **compile sample** (nvcc and hipcc) everywhere, plus the **gpu sample** through `kernel-tier.sh` on each card `lib.sh`'s `card_present` enumerates. The two samples select `not slow or l_cut` (`GATE_*_TEST_ARGS`; `l_cut` is what `tiers.by_l` and `tiers.sample_compiles` add beside `slow`) and `--fj-sample` draws above the `min` band: L ≤ 2 on a card, L = 0 for the compile sample (`GATE_COMPILE_MIN_L_MAX`). With no card it ends after the compile sample, exits 0 and names cuda and hip unverified on card (`unverified-on-card`, #651). Needs both compilers in one shell: exit **2** on this box's host (no hipcc), so run it in the combined container. Device-less, 4-core cloud container, 2026-10-30: lint + fast + compile, exit 0; there the compile sample took 7m57s (371 cases) where the `not slow` selection below took 7m02s (272) back to back -- that box is about twice as slow as the one that timed the row below. The gpu sample is **not yet timed on a card**. |
+| **gate** | `devtools/gate.sh` | **the one check that blocks a merge** (#656; the `pr` skill runs it and pastes its `summary.md` -- seed, budgets, every case drawn -- into the PR). lint + fast + the **compile sample** (nvcc and hipcc) everywhere, plus the **gpu sample** through `kernel-tier.sh` on each card `lib.sh`'s `card_present` enumerates. The two samples select `not slow or l_cut` (`GATE_*_TEST_ARGS`; `l_cut` is what `tiers.by_l` and `tiers.sample_compiles` add beside `slow`) and `--fj-sample` draws above the `min` band: L ≤ 2 on a card, L = 0 for the compile sample (`GATE_COMPILE_MIN_L_MAX`). With no card it ends after the compile sample, exits 0 and names cuda and hip unverified on card (`unverified-on-card`, #651). Needs both compilers in one shell: exit **2** on this box's host (no hipcc), so run it in the combined container. Device-less, 4-core cloud container, 2026-10-30: lint + fast + compile, exit 0; there the compile sample took 7m57s (371 cases) where the `not slow` selection below took 7m02s (272) back to back -- that box is about twice as slow as the one that timed the row below. **First run on both cards, 2026-10-31** (this box, combined container, exit 0, `unverified on card: none`): lint 0s, fast 315s (13,995), compile sample 136s (433), gpu cuda 480s (444) and gpu hip 207s (469). Read the cuda figure as an UPPER BOUND, not the steady-state cost: its device phase took 886 sccache misses against 2,974 hits -- cold compiles -- where hip's was fully warm (998 hits, 0 misses), which is most of the gap between them. A warm cuda sample has not been timed, so whether that phase sits inside the five-minute budget below is **not yet settled**. |
 | lint | `ruff check .` | `E,F,I,UP,B`, no formatter. |
 | fast | `pytest -m "not cuda and not hip and not gpu and not slow and not oracle"` (`FAST_TEST_ARGS`; a bare `pytest` applies no marker filter; 3m27s on `JOBS=8` with `XDIST_DIST=worksteal`, 2026-10-29) | the Python side agrees with itself — and, through tracked fixtures, with libcint — **for classes with L ≤ 4** (`test/tiers.py`'s `FAST_L_MAX`, #419): anything that builds, emits, plans or integrates a class above it is `slow`, and a parametrized test is split at the cut, so the `[JEngine]` board replays and the plan search (every cell L 7–16) are slow-tier only; reads of stored rows and keys stay fast. Compiles nothing, launches nothing, needs no PySCF. |
 | kernel | `devtools/kernel-tier.sh --backend cuda\|hip` | generate → compile with the real device compiler (a warning located in generated text fails the compile phase, exit 1 — #92) → run on the card → compare against the host reference, and against libcint for `J_µν` (`test_ao_j_ondevice.py`). The device phase is `gpu and <backend> and not slow` (`KERNEL_TEST_ARGS`): L ≤ `FAST_L_MAX` on small inputs (H₂, two H₂, H₂O/STO-3G), the PR gate's card phase before `gate.sh` sampled it, 3m59s on the RTX 3080 and 3m54s on the RX 9060 XT, each with `--no-cache` (every compile cold), 2026-10-29. |
@@ -133,14 +133,63 @@ exists** (#431). `/dev/kfd` is there whenever `amdgpu` is loaded, bound card or
 not — the module binds by PCI id, and kernel 6.8's in-tree one does not know
 the RX 9060 XT's `1002:7590`, so this box takes `amdgpu` from DKMS and a kernel
 upgrade it was not rebuilt for drops the card while leaving CUDA untouched. So
-AMD presence is **an enumerated GPU node in kfd's topology** (a nonzero
-`gfx_target_version`), asked in one rule by `lib.sh`'s `amd_gpu_present`,
-`conftest._has_amd_device` and `doctor.sh`'s enumeration — no ROCm needed, and
+AMD enumeration is **a GPU node in kfd's topology** (a nonzero
+`gfx_target_version`), asked in one rule by `lib.sh`'s `amd_enumerated`,
+`conftest._amd_enumerated` and `doctor.sh`'s enumeration — no ROCm needed, and
 the same answer inside a container as on the host. Before that, HIP reported
 `device: present` with no usable card and every `gpu` test failed instead of
 skipping, which from inside a container reads as broken passthrough. When HIP
 goes dark while CUDA works, run **doctor** first: it names the unbound device
 and the `dkms autoinstall` that fixes it.
+
+The NVIDIA side had the same bug twice over, and now asks the same question.
+**Enumeration** is a bound GPU in `/proc/driver/nvidia/gpus/`, not
+`/dev/nvidiactl` exists — that node is there whenever the module is loaded,
+card or not (`lib.sh`'s `nvidia_enumerated`, `conftest._nvidia_enumerated`).
+
+**And enumerated is not usable, so `present` means usable** (#712). A container
+can hold an enumerated card it is no longer allowed to *open*: `--gpus all`
+lands in `HostConfig.DeviceRequests` and is injected by an OCI hook at
+container **start**, so anything that regenerates the device cgroup afterwards
+— a host driver reload, a `systemctl daemon-reload`, a `docker update` — drops
+the grant while leaving every `/dev/nvidia*` node **visible** inside. That is
+"the GPU dropped mid-session": every enumeration probe still says yes while
+`open()` returns `EPERM`, and the vendor tool reports `Failed to initialize
+NVML: Unknown Error`, naming neither cause nor fix. On 2026-10-31 it had
+`doctor.sh` printing `verified on both cards` two lines under an `[ok]
+nvidia:` row that was really an NVML failure, and `gate.sh` failing 311 cases
+on `no CUDA-capable device is detected` instead of skipping.
+
+So `card_present` / `card_absent` fold usability in — one rule, asked by
+`gate.sh`'s gpu phase, `kernel-tier.sh`'s and `measure.sh`'s preflight,
+`verify-unverified.sh`, `doctor.sh`'s verdict and `conftest`'s device fixtures
+— and **a revoked card is ABSENT**: the gpu sample is skipped, the PR carries
+`unverified-on-card` and merges, and `verify-unverified.sh` repays it. Exactly
+the move #431 made for AMD. The probe is an `open(O_RDWR)` on the nodes a
+backend needs (`gpu_nodes`): no CUDA or ROCm required, and the exact operation
+the cgroup adjudicates. `gpu_usable` is the one point a test stubs.
+
+It is never *silently* absent, and `card_revoked` — enumerated **and** denied,
+which is the distinction `card_present` deliberately loses — is what keeps the
+two apart:
+
+- `doctor.sh`'s `card usable` row **FAILs**, naming the denied nodes; the
+  `nvidia:` row above it no longer reads `[ok]` on an NVML failure, and the
+  note says *"nvidia-smi is here but failed"* rather than blaming an absent one;
+- `devcontainer.sh up`/`rebuild` warn, and **`devcontainer.sh gpu`** asks on
+  demand (0 opens, 1 revoked, 2 could not run). A plain `up` reuses the
+  container and **cannot** restore the grant; only a `rebuild` re-runs the hook;
+- `kernel-tier.sh`'s `device: ABSENT` says *which* kind of absent, and the
+  fixtures' skip reason names the nodes and the recreate instead of claiming
+  the machine has no card.
+
+The cuda and combined configs also name their NVIDIA nodes with `--device`, so
+the grant lives in `HostConfig.Devices` — the list docker *rebuilds* the cgroup
+from — and survives a regeneration rather than needing a recreate. Measured
+both ways on this box: with the pin, a `docker update` leaves both cards
+openable; without it, the same `docker update` leaves the card enumerated and
+all three nodes answering `Operation not permitted`. Only the first card is
+pinned; a second still rides on `--gpus all`.
 
 ## What is gated, and what is not
 
@@ -170,7 +219,12 @@ and the `dkms autoinstall` that fixes it.
 - **What blocks a PR, and its budget: under five minutes each.** One
   script, `devtools/gate.sh`: the fast tier (3m27s), the compile sample, and
   the gpu sample per card (the kernel tier's own `not slow` selection took
-  ~4m cold on either card; the sample's draw is budgeted to stay near it). Both test correctness only. A test that would push either
+  ~4m cold on either card; the sample's draw is budgeted to stay near it). The
+  budget is the **intent**, and the first both-card run (2026-10-31, the gate
+  row above) came in at 5m15s fast and 7m54s on the cuda gpu sample — over it,
+  on a phase whose compiles were largely cold. Whether a warm run sits inside
+  five minutes is unmeasured, so treat the budget as a target that has not yet
+  been confirmed rather than a figure the gate is known to meet. Both test correctness only. A test that would push either
   past five minutes is `slow` (by L above `FAST_L_MAX`, or by a large input),
   never deleted: `--full` and a bare `pytest` still run it. Measurement is
   never a test: it goes in `measure/`, behind `devtools/measure.sh`.

@@ -216,6 +216,23 @@ module was not rebuilt for, which leaves CUDA working and only HIP dark —
 `dkms status` and `devtools/doctor.sh` name it and print the fix. The tier is
 blunter still: `device: ABSENT` and exit **2**, never a pass.
 
+**A third reason to skip: the card is here and cannot be opened** (#712). A
+container's device grant can be revoked while it runs — a host driver reload, a
+`systemctl daemon-reload`, a `docker update` — and every device node stays
+*visible* inside while `open()` returns `EPERM`. Presence folds usability in, so
+that card counts as **absent**: `gpu` tests skip, `kernel-tier.sh` prints
+`device: ABSENT`, and `gate.sh` labels the PR `unverified-on-card` at exit 0 —
+rather than entering a device phase that fails every case on `no CUDA-capable
+device is detected`, which is what happened on 2026-10-31. **Read the skip
+message**: it names the denied nodes and `devtools/devcontainer.sh rebuild` (a
+plain `up` reuses the container and cannot restore the grant) instead of
+claiming the machine has no card. It is never silently absent —
+`doctor.sh`'s `card usable` row FAILs on it, `devcontainer.sh gpu` exits 1, and
+the tier's ABSENT note says which kind of absent. NVIDIA enumeration is read
+the same way AMD's is, for the same reason: a bound GPU in
+`/proc/driver/nvidia/gpus/`, never `/dev/nvidiactl` exists, which is there
+whenever the module is loaded, card or not.
+
 `test/conftest.py` holds `compile_device_source` and `run_device_binary` — the
 compile-and-run machinery every device test shares. Put kernel text in the
 test; put plumbing there.

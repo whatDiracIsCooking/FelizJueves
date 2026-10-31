@@ -110,8 +110,17 @@ bash -c '. devtools/lib.sh; echo "present: [$(card_present)] absent: [$(card_abs
 
 `card_present` (in `devtools/lib.sh`) uses the enumeration rule the tiers use
 — an AMD GPU node in kfd's topology (`gfx_target_version` nonzero), an NVIDIA
-GPU under `/proc/driver/nvidia/gpus/` or in `nvidia-smi -L` — and
+GPU under `/proc/driver/nvidia/gpus/` or in `nvidia-smi -L`, **and in both
+cases a card this process can actually `open`** (#712) — and
 `devtools/doctor.sh` prints the same verdict as its `card verdict` line.
+
+A card that is enumerated but whose device-cgroup grant has been revoked
+mid-session therefore counts as **absent**, and this PR takes the label rather
+than failing: that is the intended path, not a workaround. It is still a broken
+container, so fix it when you can — `devtools/devcontainer.sh gpu` names it,
+`rebuild` repairs it (a plain `up` cannot), and doctor's `card usable` row
+FAILs meanwhile. A gate run after the repair verifies for real and needs no
+label.
 
 - **Both cards present**: `devtools/gate.sh` runs the gpu sample on both
   cards. No label. A change to kernel text above the sample's reach still

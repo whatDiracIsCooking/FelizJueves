@@ -355,6 +355,48 @@ if [ -n "${DOCTOR_GPU_VENDORS// /}" ]; then
     fi
   }
 
+  # Present is not usable, and this is the row that says which.
+  #
+  #   card_usable_row <vendor> <backend>
+  #
+  # Everything else in this section reports ENUMERATION -- what the driver and
+  # the kernel say is here -- and a container can hold an enumerated card it is
+  # no longer allowed to OPEN. When that happens, every row above this one
+  # still reads fine: the nvidia-smi path fails (NVML answers
+  # "Unknown Error" on a denied /dev/nvidiactl), the procfs fallback names the
+  # card anyway, and the report used to come out as `ok: nvidia: <card>` plus a
+  # note blaming a missing nvidia-smi. Exactly backwards, and the one state
+  # where this script was actively misleading.
+  #
+  # FAIL, not warn: unlike a device-less box -- which is a legitimate setup and
+  # only gets a note -- this is a broken container with a known repair, and the
+  # tiers downstream cannot do anything useful until it is made. lib.sh's
+  # card_revoked owns the rule and gpu_denied_nodes names the nodes, so this
+  # row, devcontainer.sh's warning and the test fixtures cannot disagree.
+  card_usable_row() {
+    local vendor=$1 backend=$2 denied rc=0
+    gpu_usable "$backend" || rc=$?
+    case $rc in
+      0) ok "$vendor card usable: every device node opens" ;;
+      2) : ;;  # no nodes to probe -- the device-less notes below cover it
+      *)
+        denied=$(gpu_denied_nodes "$backend" | tr '\n' ' ')
+        fail "$vendor card present but NOT usable: open denied on ${denied% }"
+        note "enumerated and unopenable -- the device cgroup stopped granting"
+        note "these nodes, which is a mid-session revocation (a host driver"
+        note "reload, a systemd daemon-reload, a \`docker update\` after start)"
+        if [ -e /.dockerenv ]; then
+          note "in a container: RECREATE it -- devtools/devcontainer.sh rebuild"
+          note "(a plain \`up\` reuses it and cannot restore the grant)"
+        else
+          note "on the host this is permissions, not a missing card: for amd"
+          note "that is group membership (ROCM_GROUPS in config.sh), for"
+          note "nvidia, whether the driver reloaded cleanly"
+        fi
+        ;;
+    esac
+  }
+
   #   card_state <vendor> <backend> <util%|""> <free MiB|""> <total MiB|"">
   card_state() {
     local vendor=$1 backend=$2 util=$3 free=$4 total=$5 lock state holder
@@ -403,25 +445,58 @@ if [ -n "${DOCTOR_GPU_VENDORS// /}" ]; then
         # reports the compute capability, which is CUDA_ARCH in config.sh.
         # The container runtime injects it under --gpus, so this is the usual
         # path on both sides.
+        # A ROW IS ONLY A CARD IF ITS COMPUTE CAPABILITY LOOKS LIKE ONE (#712).
+        # A FAILING nvidia-smi writes its diagnostic to STDOUT, so the bare
+        # loop read `Failed to initialize NVML: Unknown Error` as a card NAME
+        # and printed it as an `[ok] nvidia:` row with an empty CUDA_ARCH --
+        # which is the misreport #712 was filed about, in the state it is
+        # filed about, because a revoked device cgroup is exactly what makes
+        # NVML fail. Requiring `<digits>.<digits>` rejects that line and any
+        # other malformed output, nv_listed stays 0, and the procfs fallback
+        # below names the card and says which of the two reasons applies.
         nv_listed=0
         if command -v nvidia-smi >/dev/null 2>&1; then
           while IFS=, read -r nv_name nv_cap; do
             nv_name=${nv_name# }; nv_cap=${nv_cap# }
             [ -n "$nv_name" ] || continue
+            case "$nv_cap" in
+              [0-9]*.[0-9]*) ;;
+              *) continue ;;
+            esac
             ok "nvidia: $nv_name (compute ${nv_cap} -> CUDA_ARCH=${nv_cap//./})"
             nv_listed=$((nv_listed+1))
           done < <(nvidia-smi --query-gpu=name,compute_cap \
                      --format=csv,noheader 2>/dev/null)
         fi
         if [ "$nv_listed" -eq 0 ]; then
-          # No nvidia-smi (or it failed): fall back to the driver's own procfs,
+          # nvidia-smi said nothing: fall back to the driver's own procfs,
           # which names the card but not its compute capability.
+          #
+          # WHICH OF TWO REASONS, because the note used to blame the wrong one
+          # (#712). An absent nvidia-smi is a thin container. An nvidia-smi
+          # that is RIGHT THERE and failed is almost always the revoked device
+          # cgroup -- it reports `Failed to initialize NVML: Unknown Error` on
+          # a denied /dev/nvidiactl -- and printing "nvidia-smi absent" under
+          # an `[ok]` row sent people looking for a missing package.
+          if command -v nvidia-smi >/dev/null 2>&1; then
+            nv_why="nvidia-smi is here but failed -- see the \`card usable\` row below"
+          else
+            nv_why="nvidia-smi absent -- compute capability not read; set CUDA_ARCH"
+          fi
           for info in /proc/driver/nvidia/gpus/*/information; do
             [ -r "$info" ] || continue
-            nv_name=$(sed -n 's/^Model: *//p' "$info" | head -1)
+            # [[:space:]]*, not ` *`: procfs pads this field with TABS, which
+            # a space-only strip leaves in the middle of the row.
+            nv_name=$(sed -n 's/^Model:[[:space:]]*//p' "$info" 2>/dev/null | head -1)
             [ -n "$nv_name" ] || continue
-            ok "nvidia: $nv_name"
-            note "nvidia-smi absent -- compute capability not read; set CUDA_ARCH"
+            # Enumerated, so it is named -- but `ok` only when it can be
+            # opened; card_usable_row below carries the FAIL and the fix.
+            if gpu_usable cuda; then
+              ok "nvidia: $nv_name"
+            else
+              warn "nvidia: $nv_name -- enumerated, but not usable from here"
+            fi
+            note "$nv_why"
             nv_listed=$((nv_listed+1))
           done
         fi
@@ -430,6 +505,10 @@ if [ -n "${DOCTOR_GPU_VENDORS// /}" ]; then
           IFS=', ' read -r nv_util nv_free nv_total < <(nvidia-smi \
             --query-gpu=utilization.gpu,memory.free,memory.total \
             --format=csv,noheader,nounits 2>/dev/null | head -1)
+          # Before card_state: a denied node makes every reading above
+          # unobtainable, so "free VRAM unknown" is a consequence here and not
+          # an independent finding.
+          card_usable_row nvidia cuda
           card_state nvidia cuda "${nv_util:-}" "${nv_free:-}" "${nv_total:-}"
           find_tool nvcc >/dev/null 2>&1 ||
             note "card present but nvcc is not -- the CUDA toolchain is in the \`cuda\` image"
@@ -450,7 +529,7 @@ if [ -n "${DOCTOR_GPU_VENDORS// /}" ]; then
         amd_listed=0
         for props in /sys/class/kfd/kfd/topology/nodes/*/properties; do
           [ -r "$props" ] || continue
-          gfxver=$(sed -n 's/^gfx_target_version //p' "$props" | head -1)
+          gfxver=$(sed -n 's/^gfx_target_version //p' "$props" 2>/dev/null | head -1)
           # shellcheck disable=SC2015  # not if-then-else, and that is correct:
           # skip when gfx_target_version is missing OR zero
           [ -n "$gfxver" ] && [ "$gfxver" != 0 ] || continue
@@ -461,8 +540,8 @@ if [ -n "${DOCTOR_GPU_VENDORS// /}" ]; then
           # exposed nowhere in sysfs (lspci's database may not know a new id
           # either). vendor/device are decimal in properties; print them hex,
           # which is how every lspci line and driver table spells them.
-          amd_vid=$(sed -n 's/^vendor_id //p' "$props" | head -1)
-          amd_did=$(sed -n 's/^device_id //p' "$props" | head -1)
+          amd_vid=$(sed -n 's/^vendor_id //p' "$props" 2>/dev/null | head -1)
+          amd_did=$(sed -n 's/^device_id //p' "$props" 2>/dev/null | head -1)
           amd_pci=$(printf '%04x:%04x' "${amd_vid:-0}" "${amd_did:-0}")
           amd_name=$(tr -d '\0' < "$nodedir/name" 2>/dev/null)
           case $amd_name in ip\ discovery|'') amd_name= ;; *) amd_name=" $amd_name" ;; esac
@@ -490,6 +569,7 @@ if [ -n "${DOCTOR_GPU_VENDORS// /}" ]; then
             fi
             break
           done
+          card_usable_row amd hip
           card_state amd hip "$amd_util" "$amd_free" "$amd_total"
           [ -e /dev/kfd ] ||
             note "/dev/kfd absent -- pass --device=/dev/kfd --device=/dev/dri to reach it"

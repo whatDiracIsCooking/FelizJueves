@@ -59,6 +59,7 @@ from __future__ import annotations
 
 import ast
 import fcntl
+import glob
 import itertools
 import os
 import re
@@ -114,17 +115,54 @@ def _find(tool: str) -> str | None:
     return None
 
 
-def _has_nvidia_device() -> bool:
-    # Probed through the kernel rather than nvidia-smi, so the answer is the
-    # same on the host and inside a container whether or not the vendor tool
-    # was installed.
-    return Path("/dev/nvidiactl").exists() or Path("/proc/driver/nvidia/gpus").is_dir()
+NVIDIA_GPUS = Path("/proc/driver/nvidia/gpus")
+
+
+def _iterdir(d: Path) -> list[Path]:
+    """A directory's entries, sorted; empty when it is absent or unreadable --
+    which is how a device-less box and a container without the mount look."""
+    try:
+        return sorted(d.iterdir())
+    except OSError:
+        return []
+
+
+def _nvidia_enumerated() -> bool:
+    # An ENUMERATED GPU, not `/dev/nvidiactl` exists -- which is what this
+    # asked before, and it is #431's bug with the vendors swapped. That node is
+    # there whenever the nvidia module is LOADED, card or not: a driver
+    # installed for a card that has since been pulled, or a module loaded on a
+    # box that never had one, leaves it in place. `hip_device` had exactly this
+    # shape and every `gpu` test FAILED instead of skipping, against this
+    # repo's rule that a missing card skips.
+    #
+    # /proc/driver/nvidia/gpus/ holds one directory per GPU the driver bound,
+    # and the container runtime mounts it under --gpus, so the answer is the
+    # same on the host and inside a container and needs nothing installed --
+    # the same property that makes amdkfd's topology the right probe for AMD.
+    # This is the question lib.sh's nvidia_enumerated asks, which is the point:
+    # the shell tiers and the fixtures must not disagree about what is here.
+    for entry in _iterdir(NVIDIA_GPUS):
+        if entry.is_dir():
+            return True
+    # The same fallback lib.sh's nvidia_enumerated carries, for a container
+    # handed the tool but not that procfs view. Only reached when the view is
+    # empty, which on a device-less box is a `which` that finds nothing.
+    tool = shutil.which("nvidia-smi")
+    if tool is None:
+        return False
+    try:
+        out = subprocess.run([tool, "-L"], capture_output=True, text=True,
+                             timeout=30).stdout
+    except (OSError, subprocess.TimeoutExpired):
+        return False
+    return any(ln.startswith("GPU ") for ln in out.splitlines())
 
 
 KFD_NODES = Path("/sys/class/kfd/kfd/topology/nodes")
 
 
-def _has_amd_device() -> bool:
+def _amd_enumerated() -> bool:
     # An enumerated GPU node in amdkfd's topology, NOT `/dev/kfd` exists --
     # which is what this asked before #431. That node is there whenever the
     # amdgpu/amdkfd module is LOADED, bound card or not: the module binds by
@@ -137,10 +175,10 @@ def _has_amd_device() -> bool:
     #
     # Node 0 is the CPU and reports gfx_target_version 0; a GPU reports its
     # ISA there (gfx1200 -> 120000). Same rule, same field, as doctor.sh and
-    # lib.sh's amd_gpu_present. Read through the kernel's own topology so the
+    # lib.sh's amd_enumerated. Read through the kernel's own topology so the
     # answer needs no ROCm installed and is identical on the host and inside a
-    # container given --device=/dev/kfd -- the same reason _has_nvidia_device
-    # reads /dev/nvidiactl instead of calling nvidia-smi.
+    # container given --device=/dev/kfd -- the same reason _nvidia_enumerated
+    # reads the driver's procfs instead of calling nvidia-smi.
     try:
         nodes = sorted(KFD_NODES.iterdir())
     except OSError:
@@ -181,7 +219,123 @@ REPO = Path(__file__).resolve().parent.parent
 # FelizJueves's own headers: what a `gpu`-backend unit's
 # `#include "felizjueves/runtime.h"` resolves against, as a consumer's -I.
 INCLUDE = REPO / "include"
-PRESENT = {"cuda": _has_nvidia_device, "hip": _has_amd_device}
+ENUMERATED = {"cuda": _nvidia_enumerated, "hip": _amd_enumerated}
+
+# The device nodes each backend's runtime must be able to OPEN, as globs.
+# devtools/lib.sh's gpu_nodes is the same list; these two are the shell and
+# Python readings of one rule, and the reason it is written twice is that the
+# fixtures cannot source a shell file per test.
+#
+# The AMD render nodes are NOT a `/dev/dri/renderD*` glob, and the difference
+# matters on a two-vendor box: this one has renderD128 on amdgpu and renderD129
+# on nvidia, ROCm never touches the second, and probing it would let an
+# NVIDIA-side permissions quirk read as a revoked AMD card. _amd_render_nodes
+# picks them by the driver that owns each one.
+GPU_NODE_GLOBS = {
+    "cuda": ("/dev/nvidiactl", "/dev/nvidia-uvm", "/dev/nvidia[0-9]*"),
+    "hip": ("/dev/kfd",),
+}
+DRM_CLASS = Path("/sys/class/drm")
+
+
+def _amd_render_nodes() -> list[str]:
+    """The DRM render nodes amdgpu owns, by sysfs vendor id (0x1002) -- the
+    same field doctor.sh picks the amdgpu card by for its VRAM reading.
+
+    A container with no readable sysfs here yields nothing, and the check then
+    probes /dev/kfd alone. That is the right way to degrade: kfd is where the
+    AMD-side permissions fault actually bites.
+    """
+    nodes = []
+    for entry in _iterdir(DRM_CLASS):
+        if not entry.name.startswith("renderD"):
+            continue
+        try:
+            vendor = (entry / "device" / "vendor").read_text().strip()
+        except OSError:
+            continue
+        if vendor == "0x1002":
+            nodes.append(f"/dev/dri/{entry.name}")
+    return nodes
+
+
+def _denied_nodes(backend: str) -> list[str]:
+    """The nodes this process may not open -- empty when the card is usable.
+
+    ENUMERATED asks whether the kernel sees a card. This asks the question that
+    is not the same one: whether we are still allowed to touch it. A
+    container's device grant is lost mid-life -- `--gpus all` lands in
+    HostConfig.DeviceRequests and is injected by an OCI hook at container
+    START, so a host driver reload, a `systemctl daemon-reload` or a
+    `docker update` regenerates the device cgroup without it -- and every node
+    stays VISIBLE inside while none of them opens. Enumeration still says yes,
+    so without this the card looks present and every launch fails.
+
+    open(O_RDWR) is the probe because it is the exact operation the cgroup
+    filter adjudicates, and it needs no CUDA or ROCm installed; cuInit/hipInit
+    would answer too, but on a box without the SDK "cannot ask" and "denied"
+    become the same answer. Only EXISTING char devices are probed -- a glob
+    that matches nothing contributes nothing, which is what keeps a device-less
+    box reporting absent rather than denied.
+
+    The Python half of devtools/lib.sh's gpu_denied_nodes, and
+    test_device_grant.py holds the two to the same node list.
+    """
+    nodes = [n for pattern in GPU_NODE_GLOBS[backend]
+             for n in sorted(glob.glob(pattern))]
+    if backend == "hip":
+        nodes += _amd_render_nodes()
+    denied = []
+    for node in nodes:
+        if not Path(node).is_char_device():
+            continue
+        try:
+            os.close(os.open(node, os.O_RDWR))
+        except OSError:
+            denied.append(node)
+    return denied
+
+
+def _present(backend: str) -> bool:
+    """Is there a card here this process can launch on? ENUMERATED AND USABLE.
+
+    The one rule the fixtures ask, and devtools/lib.sh's card_present is its
+    shell twin (#712). Folding usability into presence is what makes a revoked
+    card SKIP like an absent one instead of failing every `gpu` test: the gate
+    then labels the PR `unverified-on-card` and merges, exactly as it does on a
+    device-less runner, while doctor.sh and devcontainer.sh still FAIL loudly
+    on it -- so nothing is silently unverified, and the suite does not report
+    an environment fault as a numerical one. Same move #431 made for AMD.
+    """
+    return ENUMERATED[backend]() and not _denied_nodes(backend)
+
+
+# What PRESENT used to be, kept as the name the rest of this file reads.
+PRESENT = {b: (lambda b=b: _present(b)) for b in ENUMERATED}
+
+
+def _no_card_reason(backend: str, absent: str) -> str:
+    """The skip message, which has to say WHICH of two things is wrong.
+
+    A revoked card and an absent one both skip, and they need completely
+    different things done about them -- so the message that reaches `-rs` names
+    the denied nodes and the recreate when that is what happened, rather than
+    claiming the machine has no card.
+    """
+    denied = _denied_nodes(backend) if ENUMERATED[backend]() else []
+    if not denied:
+        return absent
+    return (
+        f"{backend}: the card is HERE but this process cannot open "
+        f"{', '.join(denied)} -- the device cgroup does not grant it. A "
+        "mid-session grant revocation (a host driver reload, a systemd "
+        "daemon-reload, or a `docker update` after start), not a missing "
+        "card: every node is still visible, which is why the vendor tools "
+        "blame the driver. In a container, recreate it -- "
+        "`devtools/devcontainer.sh rebuild`; a plain `up` reuses it and "
+        "cannot restore the grant. devtools/doctor.sh's `card usable` row "
+        "FAILs on this, and `devcontainer.sh gpu` exits 1."
+    )
 LOCK_REPORT_EVERY_S = 60.0
 
 
@@ -389,8 +543,11 @@ def pytest_unconfigure(config: pytest.Config) -> None:
 
 
 def _card(request: pytest.FixtureRequest, backend: str, why: str):
+    # One rule: no card you can launch on means SKIP (#712). `why` is the
+    # absent message; _no_card_reason replaces it when the card is really here
+    # and merely denied, because those two need different things done.
     if not PRESENT[backend]():
-        pytest.skip(why)
+        pytest.skip(_no_card_reason(backend, why))
     fd = take_card_lock(request.config, backend)
     yield
     if fd is not None:

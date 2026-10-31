@@ -81,8 +81,24 @@
   // devtools/devcontainer.sh exports the resolved FJ_RENDER_GID / FJ_VIDEO_GID;
   // the literals after the colon are this box's values, for a direct
   // "Reopen in Container" that runs no script.
+  //
+  // THE NVIDIA --device ENTRIES ARE THE AMD SIDE'S PROPERTY, BORROWED. The AMD
+  // nodes above are named explicitly, so they live in HostConfig.Devices and a
+  // device-cgroup regeneration preserves them; `--gpus all` alone does not,
+  // because it lands in HostConfig.DeviceRequests and is injected by an OCI
+  // hook that only runs at container START. A `docker update`, a host driver
+  // reload or a systemd daemon-reload therefore used to revoke the NVIDIA card
+  // mid-session -- nodes still visible inside, none of them openable -- while
+  // the AMD card beside it kept working. Naming both sides makes this the
+  // variant where neither vendor drops. The cuda config has the long version;
+  // paths come from export_nvidia_devices, with /dev/null fallbacks so a host
+  // without the driver still starts.
   "runArgs": [
     "--gpus", "all",
+    "--device", "${localEnv:FJ_NVIDIA_CTL:/dev/null}",
+    "--device", "${localEnv:FJ_NVIDIA_UVM:/dev/null}",
+    "--device", "${localEnv:FJ_NVIDIA_UVM_TOOLS:/dev/null}",
+    "--device", "${localEnv:FJ_NVIDIA_GPU:/dev/null}",
     "--device", "/dev/kfd",
     "--device", "/dev/dri",
     "--group-add", "${localEnv:FJ_RENDER_GID:109}",

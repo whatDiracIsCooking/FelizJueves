@@ -6,8 +6,17 @@
 #   devtools/devcontainer.sh rebuild     recreate from scratch
 #   devtools/devcontainer.sh shell       open a bash shell inside
 #   devtools/devcontainer.sh test [...]  run the test suite inside
+#   devtools/devcontainer.sh gpu         can it still open its cards?
 #   devtools/devcontainer.sh down        stop and remove the container
 #   devtools/devcontainer.sh down --all  ... every GPU variant of this worktree
+#
+# `gpu` answers the question a long session eventually needs: a container's
+# device grant can be REVOKED mid-life -- a host driver reload, a systemd
+# daemon-reload -- leaving every device node visible inside and none of them
+# openable. `up` and `rebuild` run the same check for you; this is the one to
+# run when a card that worked an hour ago does not. Exit 1 means revoked, and
+# the fix is `rebuild` (a plain `up` reuses the container and cannot restore
+# it). lib.sh's card_revoked carries the rule.
 #
 # WHICH VARIANT: a flag BEFORE the command, naming a directory under
 # .devcontainer/ -- so this repo's three configs are reachable as:
@@ -198,6 +207,15 @@ container_ids() {
 # variant needs none of this -- `--device=/dev/kfd` populates
 # HostConfig.Devices, which `docker update` preserves -- so the restart is
 # gated on DeviceRequests rather than applied blindly.
+#
+# THE RESTART IS NOW BELT AND BRACES, AND KEPT ANYWAY. The cuda and combined
+# configs name their NVIDIA nodes with `--device` as well, precisely so the
+# grant lives in the list `docker update` rebuilds from, so this call no longer
+# revokes anything it then has to repair. It stays because the pin covers only
+# the FIRST card (export_nvidia_devices says why) and because a config edited
+# to drop the pin should degrade to a working container, not a silently dead
+# one. warn_if_gpu_revoked runs after this either way, so if the pair of them
+# ever stops being enough, the next `up` says so.
 apply_cpu_limits() {
   [ -z "${CPUSET:-}" ] && [ -z "${CPUS:-}" ] && return 0
   local id flags=()
@@ -228,6 +246,125 @@ apply_cpu_limits() {
       echo "cpu-limit: could not restart $id -- its GPU may be unusable until you do" >&2
     fi
   fi
+}
+
+# --- the GPU grant: pin it, then check it ----------------------------------
+
+# Export one FJ_NVIDIA_* per CUDA device node, which the `--device` entries in
+# the cuda and combined runArgs read.
+#
+# WHY PIN THE NODES WHEN `--gpus all` ALREADY ASKS FOR THEM: because the two
+# asks are kept in different places and only one of them survives. `--gpus all`
+# lands in HostConfig.DeviceRequests, honoured by the NVIDIA container
+# runtime's OCI hook at container START; an explicit `--device` lands in
+# HostConfig.Devices, which is the list docker REGENERATES the device cgroup
+# from. Regenerate it -- `docker update`, a host driver reload, a
+# `systemctl daemon-reload` -- and a DeviceRequests-only grant is gone while
+# the nodes stay visible inside (lib.sh's card_revoked has the full story).
+# Naming the nodes as well puts the same grant in the list that is rebuilt, so
+# the card survives a regeneration instead of needing a recreate.
+#
+# BOTH, not one: the hook does more than grant the cgroup -- it injects the
+# driver libraries, nvidia-smi, and the /proc/driver/nvidia view -- so
+# `--gpus all` stays. This is belt and braces, and the braces are the new part.
+#
+# WHY EACH ENTRY FALLS BACK TO A REAL NODE. runArgs is static JSON: it cannot
+# ask whether a node exists, and `--device` on a path that is not there fails
+# container CREATION. So every reference carries a `${localEnv:FJ_…:/dev/null}`
+# default, and a host with no NVIDIA driver gets a harmless `--device /dev/null`
+# instead of a container that will not start -- the same shape, and the same
+# reason, as the baked-in gid defaults in export_host_gids below. Duplicate
+# `--device /dev/null` entries are accepted by docker (measured), so all three
+# collapsing onto the fallback is fine.
+#
+# Multi-GPU: only the FIRST card is pinned. The hook still injects the rest
+# under `--gpus all`, so nothing is lost today -- but on a box where a second
+# card has to survive a cgroup regeneration too, add it here and in the json.
+export_nvidia_devices() {
+  local var node
+  # var:path pairs. The names are spelled in the cuda and combined runArgs;
+  # CLAUDE.md's note about the FJ_ prefix living in two places covers these.
+  for var in FJ_NVIDIA_CTL:/dev/nvidiactl \
+             FJ_NVIDIA_UVM:/dev/nvidia-uvm \
+             FJ_NVIDIA_UVM_TOOLS:/dev/nvidia-uvm-tools; do
+    node=${var#*:}
+    [ -c "$node" ] && export "${var%%:*}=$node"
+  done
+  # The card itself, whose node number is not fixed.
+  for node in /dev/nvidia[0-9]*; do
+    [ -c "$node" ] || continue
+    export "FJ_NVIDIA_GPU=$node"
+    break
+  done
+}
+
+# The backends the ACTIVE variant can actually reach: cuda for the cuda
+# variant, hip for hip, both for combined. Read from the runArgs the config
+# passes rather than from the variant NAME, so a new .devcontainer/<name>/
+# needs no edit here -- the same convention the variant flag resolves by.
+variant_backends() {
+  local cfg=${dc_config_path:-}
+  [ -f "$cfg" ] || return 0
+  grep -q -- '"--gpus"' "$cfg" && echo cuda
+  grep -q -- '/dev/kfd' "$cfg" && echo hip
+  return 0
+}
+
+# Ask lib.sh's card_revoked INSIDE the running container, for one backend.
+# Returns 0 when that backend's card is present there and cannot be opened.
+#
+# THE RULE IS NOT RESTATED HERE. The workspace is bind-mounted at
+# DEVCONTAINER_WORKSPACE_FOLDER (config.sh), so the container has this repo's
+# own devtools/lib.sh at a known path and the probe is the same function the
+# host, doctor.sh and the test fixtures ask -- which is the only way they
+# cannot drift apart. `bash -c`, not the devcontainer CLI: this is a
+# diagnostic, and run_cli's sed filter would buffer it.
+container_card_revoked() {
+  local id backend=$1 lib=${DEVCONTAINER_WORKSPACE_FOLDER:-/workspace}/devtools/lib.sh
+  id=$(container_ids | head -1 || true)
+  [ -n "$id" ] || return 1
+  docker exec "$id" bash -c ". '$lib' && card_revoked '$backend'" 2>/dev/null
+}
+
+# Warn -- loudly, to stderr -- when the running container holds a card it is no
+# longer allowed to open. Called after `up` and `rebuild` so the state is named
+# where it happens, instead of surfacing later as a tier that fails for no
+# visible reason.
+#
+# Why it matters most on `up`: a plain `up` REUSES an existing container, and a
+# reuse cannot re-run the OCI hook that grants the devices. So the one command
+# people retry when the GPU looks broken is the one command that cannot fix it.
+#
+# Never fatal: `up` has done its work by the time this runs, and a degraded
+# card is a thing to report, not a reason to tear down a working container.
+#
+# IT FAILS QUIET, and that is the one deliberate hole. If the probe cannot be
+# asked at all -- no bash in there, or the workspace mounted somewhere other
+# than DEVCONTAINER_WORKSPACE_FOLDER -- container_card_revoked returns
+# non-zero and this says nothing, rather than warning about a card it did not
+# actually look at. The loud form is `devcontainer.sh gpu`, which separates
+# "could not ask" (exit 2) from "revoked" (exit 1); doctor.sh run INSIDE the
+# container is the other way round to the same answer.
+warn_if_gpu_revoked() {
+  command -v docker >/dev/null 2>&1 || return 0
+  local backend revoked=()
+  while read -r backend; do
+    [ -n "$backend" ] || continue
+    container_card_revoked "$backend" && revoked+=("$backend")
+  done < <(variant_backends)
+  [ "${#revoked[@]}" -gt 0 ] || return 0
+  echo "devcontainer: WARNING -- ${revoked[*]} card(s) are PRESENT in the" >&2
+  echo "devcontainer:   container and cannot be OPENED: the device cgroup no" >&2
+  echo "devcontainer:   longer grants them (a host driver reload, a systemd" >&2
+  echo "devcontainer:   daemon-reload, or a \`docker update\` after start)." >&2
+  echo "devcontainer:   Every node is still visible in there, so the vendor" >&2
+  echo "devcontainer:   tools will blame the driver. Recover by RECREATING it:" >&2
+  echo "devcontainer:" >&2
+  echo "devcontainer:       devtools/devcontainer.sh ${variant_flag:+$variant_flag }rebuild" >&2
+  echo "devcontainer:" >&2
+  echo "devcontainer:   A plain \`up\` reuses this container and will NOT" >&2
+  echo "devcontainer:   restore the grant. If a fresh container still warns," >&2
+  echo "devcontainer:   the fault is host-side -- run devtools/doctor.sh." >&2
 }
 
 # The .git bind mount in devcontainer.json reads its host path from
@@ -532,10 +669,17 @@ case "${1:-}" in
     require_git_dir
     require_sccache_dir
     export_host_gids
+    export_nvidia_devices
     run_cli up --workspace-folder "$WORKSPACE" "${DC_CONFIG[@]}" "$@"
     name_host_gids
     tag_variant_image
     apply_cpu_limits
+    # AFTER apply_cpu_limits, which is itself a `docker update` and so the one
+    # cgroup regeneration this script causes -- checking before it would clear
+    # the container and then break it. `up` may also have reused a container
+    # whose grant was already gone, which a reuse cannot restore; either way
+    # this is where it gets named.
+    warn_if_gpu_revoked
     report_claude_pin
     report_agy_pin
     ;;
@@ -549,6 +693,7 @@ case "${1:-}" in
     require_git_dir
     require_sccache_dir
     export_host_gids
+    export_nvidia_devices
     run_cli up --workspace-folder "$WORKSPACE" \
       --remove-existing-container "${DC_CONFIG[@]}" "$@"
     # Again on `rebuild`, not only `up`: a fresh container means a fresh
@@ -556,6 +701,10 @@ case "${1:-}" in
     name_host_gids
     tag_variant_image
     apply_cpu_limits
+    # A fresh container should hold its cards. If this still warns, the fault
+    # is host-side -- an unbound driver, a stale module -- and doctor.sh names
+    # it; a second `rebuild` will not help.
+    warn_if_gpu_revoked
     report_claude_pin
     report_agy_pin
     ;;
@@ -608,6 +757,74 @@ case "${1:-}" in
     esac
     run_cli exec --workspace-folder "$WORKSPACE" "${DC_CONFIG[@]}" \
       "${cmd[@]}" "$@"
+    ;;
+  gpu)
+    # The on-demand form of the check `up` and `rebuild` run for you: can the
+    # running container open its cards RIGHT NOW? Worth its own command because
+    # the grant is lost mid-session, long after any `up`, and the question
+    # otherwise only gets asked by a tier that then fails.
+    #
+    # One row per backend the active variant can reach, and an exit status that
+    # separates the three answers a caller cares about:
+    #
+    #   0  every reachable backend's card opens -- or the container has none,
+    #      which is a device-less setup working as intended
+    #   1  a card is present and cannot be opened: REVOKED, and `rebuild` is
+    #      the fix (warn_if_gpu_revoked prints it)
+    #   2  COULD NOT RUN -- no container, no docker, no probe in there
+    #
+    # 2 is the repo's "could not run" and never a pass, the same contract
+    # kernel-tier.sh exits on. Which is why this arm does NOT call
+    # require_running: that helper exits 1, which is right where the ask was
+    # "run this for me" and wrong here, where 1 already means something else.
+    # A revoked card outranks a missing probe if both turn up.
+    shift
+    if ! command -v docker >/dev/null 2>&1; then
+      echo "gpu: no docker on PATH -- cannot ask" >&2
+      exit 2
+    fi
+    id=$(container_ids | head -1 || true)
+    if [ -z "$id" ]; then
+      echo "gpu: no running ${VARIANT:-active} container for $WORKSPACE -- cannot ask" >&2
+      echo "     start it: devtools/devcontainer.sh ${variant_flag:+$variant_flag }up" >&2
+      exit 2
+    fi
+    backends=$(variant_backends)
+    if [ -z "$backends" ]; then
+      echo "gpu: ${VARIANT:-the active variant} asks for no device -- nothing to check"
+      exit 0
+    fi
+    # any_revoked, not `revoked`: warn_if_gpu_revoked keeps a local ARRAY of
+    # that name, and one spelling used both ways is the kind of thing that
+    # reads fine and then surprises someone (shellcheck SC2178/SC2128).
+    any_revoked=0 unasked=0
+    lib=${DEVCONTAINER_WORKSPACE_FOLDER:-/workspace}/devtools/lib.sh
+    while read -r backend; do
+      [ -n "$backend" ] || continue
+      # Three states, asked through the repo's own rule rather than restated:
+      # present and usable, present and denied, or simply not here.
+      # card_revoked FIRST: presence folds usability in (#712), so a revoked
+      # card answers "absent" to card_present and asking that first would
+      # report the one state this command exists for as a device-less box.
+      state=$(docker exec "$id" bash -c ". '$lib' &&
+        if card_revoked '$backend'; then echo revoked
+        elif card_present '$backend'; then echo usable
+        else echo absent; fi" 2>/dev/null || echo unknown)
+      case "$state" in
+        usable)  echo "gpu: $backend -- card present and openable in $id" ;;
+        revoked) echo "gpu: $backend -- card PRESENT but not openable in $id"
+                 any_revoked=1 ;;
+        absent)  echo "gpu: $backend -- no card in $id (device-less, or none passed through)" ;;
+        *)       echo "gpu: $backend -- could not ask: no bash, or no $lib, in $id" >&2
+                 unasked=1 ;;
+      esac
+    done <<<"$backends"
+    if [ "$any_revoked" = 1 ]; then
+      warn_if_gpu_revoked
+      exit 1
+    fi
+    [ "$unasked" = 1 ] && exit 2
+    exit 0
     ;;
   down)
     shift

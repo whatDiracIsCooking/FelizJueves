@@ -122,12 +122,12 @@ def test_an_amd_card_is_an_enumerated_kfd_node_not_just_dev_kfd(
 
     cpu_only = _kfd_tree(tmp_path / "cpu-only", 0)
     monkeypatch.setattr(conftest, "KFD_NODES", cpu_only)
-    assert conftest._has_amd_device() is False
+    assert conftest._amd_enumerated() is False
 
     # The CPU node is still node 0 when a GPU is there; gfx1200 -> 120000.
     with_gpu = _kfd_tree(tmp_path / "with-gpu", 0, 120000)
     monkeypatch.setattr(conftest, "KFD_NODES", with_gpu)
-    assert conftest._has_amd_device() is True
+    assert conftest._amd_enumerated() is True
 
 
 def test_no_kfd_topology_at_all_is_simply_no_card(
@@ -136,7 +136,7 @@ def test_no_kfd_topology_at_all_is_simply_no_card(
     import conftest
 
     monkeypatch.setattr(conftest, "KFD_NODES", tmp_path / "absent")
-    assert conftest._has_amd_device() is False
+    assert conftest._amd_enumerated() is False
 
 
 def test_the_two_reasons_for_no_amd_card_read_differently(
@@ -179,6 +179,16 @@ def test_the_shell_probe_asks_the_same_question_as_conftest() -> None:
     assert "hip)  amd_gpu_present && device_present=1" in tier
     assert "hip)  [ -e /dev/kfd ] && device_present=1" not in tier
 
+    # And since #712 the CUDA branch asks the helper too, instead of testing
+    # the device node and the procfs view inline -- the same bug, and the one
+    # that put a revoked card into the device phase.
+    assert "cuda) nvidia_gpu_present && device_present=1" in tier
+    # The old CODE line, not a bare `[ -e /dev/nvidiactl ]` substring: the
+    # comment above that branch quotes the old test to explain why it went, so
+    # a substring match finds the bug inside its own obituary.
+    assert ("cuda) [ -e /dev/nvidiactl ] || [ -d /proc/driver/nvidia/gpus ]"
+            " && device_present=1") not in tier
+
 
 def _card_sh(script: str, path: str) -> subprocess.CompletedProcess[str]:
     lib = Path(__file__).resolve().parent.parent / "devtools" / "lib.sh"
@@ -187,18 +197,75 @@ def _card_sh(script: str, path: str) -> subprocess.CompletedProcess[str]:
         env={"PATH": path, "HOME": "/nonexistent"})
 
 
-def test_card_present_reads_nvidia_smi_enumeration(tmp_path: Path) -> None:
-    """#651: an NVIDIA card counts when the driver enumerates one, and
-    `nvidia-smi -L` is one of the two places that says so. A fake tool that
-    lists a GPU makes `cuda` present, whatever this box has."""
+def _fake_nvidia_smi(tmp_path: Path) -> str:
+    """A PATH whose `nvidia-smi -L` lists a GPU, so enumeration says yes on any
+    box. Returns the PATH to hand _card_sh."""
     fake = tmp_path / "nvidia-smi"
     fake.write_text("#!/bin/sh\necho 'GPU 0: NVIDIA GeForce RTX 3080 (UUID: x)'\n")
     fake.chmod(0o755)
-    done = _card_sh("card_present cuda", f"{tmp_path}:/usr/bin:/bin")
+    return f"{tmp_path}:/usr/bin:/bin"
+
+
+# `gpu_usable` is the single point the usability probe is stubbed at (lib.sh
+# says so): redefine it AFTER sourcing and the rest of the rule is unchanged.
+# That is what makes these assertions box-independent -- the real answer on
+# this host cannot be changed, and on a device-less runner it is the opposite.
+_USABLE = "gpu_usable() { return 0; }"
+_DENIED = "gpu_usable() { return 1; }"
+
+
+def test_card_present_reads_nvidia_smi_enumeration(tmp_path: Path) -> None:
+    """#651: an NVIDIA card counts when the driver enumerates one, and
+    `nvidia-smi -L` is one of the two places that says so. A fake tool that
+    lists a GPU makes `cuda` present -- given it can also be OPENED, which
+    since #712 is the other half of presence."""
+    path = _fake_nvidia_smi(tmp_path)
+    assert _card_sh("nvidia_enumerated", path).returncode == 0
+    done = _card_sh(f"{_USABLE}; card_present cuda", path)
     assert done.returncode == 0, done.stderr
-    listed = _card_sh("card_present", f"{tmp_path}:/usr/bin:/bin").stdout.split()
+    listed = _card_sh(f"{_USABLE}; card_present", path).stdout.split()
     assert "cuda" in listed
-    assert "cuda" not in _card_sh("card_absent", f"{tmp_path}:/usr/bin:/bin").stdout
+    assert "cuda" not in _card_sh(f"{_USABLE}; card_absent", path).stdout
+
+
+def test_an_enumerated_card_that_cannot_be_opened_is_absent(tmp_path: Path) -> None:
+    """#712's acceptance: enumerated + denied reads as NO CARD.
+
+    `gate.sh` gates its gpu phase on `card_present "$b"` and otherwise records
+    `unverified on card`, so this one rule is what turns a revoked card into a
+    skipped sample and a labelled PR instead of a device phase that failed 311
+    cases on `no CUDA-capable device is detected`.
+    """
+    path = _fake_nvidia_smi(tmp_path)
+    # Enumeration still says the card is there -- that is the trap.
+    assert _card_sh("nvidia_enumerated", path).returncode == 0
+    assert _card_sh(f"{_DENIED}; card_present cuda", path).returncode == 1
+    assert "cuda" not in _card_sh(f"{_DENIED}; card_present", path).stdout
+    assert "cuda" in _card_sh(f"{_DENIED}; card_absent", path).stdout
+
+
+def test_card_revoked_is_true_only_for_enumerated_and_denied(tmp_path: Path) -> None:
+    """The distinction card_present deliberately loses, kept for the humans.
+
+    doctor.sh's `card usable` row, devcontainer.sh's warning and
+    kernel-tier.sh's ABSENT note all key on this, so a revoked card is never
+    SILENTLY absent even though it is absent for every tier decision.
+    """
+    path = _fake_nvidia_smi(tmp_path)
+    assert _card_sh(f"{_DENIED}; card_revoked cuda", path).returncode == 0
+    # A working card is not revoked ...
+    assert _card_sh(f"{_USABLE}; card_revoked cuda", path).returncode == 1
+    # ... and neither is "enumerated with nothing to open", which is how a
+    # device-less container looks: gpu_usable's rc 2, not its rc 1.
+    assert _card_sh("gpu_usable() { return 2; }; card_revoked cuda",
+                    path).returncode == 1
+    # Nothing enumerated at all: not revoked, whatever the probe says. Stubbed
+    # rather than hidden behind PATH -- nvidia_enumerated reads the driver's
+    # procfs first, which a real card on this box populates whatever PATH says.
+    assert _card_sh("nvidia_enumerated() { return 1; }; " + _DENIED
+                    + "; card_revoked cuda", path).returncode == 1
+    bad = _card_sh("card_revoked gpu", path)
+    assert bad.returncode == 2 and "unknown backend" in bad.stderr
 
 
 def test_card_present_verdict_shape() -> None:
@@ -211,6 +278,27 @@ def test_card_present_verdict_shape() -> None:
     assert (done.returncode == 0) == (present == ["cuda", "hip"])
     bad = _card_sh("card_present gpu", "/usr/bin:/bin")
     assert bad.returncode == 2 and "unknown backend" in bad.stderr
+
+
+def test_doctor_does_not_read_an_nvml_error_as_a_card_name() -> None:
+    """#712's misreport, in the state that produces it.
+
+    A failing nvidia-smi writes `Failed to initialize NVML: Unknown Error` to
+    STDOUT, so doctor's `--query-gpu=name,compute_cap` loop read it as a card
+    NAME and printed `[ok] nvidia: Failed to initialize NVML...` with an empty
+    CUDA_ARCH -- an `[ok]` row asserting a working card, in exactly the state
+    where the card cannot be opened. Observed again while building this fix, in
+    a container with the grant revoked.
+
+    A row now counts only when its compute capability looks like one, so that
+    line is dropped and the procfs fallback reports the card honestly.
+    """
+    doctor = (Path(__file__).resolve().parent.parent
+              / "devtools" / "doctor.sh").read_text()
+    assert "[0-9]*.[0-9]*) ;;" in doctor, \
+        "the compute-capability guard on doctor's nvidia-smi rows is gone"
+    # And the fallback distinguishes a missing tool from one that failed.
+    assert "nvidia-smi is here but failed" in doctor
 
 
 def test_doctor_and_pr_skill_ask_card_present() -> None:

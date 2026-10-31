@@ -68,7 +68,33 @@
   // --gpus all is what the NVIDIA container runtime reads to inject the driver.
   // The image's NVIDIA_VISIBLE_DEVICES / NVIDIA_DRIVER_CAPABILITIES
   // (docker/Dockerfile.cuda) are the other half of it.
-  "runArgs": ["--gpus", "all"],
+  //
+  // THE --device ENTRIES ARE NOT REDUNDANT WITH IT. `--gpus all` lands in
+  // HostConfig.DeviceRequests and is honoured by the container runtime's OCI
+  // hook at container START; `--device` lands in HostConfig.Devices, which is
+  // the list docker REGENERATES the device cgroup from. Anything that
+  // regenerates it mid-life -- `docker update` (devtools/devcontainer.sh's
+  // apply_cpu_limits), a host driver reload, a systemd daemon-reload -- drops
+  // a DeviceRequests-only grant while leaving every node visible inside, so
+  // the card stops working and every presence check still says it is there.
+  // Naming the nodes puts the same grant in the list that gets rebuilt.
+  // Keep --gpus all too: the hook also injects the driver libraries,
+  // nvidia-smi and the /proc/driver/nvidia view, which no --device does.
+  //
+  // Each path comes from devtools/devcontainer.sh's export_nvidia_devices and
+  // falls back to /dev/null, because runArgs cannot ask whether a node exists
+  // and --device on a missing path fails container CREATION -- so a host with
+  // no NVIDIA driver gets a harmless duplicate /dev/null rather than a
+  // container that will not start. Same shape, same reason, as the gid
+  // fallbacks in the hip variant. A VS Code "Reopen in Container" runs no
+  // script, so it takes the fallbacks and relies on --gpus all alone.
+  "runArgs": [
+    "--gpus", "all",
+    "--device", "${localEnv:FJ_NVIDIA_CTL:/dev/null}",
+    "--device", "${localEnv:FJ_NVIDIA_UVM:/dev/null}",
+    "--device", "${localEnv:FJ_NVIDIA_UVM_TOOLS:/dev/null}",
+    "--device", "${localEnv:FJ_NVIDIA_GPU:/dev/null}"
+  ],
 
   "containerEnv": {
     "KERNEL_BACKEND": "cuda",
