@@ -228,7 +228,9 @@ host within `DEV_TOL = 1e-14` of the absolute twin (`slow` above L + 1 =
 every class of the basis: `K1` to the fixture's `vk1`, `K^X` per atom
 (`kxc_` launched once per atom) to `make_h1`'s exchange part, both within
 `1e-12` of `max|PySCF|`, and `SUM_X K^X = 0`. Ran on the **RX 9060 XT
-only** (2026-10-31, KXRESULTS); the RTX 3080 was lost to this container
+only** (2026-10-31: 512/512 classes, witnesses at most 2.0e-16 of the twin,
+runs bit-identical; `K1` within 7.5e-15 and `K^X` within 5.9e-14 of
+`max|PySCF|` at cc-pVDZ, `SUM_X K^X` 7.3e-15 of `max|K1|`); the RTX 3080 was lost to this container
 (NVML "Unknown Error"), so its launch of every class is still owed:
 `pytest -m "cuda and gpu" test/test_kx_device.py -n 2`. `J^X` (#688)
 and `h^x` (#687) are host- and compile-side only (their own entries).
