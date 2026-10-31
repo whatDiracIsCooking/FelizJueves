@@ -13,11 +13,11 @@
  },
  "counts": {
   "compile/cuda/measured": 119,
-  "compile/cuda/modelled": 326,
+  "compile/cuda/modelled": 332,
   "compile/hip/measured": 119,
-  "compile/hip/modelled": 326,
-  "gpu/cuda/modelled": 445,
-  "gpu/hip/modelled": 445
+  "compile/hip/modelled": 332,
+  "gpu/cuda/modelled": 451,
+  "gpu/hip/modelled": 451
  },
  "held_out": {
   "compile/cuda": {
@@ -9166,6 +9166,99 @@
    "engine": "mmd",
    "quantity": "kx1",
    "deriv": 1,
+   "L": 9,
+   "family": "hessians",
+   "compile": {
+    "cuda": {
+     "s": 17.822,
+     "basis": "modelled",
+     "source": "fit:hessians, extrapolated past L 4"
+    },
+    "hip": {
+     "s": 28.728,
+     "basis": "modelled",
+     "source": "fit:hessians, extrapolated past L 4"
+    }
+   },
+   "gpu": {
+    "cuda": {
+     "s": 17.822,
+     "basis": "modelled",
+     "source": "compile"
+    },
+    "hip": {
+     "s": 28.728,
+     "basis": "modelled",
+     "source": "compile"
+    }
+   }
+  },
+  {
+   "engine": "mmd",
+   "quantity": "kx1",
+   "deriv": 1,
+   "L": 10,
+   "family": "hessians",
+   "compile": {
+    "cuda": {
+     "s": 23.957,
+     "basis": "modelled",
+     "source": "fit:hessians, extrapolated past L 4"
+    },
+    "hip": {
+     "s": 38.341,
+     "basis": "modelled",
+     "source": "fit:hessians, extrapolated past L 4"
+    }
+   },
+   "gpu": {
+    "cuda": {
+     "s": 23.957,
+     "basis": "modelled",
+     "source": "compile"
+    },
+    "hip": {
+     "s": 38.341,
+     "basis": "modelled",
+     "source": "compile"
+    }
+   }
+  },
+  {
+   "engine": "mmd",
+   "quantity": "kx1",
+   "deriv": 1,
+   "L": 11,
+   "family": "hessians",
+   "compile": {
+    "cuda": {
+     "s": 32.206,
+     "basis": "modelled",
+     "source": "fit:hessians, extrapolated past L 4"
+    },
+    "hip": {
+     "s": 51.171,
+     "basis": "modelled",
+     "source": "fit:hessians, extrapolated past L 4"
+    }
+   },
+   "gpu": {
+    "cuda": {
+     "s": 32.206,
+     "basis": "modelled",
+     "source": "compile"
+    },
+    "hip": {
+     "s": 51.171,
+     "basis": "modelled",
+     "source": "compile"
+    }
+   }
+  },
+  {
+   "engine": "mmd",
+   "quantity": "kx1",
+   "deriv": 1,
    "L": 12,
    "family": "hessians",
    "compile": {
@@ -9467,6 +9560,99 @@
     },
     "hip": {
      "s": 21.525,
+     "basis": "modelled",
+     "source": "compile"
+    }
+   }
+  },
+  {
+   "engine": "mmd",
+   "quantity": "kxc",
+   "deriv": 1,
+   "L": 9,
+   "family": "hessians",
+   "compile": {
+    "cuda": {
+     "s": 17.822,
+     "basis": "modelled",
+     "source": "fit:hessians, extrapolated past L 4"
+    },
+    "hip": {
+     "s": 28.728,
+     "basis": "modelled",
+     "source": "fit:hessians, extrapolated past L 4"
+    }
+   },
+   "gpu": {
+    "cuda": {
+     "s": 17.822,
+     "basis": "modelled",
+     "source": "compile"
+    },
+    "hip": {
+     "s": 28.728,
+     "basis": "modelled",
+     "source": "compile"
+    }
+   }
+  },
+  {
+   "engine": "mmd",
+   "quantity": "kxc",
+   "deriv": 1,
+   "L": 10,
+   "family": "hessians",
+   "compile": {
+    "cuda": {
+     "s": 23.957,
+     "basis": "modelled",
+     "source": "fit:hessians, extrapolated past L 4"
+    },
+    "hip": {
+     "s": 38.341,
+     "basis": "modelled",
+     "source": "fit:hessians, extrapolated past L 4"
+    }
+   },
+   "gpu": {
+    "cuda": {
+     "s": 23.957,
+     "basis": "modelled",
+     "source": "compile"
+    },
+    "hip": {
+     "s": 38.341,
+     "basis": "modelled",
+     "source": "compile"
+    }
+   }
+  },
+  {
+   "engine": "mmd",
+   "quantity": "kxc",
+   "deriv": 1,
+   "L": 11,
+   "family": "hessians",
+   "compile": {
+    "cuda": {
+     "s": 32.206,
+     "basis": "modelled",
+     "source": "fit:hessians, extrapolated past L 4"
+    },
+    "hip": {
+     "s": 51.171,
+     "basis": "modelled",
+     "source": "fit:hessians, extrapolated past L 4"
+    }
+   },
+   "gpu": {
+    "cuda": {
+     "s": 32.206,
+     "basis": "modelled",
+     "source": "compile"
+    },
+    "hip": {
+     "s": 51.171,
      "basis": "modelled",
      "source": "compile"
     }

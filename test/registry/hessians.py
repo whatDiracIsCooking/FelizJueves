@@ -31,10 +31,12 @@ CASES = [
             cards=dict.fromkeys(BOTH, range(13))),
     # kx1 / kxc (#689), the exchange derivative matrix at d1: interpreted
     # through (dd|dd) and at three f classes, compiled at the goldens and
-    # (ff|ff); no device test, not run on either card.
+    # (ff|ff), every class through (ff|ff) and the H2O molecules on the RX
+    # 9060 XT against the host and PySCF; not run on the RTX 3080.
     *(case for q in ("kx1", "kxc") for case in ladder(
-        "mmd", q, 1, compile=(0, 1, 2, 3, 4, 12),
-        interpreted=(*range(9), 12))),
+        "mmd", q, 1, compile=(0, 1, 2, 3, 4, 12), gpu=range(13),
+        interpreted=(*range(9), 12),
+        cards={"rx9060xt": range(13)})),
     # jx (#688), the ip1 bra half of the Coulomb derivative matrix (a d1
     # key the Hessian's CPHF right-hand side reads): interpreted through
     # (ff), compiled by nvcc and hipcc through (ff), its device test
@@ -69,6 +71,13 @@ _HJAB_CHAIN = {name: span("mmd", "jab", 2, Ls) + span("mmd", "dq", 2, Ls)
 # hkx's whole-molecule cells (#691): every K class of the basis.
 _HKX = {name: span("mmd", "k", 2, range(top + 1))
         for name, top in (("h2o_sto3g", 4), ("h2o_ccpvdz", 8))}
+
+# kx1 / kxc's whole-molecule cells (#689): every K class of the basis, both
+# forms (STO-3G is s, p; its d case and cc-pVDZ reach d).
+_KX = {name: span("mmd", "kx1", 1, range(top + 1))
+       + span("mmd", "kxc", 1, range(top + 1))
+       for name, top in (("h2o_sto3g", 4), ("h2o_sto3g_d", 8),
+                         ("h2o_ccpvdz", 8))}
 
 # The d1 derivative matrices (#687, kernel_ip1e): a variant of the d1 S, T,
 # V cases (gradients.py's), as a lever is; the rinv form at each nucleus
@@ -129,4 +138,7 @@ TESTS = {
     "test/test_hkx_device.py::test_X_hkx_rolled_is_the_unrolled":
         Classes("mmd", "k", 2),
     "test/test_hkx_device.py::test_X_hkx_molecule_matches_pyscf": ById(_HKX),
+    "test/test_kx_device.py::test_X_kx_class_matches_the_host":
+        Classes("mmd", "kx1", 1),
+    "test/test_kx_device.py::test_X_kx_molecule_matches_pyscf": ById(_KX),
 }

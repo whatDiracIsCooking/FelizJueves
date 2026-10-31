@@ -191,7 +191,9 @@ per card. With six xdist workers on the RTX 3080 `hkx_33_32` /
 workers. No response term, no whole RHF Hessian, no clock measured, no
 screen.
 **The exchange derivative matrix `K^X` at d1, interpreted through (dd|dd)
-and at f, compiled through (ff|ff), on no card** (#689; `hessian.md`, "The
+and at f, compiled through (ff|ff), every class through (ff|ff) and the
+three H₂O witnesses run on the RX 9060 XT; not run on the RTX 3080**
+(#689; `hessian.md`, "The
 exchange derivative matrix"): the exchange part of the CPHF right-hand
 side's `F^x`, `K^X_ab = SUM_cd D_cd d(ac|bd)/dR_X` as an AO matrix. Two
 d1-only targets (`spec.D1_ONLY_TARGETS`), `Target.KX1` (ip1, the
@@ -217,8 +219,21 @@ in `KERNEL_GEN_CMD`; 14 goldens plus 498 digests a backend
 arches is in `data/measured/kx.json` (`devtools/measure.sh kx-compile`,
 compiler only): all admissible under the declared 14,000 B / 30 s, worst
 `kx1_33_33` at 9,824 B (`sm_86`) and 10,192 B (`gfx1200`), slowest
-compile 5.6 s. No device test or driver: nothing has
-launched on either card. `J^X` (#688) and `h^x` (#687) are not built.
+compile 5.6 s. On a card (`test_kx_device.py`, driver
+`hess_driver.kx_launches`, one OUT `X[3, n_ao, n_ao]`): every class
+through (ff|ff) in both forms (512 programs) on test_hkx_device.py's
+three-atom `TRI_SPDF`, one bra pair against two ket pairs, held to the
+host within `DEV_TOL = 1e-14` of the absolute twin (`slow` above L + 1 =
+4, `high_l` from L = 8); and H₂O over STO-3G, its d case and cc-pVDZ,
+every class of the basis: `K1` to the fixture's `vk1`, `K^X` per atom
+(`kxc_` launched once per atom) to `make_h1`'s exchange part, both within
+`1e-12` of `max|PySCF|`, and `SUM_X K^X = 0`. Ran on the **RX 9060 XT
+only** (2026-10-31: 512/512 classes, witnesses at most 2.0e-16 of the twin,
+runs bit-identical; `K1` within 7.5e-15 and `K^X` within 5.9e-14 of
+`max|PySCF|` at cc-pVDZ, `SUM_X K^X` 7.3e-15 of `max|K1|`); the RTX 3080 was lost to this container
+(NVML "Unknown Error"), so its launch of every class is still owed:
+`pytest -m "cuda and gpu" test/test_kx_device.py -n 2`. `J^X` (#688)
+and `h^x` (#687) are host- and compile-side only (their own entries).
 **The DF metric's Hessian too, through (i|i), interpreted, nvcc- and
 hipcc-compiled, and run on both cards against the host (#694)**
 (`hessian.md`, "The DF metric Hessian"): `Target.METRIC` joins
