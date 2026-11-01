@@ -10,7 +10,6 @@ section of it is **reconstructed** rather than cited: §3, the HGP recurrence
 The text read is the arXiv preprint, arXiv:2407.21445v1, whose section,
 equation and figure numbers are the ones milestone 12 cites; `coverage.json`
 records the provenance. The journal version was not available to the reading.
-No PDF is tracked.
 
 | File | What it holds |
 |---|---|

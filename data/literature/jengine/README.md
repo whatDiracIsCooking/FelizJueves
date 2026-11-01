@@ -2,8 +2,7 @@
 
 `[JEngine]` is entry 35 of `docs/references.md`. Every table here was
 transcribed from the ChemRxiv v2 preprint (doi:10.26434/chemrxiv-2025-2lntb-v2),
-PDF page 12 / printed page 11. Each JSON file records its own provenance. The
-PDF is not tracked.
+PDF page 12 / printed page 11. Each JSON file records its own provenance.
 
 | File | Table | Quantity |
 |---|---|---|
