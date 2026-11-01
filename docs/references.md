@@ -1,6 +1,7 @@
 # References
 
-Cite by number. Every entry resolves by DOI; no PDFs are tracked here.
+Cite by number, or by the short key an entry defines (`[Fock]`, `[JEngine]`,
+…). Every entry resolves by DOI.
 
 1. P. M. W. Gill, M. Head-Gordon, and J. A. Pople, "An efficient algorithm for
    the generation of two-electron repulsion integrals over Gaussian basis
@@ -223,3 +224,48 @@ Cite by number. Every entry resolves by DOI; no PDFs are tracked here.
     `POLY_LARGEX_WW` (the large-`T` rule), read at commit `4909749` of
     github.com/sunqm/libcint. Also arXiv:1412.0649 (openly readable),
     which prints none of the recurrences and cites entry 49 for them.
+52. S. F. Boys, "Electronic wave functions. I. A general method of calculation
+    for the stationary states of any molecular system," Proceedings of the
+    Royal Society of London A **200**, 542–554 (1950).
+    doi:10.1098/rspa.1950.0036 — `[Boys]`. Introduces Gaussian basis
+    functions and the function `F_m(T)` this repo calls the Boys function
+    (`fj_boys<M>`, the device Boys).
+53. Q. Sun, T. C. Berkelbach, N. S. Blunt, G. H. Booth, S. Guo, Z. Li, J. Liu,
+    J. D. McClain, E. R. Sayfutyarova, S. Sharma, S. Wouters, and
+    G. K.-L. Chan, "PySCF: the Python-based simulations of chemistry
+    framework," WIREs Computational Molecular Science **8**, e1340 (2018).
+    doi:10.1002/wcms.1340 — `[PySCF]`. The oracle: `test/oracle/generate.py`
+    writes the tracked fixtures through it (over `[Libcint]`), and the
+    `oracle` marker re-checks them against it.
+54. Q. Sun et al. (49 authors), "Recent developments in the PySCF program
+    package," The Journal of Chemical Physics **153**, 024109 (2020).
+    doi:10.1063/5.0006074 — the second citation PySCF asks for.
+55. B. P. Pritchard, D. Altarawy, B. Didier, T. D. Gibson, and T. L. Windus,
+    "New Basis Set Exchange: An open, up-to-date resource for the molecular
+    sciences community," Journal of Chemical Information and Modeling **59**,
+    4814–4820 (2019). doi:10.1021/acs.jcim.9b00725 — `[BSE]`. The source and
+    JSON format of every set in `data/basis/` and `data/aux_basis/` but MINAO
+    (#650); each file carries its own BSE reference keys, which entries 56–59
+    give for the elements the fixtures use (H and O).
+56. W. J. Hehre, R. F. Stewart, and J. A. Pople, "Self-consistent
+    molecular-orbital methods. I. Use of Gaussian expansions of Slater-type
+    atomic orbitals," The Journal of Chemical Physics **51**, 2657–2664
+    (1969). doi:10.1063/1.1672392 — STO-3G (BSE key `hehre1969a`).
+57. R. Ditchfield, W. J. Hehre, and J. A. Pople, "Self-consistent
+    molecular-orbital methods. IX. An extended Gaussian-type basis for
+    molecular-orbital studies of organic molecules," The Journal of Chemical
+    Physics **54**, 724–728 (1971). doi:10.1063/1.1674902 — 6-31G for H
+    (BSE key `ditchfield1971a`).
+58. W. J. Hehre, R. Ditchfield, and J. A. Pople, "Self-consistent molecular
+    orbital methods. XII. Further extensions of Gaussian-type basis sets for
+    use in molecular orbital studies of organic molecules," The Journal of
+    Chemical Physics **56**, 2257–2261 (1972). doi:10.1063/1.1677527 — 6-31G
+    for O (BSE key `hehre1972a`).
+59. T. H. Dunning, Jr., "Gaussian basis sets for use in correlated molecular
+    calculations. I. The atoms boron through neon and hydrogen," The Journal
+    of Chemical Physics **90**, 1007–1023 (1989). doi:10.1063/1.456153 —
+    cc-pVDZ and cc-pVTZ (BSE key `dunning1989a`).
+60. F. Weigend, "Hartree–Fock exchange fitting basis sets for H to Rn,"
+    Journal of Computational Chemistry **29**, 167–175 (2008).
+    doi:10.1002/jcc.20702 — def2-universal-JKFIT, the auxiliary basis of the
+    numerical golden store's DF metric case (`test/oracle/numeric.py`).

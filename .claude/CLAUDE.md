@@ -20,7 +20,7 @@ disagree about more than their flags; that disagreement is this project's main
 portability risk, and `.devcontainer/combined/` exists to put both in one shell.
 
 `docs/references.md` is the citation of record: a flat numbered list, every
-entry resolving by **DOI** and no PDF tracked anywhere in the repo. Cite by
+entry resolving by **DOI**. Cite by
 number, or by the short key where one is defined — `[Fock]` is entry 23 and
 `[JEngine]` is entry 35. A version inside a key, as in `[JEngine, v2, eq. 14]`,
 means the ChemRxiv v2 preprint's equation numbering and not the journal
