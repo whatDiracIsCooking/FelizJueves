@@ -45,8 +45,9 @@ class's sign `sigma = (-1)^{lP}`:
     hXC_kl -= sigma w SUM_q SUM_t H^{X_k}_q,t   u_{t + 1_l},q  X in A, B
     hCC_kl += sigma w SUM_q SUM_t H^{0}_q,t     u_{t + 1_k + 1_l},q
 
-45 accumulators per cell (`AA`, `BB`, `CC` with `k <= l`; `AB`, `AC`,
-`BC` all nine), and once per cell 81 `AtomicAdd`s: each value into
+45 accumulators per lane (`AA`, `BB`, `CC` with `k <= l`; `AB`, `AC`,
+`BC` all nine), summed over the cell's warp (45 `WarpReduce`s), and once
+per cell lane 0's 81 `AtomicAdd`s: each value into
 `H[X, k, Y, l]` and its mirror `H[Y, l, X, k]` (once on the diagonal of a
 same-centre block). `H` is ZEROED BY THE CALLER. No centre is inferred from
 the others, so `SUM_A H[A, k, B, l] = 0` is a check.
@@ -55,10 +56,21 @@ THE TOWER is the plan of the `Target.J` quartet `(la + 2, lb | lP, 0)` at
 `L + 2` (`d2eri3_plan`), its targets no `u` reads dropped by
 `kernel_gmetric.live_body`.
 
-THE THREAD MAPPING, the weights and the parameter block are
-`kernel_geri3`'s, `G[n_atom, 3]` replaced by `H[n_atom, 3, n_atom, 3]`:
-one thread per cell, the bra records outer, the aux records inner. A cell
-staged SWAPPED needs no flag (`kernel_geri3`'s reason). The arrays are
+THE THREAD MAPPING (#632) is ONE WARP PER CELL, blockDim `(1, lanes)`
+(`launch_shape`, `kernel_k`'s and `hkx_`'s), `cell = BLOCK_X`, the lanes
+on `THREAD_Y`. Until #632 it was `kernel_geri3`'s one thread per cell,
+and a water cc-pVTZ / cc-pVTZ-acCD-6-6 build took 40.4 s of `d2eri3` on
+the RTX 3080, its heavy classes a handful of cells each with millions of
+serial flops a thread; one warp a cell took it to about 3 s. In the
+unrolled form the lanes stride over the cell's bra records (the aux
+records inner, as before); in the low-stack form over the cell's ITEMS,
+(bra record, aux record, aux row q, bra row a) with `a` fastest, each
+item forming its own bra tables, tower and `U` (the lanes on one record
+pair form the same ones in step, so the repeat costs no latency) and
+adding its rows' terms. Either way each lane holds the 45 sums and the
+warp reduces them once per cell. The weights and the parameter block
+are `kernel_geri3`'s, `G[n_atom, 3]` replaced by `H[n_atom, 3, n_atom,
+3]`. A cell staged SWAPPED needs no flag (`kernel_geri3`'s reason). The arrays are
 `Eri3Class.arrays()`' (`s` as `s_aux`) plus `gradient.host_df.eri3_records`'
 exponents and atoms, unchanged from d1.
 
@@ -78,18 +90,19 @@ weighted density and no weight, and is `kernel_geri3`'s low-stack form
 with the low-stack `d2v`'s operated factors (`kernel_h1e.operated_value`,
 `contractions`, `rolled`):
 
-    per cell:    45 accumulators q = 0;  R[n_t(L + 2)], U[n_t(la + lb + 2)],
+    per lane:    45 accumulators q = 0;  R[n_t(L + 2)], U[n_t(la + lb + 2)],
                  F{op}[3 (la + lb + 3)] for op in "" A B AA AB BB   local
-    per bra:     Ex Ey Ez = e_fragment.axis_tables_fragment(la + 2, lb + 2)
-    per aux:     the tower, each read [r]^(0) stored into R as it forms;
+    per item (bra record, aux record, aux row q, bra row a), strided:
+                 Ex Ey Ez = e_fragment.axis_tables_fragment(la + 2, lb + 2)
+                 the tower, each read [r]^(0) stored into R as it forms;
                  Cx Cy Cz = e_fragment.center_tables_fragment(lP)
-                 for each aux row q:  U[t] = SUM_tau R[t + tau] E^q_tau
-                     for each bra row (a, b):  wr = w wt, wt from M
-                         F{op}[d, t] = (op E)^{a_d b_d}_t, by loops
-                         q += wr SUM_t PROD_d F{o_d}[d, t_d] U[t + up]
-                              for the 28 operator triples and their shifts
-    per cell:    hXY = s qXY, hXC = -s qX, hCC = s qC (s = (-1)^{lP}),
-                 then the same 81 atomics
+                 U[t] = SUM_tau R[t + tau] E^q_tau
+                 for each b of the row (a, b):  wr = w wt, wt from M
+                     F{op}[d, t] = (op E)^{a_d b_d}_t, by loops
+                     q += wr SUM_t PROD_d F{o_d}[d, t_d] U[t + up]
+                          for the 28 operator triples and their shifts
+    per cell:    the q summed over the warp; hXY = s qXY, hXC = -s qX,
+                 hCC = s qC (s = (-1)^{lP}), then lane 0's 81 atomics
 
 The sums are regrouped by element, so the two forms agree to rounding. The
 floor is measured (data/measured/d2_df_lowstack.json, `devtools/measure.sh
@@ -112,7 +125,6 @@ from felizjueves.gradient.kernel_geri3 import cell_weights
 from felizjueves.gradient.kernel_gmetric import (
     center_binds,
     center_cols,
-    launch_shape,
     reads,
     tower,
 )
@@ -148,6 +160,7 @@ from felizjueves.ir import (
     Scalar,
     Stmt,
     Var,
+    WarpReduce,
 )
 from felizjueves.mmd import e_fragment as ef
 from felizjueves.mmd.recurrence import (
@@ -173,7 +186,7 @@ __all__ = [
     "launch_shape",
 ]
 
-CELL = "cell"  # one thread per (AO shell pair, aux shell)
+CELL = "cell"  # one warp per (AO shell pair, aux shell)
 BRA = "ib"  # the bra record, serial
 KET = "ik"  # the aux record, serial inside the bra
 
@@ -419,21 +432,33 @@ def build_d2eri3_kernel(cls: Spec | tuple[int, int, int], *,
         Decl("ap", Scalar.I32, init=Index("atom_p", (cell,))),
         *cell_weights(la, lb, lP),
         *(Decl(_h(*c), Scalar.F64, init=Lit(0.0)) for c in ACCUMULATORS),
-        Note("the bra records of the cell's shell pair, serially"),
-        For(BRA, Var("b0"), Var("b1"), Lit(1), bra_body),
-        *scatter,
+        Note("the bra records of the cell's shell pair, strided over the "
+             "warp's lanes (#632)"),
+        For(BRA, _c(Fn.ADD, Var("b0"), Call(Fn.THREAD_Y)), Var("b1"),
+            Call(Fn.BLOCK_DIM_Y), bra_body),
+        *_reduced([_h(*c) for c in ACCUMULATORS]),
+        If(_c(Fn.LT, Call(Fn.THREAD_Y), Lit(1)), tuple(scatter)),
     )
     body: tuple[Stmt, ...] = (
         Note(f"Hessian of the three-center DF integral, class (la, lb, lP) "
              f"= ({la}, {lb}, {lP}): H[X, k, Y, l] += SUM_mnP M_mnP "
              "d2(mn|P)/dR_{X,k} dR_{Y,l} (felizjueves.hessian)"),
         Note(ZEROED_H),
-        Note("launch: one thread per (AO shell pair, aux shell) cell"),
+        Note(LAUNCH_NOTE),
         Decl(CELL, Scalar.I32, init=_c(Fn.ADD, Call(Fn.THREAD_X), _mul(
             Call(Fn.BLOCK_X), Call(Fn.BLOCK_DIM_X)))),
         If(_c(Fn.LT, cell, Var("n_cell")), per_cell),
     )
     return Kernel(name or d2eri3_name((la, lb, lP)), _params(), body)
+
+
+def launch_shape(n_cell: int, lanes: int) -> tuple[int, tuple[int, int]]:
+    """`(n_cell, (1, lanes))`: one warp of `lanes` per cell (#632), the
+    shape of `kernel_hkx`'s one warp per bra record."""
+    for name, v in (("n_cell", n_cell), ("lanes", lanes)):
+        if type(v) is not int or v < 1:
+            raise ValueError(f"{name} = {v!r} is not a positive int")
+    return n_cell, (1, lanes)
 
 
 def _params() -> tuple[Param, ...]:
@@ -589,9 +614,10 @@ def _build_lowstack(am: tuple[int, int, int], name: str | None) -> Kernel:
         return (
             Decl("rq", Scalar.I32, init=ef.cartesian_index("q")),
             Note("U[t] = SUM_tau [t+tau]^(0) E^q_tau over the live tau of "
-                 "this aux row, for every |t| <= la + lb + 2: once per (t, q)"),
+                 "this aux row, for every |t| <= la + lb + 2"),
             ef.hermite_loops(Lab + 2, u_of, tag="h"),
-            ef.cartesian_loops(la, ("ax", "ay", "az"), row, tag="a"),
+            *_cartesian_of("a", la, Var(ITEM_A), ("ax", "ay", "az")),
+            *row((Var("ax"), Var("ay"), Var("az"))),
         )
 
     aux_binds: dict[str, Expr] = {n: Var(n) for n in AUX_TABLES}
@@ -615,7 +641,8 @@ def _build_lowstack(am: tuple[int, int, int], name: str | None) -> Kernel:
           for n in AUX_TABLES),
         Inline(fP, aux_binds),
         Decl("w", Scalar.F64, init=_mul(Var("sb"), Index(S_AUX, (ik,)))),
-        ef.cartesian_loops(lP, ("qx", "qy", "qz"), per_q, tag="q"),
+        *_cartesian_of("q", lP, Var(ITEM_Q), ("qx", "qy", "qz")),
+        *per_q((Var("qx"), Var("qy"), Var("qz"))),
     )
     bra_binds: dict[str, Expr] = {ef.ZETA: Var("ze"),
                                   **{n: Var(n) for n in ef.AXIS_ARRAYS}}
@@ -637,8 +664,6 @@ def _build_lowstack(am: tuple[int, int, int], name: str | None) -> Kernel:
         *(Decl(n, Scalar.F64, (Lit(ef.axis_table_extent(la + 2, lb + 2)),))
           for n in ef.AXIS_ARRAYS),
         Inline(fB, bra_binds),
-        Note("the aux records of the cell"),
-        For(KET, Var("p0"), Var("p1"), Lit(1), ket_body),
     )
     atom = {"A": Var("aa"), "B": Var("ab"), "C": Var("ap")}
 
@@ -685,19 +710,100 @@ def _build_lowstack(am: tuple[int, int, int], name: str | None) -> Kernel:
         *(Decl(n, Scalar.F64, (Lit(len(hermite_targets(x))),))
           for n, x in ((R_ARRAY, L2), (U_ARRAY, Lab + 2))),
         *(Decl(f_array(op), Scalar.F64, (Lit(3 * width),)) for op in OPS),
-        Note("the bra records of the cell's shell pair, serially"),
-        For(BRA, Var("b0"), Var("b1"), Lit(1), bra_body),
+        Note(ITEM_NOTE),
+        *_items(len(ef.cartesians(lP)), len(ef.cartesians(la)),
+                (*bra_body, *ket_body)),
+        *_reduced([q for _, ups in contracted for _, q in ups]),
         *signed,
-        *scatter,
+        If(_c(Fn.LT, Call(Fn.THREAD_Y), Lit(1)), tuple(scatter)),
     )
     body: tuple[Stmt, ...] = (
         Note(f"Hessian of the three-center DF integral, class (la, lb, lP) "
              f"= ({la}, {lb}, {lP}), LOW-STACK (#694): H[X, k, Y, l] += "
              "SUM_mnP M_mnP d2(mn|P)/dR_{X,k} dR_{Y,l} (felizjueves.hessian)"),
         Note(ZEROED_H),
-        Note("launch: one thread per (AO shell pair, aux shell) cell"),
+        Note(LAUNCH_NOTE),
         Decl(CELL, Scalar.I32, init=_c(Fn.ADD, Call(Fn.THREAD_X), _mul(
             Call(Fn.BLOCK_X), Call(Fn.BLOCK_DIM_X)))),
         If(_c(Fn.LT, cell, Var("n_cell")), per_cell),
     )
     return Kernel(name or d2eri3_name(am), _params(), body)
+
+
+# ---------------------------------------------------------------------------
+# The thread mapping (#632): one warp per cell
+# ---------------------------------------------------------------------------
+
+LANES = "lanes"  # a lane's place in its cell's warp is THREAD_Y
+ITEM = "it"  # the item a lane is on, strided by the warp's width
+ITEM_Q = "it_q"  # the item's aux row, cartesians(lP) order
+ITEM_A = "it_a"  # the item's bra row a, cartesians(la) order
+
+LAUNCH_NOTE = ("launch: blockDim = (1, warp width), one warp per (AO shell "
+               "pair, aux shell) cell; the lanes stride over the cell's "
+               "items (#632)")
+ITEM_NOTE = (
+    "#632: the cell's items, (bra record, aux record, aux row q, bra row a) "
+    "with a fastest, strided over the warp's lanes; each item forms its own "
+    "bra tables, tower and U (the lanes on one record pair form the same ones "
+    "in step) and adds its rows' terms into the lane's accumulators, which "
+    "are summed over the warp once per cell")
+
+
+def _cartesian_of(tag: str, l: int, i: Expr,  # noqa: E741
+                  names: tuple[str, str, str]) -> tuple[Stmt, ...]:
+    """The row at `i` in `cartesians(l)` (`e_fragment.cartesian_loops`'
+    order, without the loops): `{tag}_u` the number of `k` in `1..l` with
+    `k (k + 1) / 2 <= i`, `{tag}_w = i - u (u + 1) / 2`, and the three
+    components `l - u`, `u - w`, `w` as the I32 locals `names`."""
+    u, w = Var(f"{tag}_u"), Var(f"{tag}_w")
+    count: Expr = Lit(0)
+    for k in range(1, l + 1):
+        count = _iadd(count, _c(Fn.LT, Lit(k * (k + 1) // 2 - 1), i))
+    cx, cy, cz = names
+    return (
+        Decl(u.name, Scalar.I32, init=count),
+        Decl(w.name, Scalar.I32, init=_c(Fn.SUB, i, _c(
+            Fn.DIV, _mul(u, _iadd(u, Lit(1))), Lit(2)))),
+        Decl(cx, Scalar.I32, init=_c(Fn.SUB, Lit(l), u)),
+        Decl(cy, Scalar.I32, init=_c(Fn.SUB, u, w)),
+        Decl(cz, Scalar.I32, init=w),
+    )
+
+
+def _items(n_q: int, n_a: int, body: tuple[Stmt, ...]) -> tuple[Stmt, ...]:
+    """The cell's `n_bra n_aux n_q n_a` items, `a` fastest, strided over the
+    warp's lanes (`THREAD_Y`, stride `BLOCK_DIM_Y`): each declares its bra
+    record `ib`, aux record `ik`, aux row `it_q` and bra row `it_a`, then
+    runs `body`. The bounds are warp-uniform; the lanes past the last item
+    idle to the reduction."""
+    it = Var(ITEM)
+
+    def mod(x: Expr, n: Expr, quo: str) -> Expr:
+        return _c(Fn.SUB, x, _mul(Var(quo), n))
+
+    n_b = _c(Fn.SUB, Var("b1"), Var("b0"))
+    n_p = _c(Fn.SUB, Var("p1"), Var("p0"))
+    decode: tuple[Stmt, ...] = (
+        Decl("it_r", Scalar.I32, init=_c(Fn.DIV, it, Lit(n_a))),
+        Decl(ITEM_A, Scalar.I32, init=mod(it, Lit(n_a), "it_r")),
+        Decl("it_s", Scalar.I32, init=_c(Fn.DIV, Var("it_r"), Lit(n_q))),
+        Decl(ITEM_Q, Scalar.I32, init=mod(Var("it_r"), Lit(n_q), "it_s")),
+        Decl("it_b", Scalar.I32, init=_c(Fn.DIV, Var("it_s"), Var("n_p"))),
+        Decl(BRA, Scalar.I32, init=_iadd(Var("b0"), Var("it_b"))),
+        Decl(KET, Scalar.I32, init=_iadd(Var("p0"), mod(
+            Var("it_s"), Var("n_p"), "it_b"))),
+    )
+    return (
+        Decl("n_p", Scalar.I32, init=n_p),
+        Decl("n_it", Scalar.I32, init=_mul(_mul(n_b, Var("n_p")),
+                                           Lit(n_q * n_a))),
+        For(ITEM, Call(Fn.THREAD_Y), Var("n_it"), Call(Fn.BLOCK_DIM_Y),
+            (*decode, *body)),
+    )
+
+
+def _reduced(accumulators: list[str]) -> tuple[Stmt, ...]:
+    """Every lane's accumulators summed over the cell's warp, in place."""
+    return (Note("the lanes' partial sums, summed over the warp"),
+            *(WarpReduce(Var(q), Var(q)) for q in accumulators))

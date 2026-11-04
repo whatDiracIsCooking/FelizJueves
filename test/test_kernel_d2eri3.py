@@ -8,7 +8,8 @@ kernel operates per axis on the AO pair and shifts the Hermite tower for the
 aux centre. Per class, one launch over every staged cell into a zeroed `H`,
 against the host over the same cells; then the whole Hessian of H2O/STO-3G
 against the cc-pVTZ-JKFIT aux basis's s and p shells (`slow`), and
-translational invariance and symmetry, which nothing in the kernel assumes.
+translational invariance and symmetry, which nothing in the kernel assumes;
+and the warp's width, which moves only the rounding (#632).
 
 ROUND-OFF, NOT BITWISE: `|H_kernel - H_host| <= TOL max(twin)`, `TOL =
 16 eps`, `twin` the host's `absolute=True` sum (every factor in `|.|`), as
@@ -42,7 +43,7 @@ from felizjueves.hessian.kernel_d2eri3 import (
     d2eri3_spec,
 )
 from felizjueves.hessian.kernel_h1e import ATOMIC_REASON, ZEROED_H
-from felizjueves.ir import AtomicAdd, Intent, Note, Raw, walk
+from felizjueves.ir import AtomicAdd, Intent, Note, Raw, WarpReduce, walk
 from felizjueves.reference.boys import boys
 from felizjueves.reference.pq import pq
 from felizjueves.spec import Operator, Spec, Target
@@ -96,6 +97,23 @@ def test_the_whole_hessian_of_h2o_against_an_sp_aux_basis() -> None:
     assert np.abs(H.sum(axis=0)).max() <= 1e-12 * np.abs(H).max()
 
 
+@pytest.mark.parametrize("cls", [(0, 1, 1), (1, 1, 1)], ids=_id)
+def test_the_warp_width_moves_only_the_rounding(cls) -> None:
+    """One warp per cell (#632): one lane, four, or more lanes than the
+    cell has items (eight) sum the same terms in another order. The
+    unrolled (sp|p) strides bra records, the low-stack (pp|p) items."""
+    Gam = _gam(BASIS, AUX)
+    cells = _cells(BASIS, AUX, cls)
+    twin = np.array(host_eri3.eri3_hessian(BASIS, AUX, Gam, NUCLEI, pq=pq,
+                                         cells=cells, absolute=True))
+    one, _ = run_d2eri3(BASIS, AUX, NUCLEI, Gam, boys=boys, classes={cls},
+                        lanes=1)
+    for lanes in (4, 8):
+        H, _ = run_d2eri3(BASIS, AUX, NUCLEI, Gam, boys=boys,
+                          classes={cls}, lanes=lanes)
+        _close(H, one, float(twin.max()), f"d2eri3 {cls} {lanes} lanes")
+
+
 def test_h_is_added_to_not_overwritten() -> None:
     Gam = _gam(BASIS, AUX)
     H0 = np.arange(81.0).reshape(3, 3, 3, 3)
@@ -143,6 +161,7 @@ def test_every_write_is_an_atomic_add_into_h() -> None:
     nodes = list(walk(build_d2eri3_kernel((1, 1, 1)).body))
     adds = [s for s in nodes if isinstance(s, AtomicAdd)]
     assert len(adds) == 81 and all(a.dst.array == "H" for a in adds)
+    assert sum(isinstance(s, WarpReduce) for s in nodes) == 45
     notes = {s.prov for s in nodes if isinstance(s, Note)}
     assert ATOMIC_REASON in notes and ZEROED_H in notes
     assert not any(isinstance(s, Raw) for s in nodes)

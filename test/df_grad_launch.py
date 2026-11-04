@@ -52,6 +52,7 @@ from felizjueves.gradient.kernel_hgmetric import build_hgmetric_kernel
 from felizjueves.gradient.kernel_ipmetric import build_ipmetric_kernel
 from felizjueves.gradient.kernel_xeri3 import build_xeri3_kernel
 from felizjueves.hessian.kernel_d2eri3 import build_d2eri3_kernel
+from felizjueves.hessian.kernel_d2eri3 import launch_shape as d2eri3_shape
 from felizjueves.hessian.kernel_d2metric import build_d2metric_kernel
 from felizjueves.ir.interp import Interpreter, Launch
 from felizjueves.spec import Engine
@@ -224,10 +225,11 @@ def run_d2metric(aux, nuclei, W, *, boys, classes: Iterable | None = None,
 
 
 def run_d2eri3(basis, aux, nuclei, Gam, *, boys,
-               classes: Iterable | None = None, threads: int = 7,
+               classes: Iterable | None = None, lanes: int = 4,
                H: np.ndarray | None = None, lowstack: bool | None = None):
     """The d2 `(mn|P)` kernels on `geri3`'s arrays, into `H[n_atom, 3,
-    n_atom, 3]`; `lowstack` is `build_d2eri3_kernel`'s."""
+    n_atom, 3]`, one warp of `lanes` per cell (`kernel_d2eri3.launch_shape`);
+    `lowstack` is `build_d2eri3_kernel`'s."""
     want = None if classes is None else set(classes)
     n = len(nuclei)
     H = np.zeros((n, 3, n, 3)) if H is None else H
@@ -236,9 +238,9 @@ def run_d2eri3(basis, aux, nuclei, Gam, *, boys,
         c = (cls.la, cls.lb, cls.lP)
         if want is not None and c not in want:
             continue
-        grid, block = launch_shape(cls.n_cell, threads)
+        grid, block = d2eri3_shape(cls.n_cell, lanes)
         H = Interpreter(build_d2eri3_kernel(c, lowstack=lowstack),
-                        launch=Launch(grid, block, 1), boys=boys).run(
+                        launch=Launch(grid, block, lanes), boys=boys).run(
             n_cell=cls.n_cell, n_bra_rec=cls.n_bra_rec,
             n_aux_rec=cls.n_aux_rec, n_ao=basis.n_ao, n_aux=aux.n_ao,
             n_atom=n, M=np.asarray(Gam, dtype=float), H=H,

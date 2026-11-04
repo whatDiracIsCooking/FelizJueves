@@ -28,8 +28,8 @@ zero (the kernels' precondition, `kernel_h1e.ZEROED_H`) through every
 launch. The kernels are `hessian.kernel_h1e`'s (and `kernel_hjab` /
 `kernel_hdq`'s, `kernel_kx`'s -- the exchange derivative matrix, its one
 OUT `X[3, n_ao, n_ao]`, one warp per bra record as `hkx_` -- and the DF
-`kernel_d2metric` / `kernel_d2eri3`'s, one thread per aux shell pair or
-cell, on `df_grad_launch`'s arrays), emitted by `emit/cuda.py` /
+`kernel_d2metric` / `kernel_d2eri3`'s, one thread per aux shell pair and
+one warp per cell, on `df_grad_launch`'s arrays), emitted by `emit/cuda.py` /
 `emit/hip.py` unchanged; a unit the tier's generate phase wrote
 (`--hess-l`) is that file.
 
@@ -102,7 +102,7 @@ class HessLaunch:
     arrays: Mapping[str, np.ndarray]
     scalars: Mapping[str, int] = field(default_factory=dict)
     out: str = H  # the one OUT, shared by every launch (`hdq_`'s is `D1`)
-    warp_per_record: bool = False  # `hkx_`: one warp per bra record
+    warp_per_record: bool = False  # `hkx_`, `d2eri3_`: one warp per record
 
     def __post_init__(self) -> None:
         want = {p.name for p in self.kernel.params if p.array} - {self.out}
@@ -172,7 +172,8 @@ def d2eri3_launches(basis, aux, nuclei, Gam, *, lP: int | None = None
                               c.n_cell, arrs, {
             "n_cell": c.n_cell, "n_bra_rec": c.n_bra_rec,
             "n_aux_rec": c.n_aux_rec, "n_ao": basis.n_ao,
-            "n_aux": aux.n_ao, "n_atom": len(nuclei)}))
+            "n_aux": aux.n_ao, "n_atom": len(nuclei)},
+            warp_per_record=True))
     return out
 
 

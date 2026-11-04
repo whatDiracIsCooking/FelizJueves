@@ -185,9 +185,11 @@ def test_the_golden_set_is_exactly_the_ladder() -> None:
             d2eri3_name(c) + ".unrolled" for c in UNROLLED}
 
 
-def test_the_vendors_differ_only_in_the_prologue() -> None:
+def test_the_vendors_differ_only_in_the_prologue_and_the_lane_mask() -> None:
+    # the warp's reduction (#632) spells each vendor's mask type
     c, h = _text((0, 1, 1), "cuda"), _text((0, 1, 1), "hip")
-    assert c.split("\n")[2:] == h.split("\n")[3:]
+    assert c.split("\n")[2:] == h.replace(
+        "0xffffffffull", "0xffffffffu").split("\n")[3:]
     assert h.split("\n")[2] == "#include <hip/hip_runtime.h>"
 
 
