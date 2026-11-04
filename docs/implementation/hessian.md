@@ -862,9 +862,13 @@ sweep, the atoms and the injected `[t|tau]` are
 ### The kernel (`hessian/kernel_d2eri3.py`)
 
 `build_d2eri3_kernel(cls)` builds `d2eri3_{la}{lb}{lP}`. The name is not
-`heri3_`, which is the HGP `(mn|P)`'s. It reuses `kernel_geri3`'s
-mapping, which is one thread per cell, the bra records outer and the aux
-records inner. It also reuses `kernel_geri3`'s parameter block (`H[n_atom,
+`heri3_`, which is the HGP `(mn|P)`'s. Its mapping (#632) is one warp
+per cell, blockDim `(1, lanes)`: the unrolled form's lanes stride over the
+cell's bra records, the low-stack form's over the cell's (bra record, aux
+record, aux row, bra row) items, and the warp sums the 45 accumulators
+before lane 0's 81 atomics. Until #632 it was `kernel_geri3`'s one thread
+per cell, and FreeBreakfast's water cc-pVTZ / cc-pVTZ-acCD-6-6 case spent
+40.4 s in it on the RTX 3080 (about 3 s after). It reuses `kernel_geri3`'s parameter block (`H[n_atom,
 3, n_atom, 3]` in place of `G`) and its weights, through `cell_weights`,
 made public with its text byte-identical. The arrays are the d1 kernel's
 (`test/df_grad_launch.run_d2eri3`).

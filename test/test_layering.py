@@ -4321,7 +4321,7 @@ RULES |= {
            "hessian.kernel_d2eri3": "the kernel is what this module checks"}),
     "d2eri3_builder": _rule(
         "kernel_d2eri3.py: the three-center DF Hessian kernel -- key -> IR, "
-        "`kernel_geri3`'s mapping and weights, `kernel_h1e`'s per-axis "
+        "one warp per cell (#632), `kernel_geri3`'s weights, `kernel_h1e`'s per-axis "
         "operators, `kernel_gmetric`'s tower two orders up",
         ("spec", "=ir", "mmd.e_fragment", "mmd.recurrence", "plan",
          "gradient.kernel_g1e", "gradient.kernel_gmetric",

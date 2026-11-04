@@ -80,7 +80,8 @@ extern "C" __global__ void d2eri3_001(
     // (felizjueves.hessian)
     // PRECONDITION: H is zeroed by the caller before the first hessian launch of a
     // build; this kernel only adds
-    // launch: one thread per (AO shell pair, aux shell) cell
+    // launch: blockDim = (1, warp width), one warp per (AO shell pair, aux shell)
+    // cell; the lanes stride over the cell's items (#632)
     int cell = ((int)threadIdx.x + ((int)blockIdx.x * (int)blockDim.x));
     if (cell < n_cell) {
         int b0 = ab_rec0[cell];
@@ -152,8 +153,9 @@ extern "C" __global__ void d2eri3_001(
         double hCC_11 = 0.0;
         double hCC_12 = 0.0;
         double hCC_22 = 0.0;
-        // the bra records of the cell's shell pair, serially
-        for (int ib = b0; ib < b1; ib += 1) {
+        // the bra records of the cell's shell pair, strided over the warp's lanes
+        // (#632)
+        for (int ib = (b0 + (int)threadIdx.y); ib < b1; ib += (int)blockDim.y) {
             double zeta = zeta_ab[ib];
             // hiz = 1/(2 zeta), not `half_inv_zeta`: the aux fragment binds that name
             double hiz = (0.5 / zeta);
@@ -830,88 +832,406 @@ extern "C" __global__ void d2eri3_001(
                 hCC_22 = (hCC_22 - (w * (((H_n_n_n_q0_0 * u9_0) + (H_n_n_n_q1_0 * u9_1)) + (H_n_n_n_q2_0 * u9_2))));
             }
         }
-        // AtomicAdd: every record of every pair on an atom adds into that atom's
-        // blocks of H
-        atomicAdd(&H[(((aa * 3 + 0) * n_atom + aa) * 3 + 0)], hAA_00);
-        atomicAdd(&H[(((aa * 3 + 0) * n_atom + aa) * 3 + 1)], hAA_01);
-        atomicAdd(&H[(((aa * 3 + 1) * n_atom + aa) * 3 + 0)], hAA_01);
-        atomicAdd(&H[(((aa * 3 + 0) * n_atom + aa) * 3 + 2)], hAA_02);
-        atomicAdd(&H[(((aa * 3 + 2) * n_atom + aa) * 3 + 0)], hAA_02);
-        atomicAdd(&H[(((aa * 3 + 1) * n_atom + aa) * 3 + 1)], hAA_11);
-        atomicAdd(&H[(((aa * 3 + 1) * n_atom + aa) * 3 + 2)], hAA_12);
-        atomicAdd(&H[(((aa * 3 + 2) * n_atom + aa) * 3 + 1)], hAA_12);
-        atomicAdd(&H[(((aa * 3 + 2) * n_atom + aa) * 3 + 2)], hAA_22);
-        atomicAdd(&H[(((ab * 3 + 0) * n_atom + ab) * 3 + 0)], hBB_00);
-        atomicAdd(&H[(((ab * 3 + 0) * n_atom + ab) * 3 + 1)], hBB_01);
-        atomicAdd(&H[(((ab * 3 + 1) * n_atom + ab) * 3 + 0)], hBB_01);
-        atomicAdd(&H[(((ab * 3 + 0) * n_atom + ab) * 3 + 2)], hBB_02);
-        atomicAdd(&H[(((ab * 3 + 2) * n_atom + ab) * 3 + 0)], hBB_02);
-        atomicAdd(&H[(((ab * 3 + 1) * n_atom + ab) * 3 + 1)], hBB_11);
-        atomicAdd(&H[(((ab * 3 + 1) * n_atom + ab) * 3 + 2)], hBB_12);
-        atomicAdd(&H[(((ab * 3 + 2) * n_atom + ab) * 3 + 1)], hBB_12);
-        atomicAdd(&H[(((ab * 3 + 2) * n_atom + ab) * 3 + 2)], hBB_22);
-        atomicAdd(&H[(((aa * 3 + 0) * n_atom + ab) * 3 + 0)], hAB_00);
-        atomicAdd(&H[(((ab * 3 + 0) * n_atom + aa) * 3 + 0)], hAB_00);
-        atomicAdd(&H[(((aa * 3 + 0) * n_atom + ab) * 3 + 1)], hAB_01);
-        atomicAdd(&H[(((ab * 3 + 1) * n_atom + aa) * 3 + 0)], hAB_01);
-        atomicAdd(&H[(((aa * 3 + 0) * n_atom + ab) * 3 + 2)], hAB_02);
-        atomicAdd(&H[(((ab * 3 + 2) * n_atom + aa) * 3 + 0)], hAB_02);
-        atomicAdd(&H[(((aa * 3 + 1) * n_atom + ab) * 3 + 0)], hAB_10);
-        atomicAdd(&H[(((ab * 3 + 0) * n_atom + aa) * 3 + 1)], hAB_10);
-        atomicAdd(&H[(((aa * 3 + 1) * n_atom + ab) * 3 + 1)], hAB_11);
-        atomicAdd(&H[(((ab * 3 + 1) * n_atom + aa) * 3 + 1)], hAB_11);
-        atomicAdd(&H[(((aa * 3 + 1) * n_atom + ab) * 3 + 2)], hAB_12);
-        atomicAdd(&H[(((ab * 3 + 2) * n_atom + aa) * 3 + 1)], hAB_12);
-        atomicAdd(&H[(((aa * 3 + 2) * n_atom + ab) * 3 + 0)], hAB_20);
-        atomicAdd(&H[(((ab * 3 + 0) * n_atom + aa) * 3 + 2)], hAB_20);
-        atomicAdd(&H[(((aa * 3 + 2) * n_atom + ab) * 3 + 1)], hAB_21);
-        atomicAdd(&H[(((ab * 3 + 1) * n_atom + aa) * 3 + 2)], hAB_21);
-        atomicAdd(&H[(((aa * 3 + 2) * n_atom + ab) * 3 + 2)], hAB_22);
-        atomicAdd(&H[(((ab * 3 + 2) * n_atom + aa) * 3 + 2)], hAB_22);
-        atomicAdd(&H[(((aa * 3 + 0) * n_atom + ap) * 3 + 0)], hAC_00);
-        atomicAdd(&H[(((ap * 3 + 0) * n_atom + aa) * 3 + 0)], hAC_00);
-        atomicAdd(&H[(((aa * 3 + 0) * n_atom + ap) * 3 + 1)], hAC_01);
-        atomicAdd(&H[(((ap * 3 + 1) * n_atom + aa) * 3 + 0)], hAC_01);
-        atomicAdd(&H[(((aa * 3 + 0) * n_atom + ap) * 3 + 2)], hAC_02);
-        atomicAdd(&H[(((ap * 3 + 2) * n_atom + aa) * 3 + 0)], hAC_02);
-        atomicAdd(&H[(((aa * 3 + 1) * n_atom + ap) * 3 + 0)], hAC_10);
-        atomicAdd(&H[(((ap * 3 + 0) * n_atom + aa) * 3 + 1)], hAC_10);
-        atomicAdd(&H[(((aa * 3 + 1) * n_atom + ap) * 3 + 1)], hAC_11);
-        atomicAdd(&H[(((ap * 3 + 1) * n_atom + aa) * 3 + 1)], hAC_11);
-        atomicAdd(&H[(((aa * 3 + 1) * n_atom + ap) * 3 + 2)], hAC_12);
-        atomicAdd(&H[(((ap * 3 + 2) * n_atom + aa) * 3 + 1)], hAC_12);
-        atomicAdd(&H[(((aa * 3 + 2) * n_atom + ap) * 3 + 0)], hAC_20);
-        atomicAdd(&H[(((ap * 3 + 0) * n_atom + aa) * 3 + 2)], hAC_20);
-        atomicAdd(&H[(((aa * 3 + 2) * n_atom + ap) * 3 + 1)], hAC_21);
-        atomicAdd(&H[(((ap * 3 + 1) * n_atom + aa) * 3 + 2)], hAC_21);
-        atomicAdd(&H[(((aa * 3 + 2) * n_atom + ap) * 3 + 2)], hAC_22);
-        atomicAdd(&H[(((ap * 3 + 2) * n_atom + aa) * 3 + 2)], hAC_22);
-        atomicAdd(&H[(((ab * 3 + 0) * n_atom + ap) * 3 + 0)], hBC_00);
-        atomicAdd(&H[(((ap * 3 + 0) * n_atom + ab) * 3 + 0)], hBC_00);
-        atomicAdd(&H[(((ab * 3 + 0) * n_atom + ap) * 3 + 1)], hBC_01);
-        atomicAdd(&H[(((ap * 3 + 1) * n_atom + ab) * 3 + 0)], hBC_01);
-        atomicAdd(&H[(((ab * 3 + 0) * n_atom + ap) * 3 + 2)], hBC_02);
-        atomicAdd(&H[(((ap * 3 + 2) * n_atom + ab) * 3 + 0)], hBC_02);
-        atomicAdd(&H[(((ab * 3 + 1) * n_atom + ap) * 3 + 0)], hBC_10);
-        atomicAdd(&H[(((ap * 3 + 0) * n_atom + ab) * 3 + 1)], hBC_10);
-        atomicAdd(&H[(((ab * 3 + 1) * n_atom + ap) * 3 + 1)], hBC_11);
-        atomicAdd(&H[(((ap * 3 + 1) * n_atom + ab) * 3 + 1)], hBC_11);
-        atomicAdd(&H[(((ab * 3 + 1) * n_atom + ap) * 3 + 2)], hBC_12);
-        atomicAdd(&H[(((ap * 3 + 2) * n_atom + ab) * 3 + 1)], hBC_12);
-        atomicAdd(&H[(((ab * 3 + 2) * n_atom + ap) * 3 + 0)], hBC_20);
-        atomicAdd(&H[(((ap * 3 + 0) * n_atom + ab) * 3 + 2)], hBC_20);
-        atomicAdd(&H[(((ab * 3 + 2) * n_atom + ap) * 3 + 1)], hBC_21);
-        atomicAdd(&H[(((ap * 3 + 1) * n_atom + ab) * 3 + 2)], hBC_21);
-        atomicAdd(&H[(((ab * 3 + 2) * n_atom + ap) * 3 + 2)], hBC_22);
-        atomicAdd(&H[(((ap * 3 + 2) * n_atom + ab) * 3 + 2)], hBC_22);
-        atomicAdd(&H[(((ap * 3 + 0) * n_atom + ap) * 3 + 0)], hCC_00);
-        atomicAdd(&H[(((ap * 3 + 0) * n_atom + ap) * 3 + 1)], hCC_01);
-        atomicAdd(&H[(((ap * 3 + 1) * n_atom + ap) * 3 + 0)], hCC_01);
-        atomicAdd(&H[(((ap * 3 + 0) * n_atom + ap) * 3 + 2)], hCC_02);
-        atomicAdd(&H[(((ap * 3 + 2) * n_atom + ap) * 3 + 0)], hCC_02);
-        atomicAdd(&H[(((ap * 3 + 1) * n_atom + ap) * 3 + 1)], hCC_11);
-        atomicAdd(&H[(((ap * 3 + 1) * n_atom + ap) * 3 + 2)], hCC_12);
-        atomicAdd(&H[(((ap * 3 + 2) * n_atom + ap) * 3 + 1)], hCC_12);
-        atomicAdd(&H[(((ap * 3 + 2) * n_atom + ap) * 3 + 2)], hCC_22);
+        // the lanes' partial sums, summed over the warp
+        {
+            auto fj_v = hAA_00;
+            for (int fj_o = 16; fj_o > 0; fj_o /= 2) {
+                fj_v += __shfl_xor_sync(0xffffffffull, fj_v, fj_o, 32);
+            }
+            hAA_00 = fj_v;
+        }
+        {
+            auto fj_v = hAA_01;
+            for (int fj_o = 16; fj_o > 0; fj_o /= 2) {
+                fj_v += __shfl_xor_sync(0xffffffffull, fj_v, fj_o, 32);
+            }
+            hAA_01 = fj_v;
+        }
+        {
+            auto fj_v = hAA_02;
+            for (int fj_o = 16; fj_o > 0; fj_o /= 2) {
+                fj_v += __shfl_xor_sync(0xffffffffull, fj_v, fj_o, 32);
+            }
+            hAA_02 = fj_v;
+        }
+        {
+            auto fj_v = hAA_11;
+            for (int fj_o = 16; fj_o > 0; fj_o /= 2) {
+                fj_v += __shfl_xor_sync(0xffffffffull, fj_v, fj_o, 32);
+            }
+            hAA_11 = fj_v;
+        }
+        {
+            auto fj_v = hAA_12;
+            for (int fj_o = 16; fj_o > 0; fj_o /= 2) {
+                fj_v += __shfl_xor_sync(0xffffffffull, fj_v, fj_o, 32);
+            }
+            hAA_12 = fj_v;
+        }
+        {
+            auto fj_v = hAA_22;
+            for (int fj_o = 16; fj_o > 0; fj_o /= 2) {
+                fj_v += __shfl_xor_sync(0xffffffffull, fj_v, fj_o, 32);
+            }
+            hAA_22 = fj_v;
+        }
+        {
+            auto fj_v = hBB_00;
+            for (int fj_o = 16; fj_o > 0; fj_o /= 2) {
+                fj_v += __shfl_xor_sync(0xffffffffull, fj_v, fj_o, 32);
+            }
+            hBB_00 = fj_v;
+        }
+        {
+            auto fj_v = hBB_01;
+            for (int fj_o = 16; fj_o > 0; fj_o /= 2) {
+                fj_v += __shfl_xor_sync(0xffffffffull, fj_v, fj_o, 32);
+            }
+            hBB_01 = fj_v;
+        }
+        {
+            auto fj_v = hBB_02;
+            for (int fj_o = 16; fj_o > 0; fj_o /= 2) {
+                fj_v += __shfl_xor_sync(0xffffffffull, fj_v, fj_o, 32);
+            }
+            hBB_02 = fj_v;
+        }
+        {
+            auto fj_v = hBB_11;
+            for (int fj_o = 16; fj_o > 0; fj_o /= 2) {
+                fj_v += __shfl_xor_sync(0xffffffffull, fj_v, fj_o, 32);
+            }
+            hBB_11 = fj_v;
+        }
+        {
+            auto fj_v = hBB_12;
+            for (int fj_o = 16; fj_o > 0; fj_o /= 2) {
+                fj_v += __shfl_xor_sync(0xffffffffull, fj_v, fj_o, 32);
+            }
+            hBB_12 = fj_v;
+        }
+        {
+            auto fj_v = hBB_22;
+            for (int fj_o = 16; fj_o > 0; fj_o /= 2) {
+                fj_v += __shfl_xor_sync(0xffffffffull, fj_v, fj_o, 32);
+            }
+            hBB_22 = fj_v;
+        }
+        {
+            auto fj_v = hAB_00;
+            for (int fj_o = 16; fj_o > 0; fj_o /= 2) {
+                fj_v += __shfl_xor_sync(0xffffffffull, fj_v, fj_o, 32);
+            }
+            hAB_00 = fj_v;
+        }
+        {
+            auto fj_v = hAB_01;
+            for (int fj_o = 16; fj_o > 0; fj_o /= 2) {
+                fj_v += __shfl_xor_sync(0xffffffffull, fj_v, fj_o, 32);
+            }
+            hAB_01 = fj_v;
+        }
+        {
+            auto fj_v = hAB_02;
+            for (int fj_o = 16; fj_o > 0; fj_o /= 2) {
+                fj_v += __shfl_xor_sync(0xffffffffull, fj_v, fj_o, 32);
+            }
+            hAB_02 = fj_v;
+        }
+        {
+            auto fj_v = hAB_10;
+            for (int fj_o = 16; fj_o > 0; fj_o /= 2) {
+                fj_v += __shfl_xor_sync(0xffffffffull, fj_v, fj_o, 32);
+            }
+            hAB_10 = fj_v;
+        }
+        {
+            auto fj_v = hAB_11;
+            for (int fj_o = 16; fj_o > 0; fj_o /= 2) {
+                fj_v += __shfl_xor_sync(0xffffffffull, fj_v, fj_o, 32);
+            }
+            hAB_11 = fj_v;
+        }
+        {
+            auto fj_v = hAB_12;
+            for (int fj_o = 16; fj_o > 0; fj_o /= 2) {
+                fj_v += __shfl_xor_sync(0xffffffffull, fj_v, fj_o, 32);
+            }
+            hAB_12 = fj_v;
+        }
+        {
+            auto fj_v = hAB_20;
+            for (int fj_o = 16; fj_o > 0; fj_o /= 2) {
+                fj_v += __shfl_xor_sync(0xffffffffull, fj_v, fj_o, 32);
+            }
+            hAB_20 = fj_v;
+        }
+        {
+            auto fj_v = hAB_21;
+            for (int fj_o = 16; fj_o > 0; fj_o /= 2) {
+                fj_v += __shfl_xor_sync(0xffffffffull, fj_v, fj_o, 32);
+            }
+            hAB_21 = fj_v;
+        }
+        {
+            auto fj_v = hAB_22;
+            for (int fj_o = 16; fj_o > 0; fj_o /= 2) {
+                fj_v += __shfl_xor_sync(0xffffffffull, fj_v, fj_o, 32);
+            }
+            hAB_22 = fj_v;
+        }
+        {
+            auto fj_v = hAC_00;
+            for (int fj_o = 16; fj_o > 0; fj_o /= 2) {
+                fj_v += __shfl_xor_sync(0xffffffffull, fj_v, fj_o, 32);
+            }
+            hAC_00 = fj_v;
+        }
+        {
+            auto fj_v = hAC_01;
+            for (int fj_o = 16; fj_o > 0; fj_o /= 2) {
+                fj_v += __shfl_xor_sync(0xffffffffull, fj_v, fj_o, 32);
+            }
+            hAC_01 = fj_v;
+        }
+        {
+            auto fj_v = hAC_02;
+            for (int fj_o = 16; fj_o > 0; fj_o /= 2) {
+                fj_v += __shfl_xor_sync(0xffffffffull, fj_v, fj_o, 32);
+            }
+            hAC_02 = fj_v;
+        }
+        {
+            auto fj_v = hAC_10;
+            for (int fj_o = 16; fj_o > 0; fj_o /= 2) {
+                fj_v += __shfl_xor_sync(0xffffffffull, fj_v, fj_o, 32);
+            }
+            hAC_10 = fj_v;
+        }
+        {
+            auto fj_v = hAC_11;
+            for (int fj_o = 16; fj_o > 0; fj_o /= 2) {
+                fj_v += __shfl_xor_sync(0xffffffffull, fj_v, fj_o, 32);
+            }
+            hAC_11 = fj_v;
+        }
+        {
+            auto fj_v = hAC_12;
+            for (int fj_o = 16; fj_o > 0; fj_o /= 2) {
+                fj_v += __shfl_xor_sync(0xffffffffull, fj_v, fj_o, 32);
+            }
+            hAC_12 = fj_v;
+        }
+        {
+            auto fj_v = hAC_20;
+            for (int fj_o = 16; fj_o > 0; fj_o /= 2) {
+                fj_v += __shfl_xor_sync(0xffffffffull, fj_v, fj_o, 32);
+            }
+            hAC_20 = fj_v;
+        }
+        {
+            auto fj_v = hAC_21;
+            for (int fj_o = 16; fj_o > 0; fj_o /= 2) {
+                fj_v += __shfl_xor_sync(0xffffffffull, fj_v, fj_o, 32);
+            }
+            hAC_21 = fj_v;
+        }
+        {
+            auto fj_v = hAC_22;
+            for (int fj_o = 16; fj_o > 0; fj_o /= 2) {
+                fj_v += __shfl_xor_sync(0xffffffffull, fj_v, fj_o, 32);
+            }
+            hAC_22 = fj_v;
+        }
+        {
+            auto fj_v = hBC_00;
+            for (int fj_o = 16; fj_o > 0; fj_o /= 2) {
+                fj_v += __shfl_xor_sync(0xffffffffull, fj_v, fj_o, 32);
+            }
+            hBC_00 = fj_v;
+        }
+        {
+            auto fj_v = hBC_01;
+            for (int fj_o = 16; fj_o > 0; fj_o /= 2) {
+                fj_v += __shfl_xor_sync(0xffffffffull, fj_v, fj_o, 32);
+            }
+            hBC_01 = fj_v;
+        }
+        {
+            auto fj_v = hBC_02;
+            for (int fj_o = 16; fj_o > 0; fj_o /= 2) {
+                fj_v += __shfl_xor_sync(0xffffffffull, fj_v, fj_o, 32);
+            }
+            hBC_02 = fj_v;
+        }
+        {
+            auto fj_v = hBC_10;
+            for (int fj_o = 16; fj_o > 0; fj_o /= 2) {
+                fj_v += __shfl_xor_sync(0xffffffffull, fj_v, fj_o, 32);
+            }
+            hBC_10 = fj_v;
+        }
+        {
+            auto fj_v = hBC_11;
+            for (int fj_o = 16; fj_o > 0; fj_o /= 2) {
+                fj_v += __shfl_xor_sync(0xffffffffull, fj_v, fj_o, 32);
+            }
+            hBC_11 = fj_v;
+        }
+        {
+            auto fj_v = hBC_12;
+            for (int fj_o = 16; fj_o > 0; fj_o /= 2) {
+                fj_v += __shfl_xor_sync(0xffffffffull, fj_v, fj_o, 32);
+            }
+            hBC_12 = fj_v;
+        }
+        {
+            auto fj_v = hBC_20;
+            for (int fj_o = 16; fj_o > 0; fj_o /= 2) {
+                fj_v += __shfl_xor_sync(0xffffffffull, fj_v, fj_o, 32);
+            }
+            hBC_20 = fj_v;
+        }
+        {
+            auto fj_v = hBC_21;
+            for (int fj_o = 16; fj_o > 0; fj_o /= 2) {
+                fj_v += __shfl_xor_sync(0xffffffffull, fj_v, fj_o, 32);
+            }
+            hBC_21 = fj_v;
+        }
+        {
+            auto fj_v = hBC_22;
+            for (int fj_o = 16; fj_o > 0; fj_o /= 2) {
+                fj_v += __shfl_xor_sync(0xffffffffull, fj_v, fj_o, 32);
+            }
+            hBC_22 = fj_v;
+        }
+        {
+            auto fj_v = hCC_00;
+            for (int fj_o = 16; fj_o > 0; fj_o /= 2) {
+                fj_v += __shfl_xor_sync(0xffffffffull, fj_v, fj_o, 32);
+            }
+            hCC_00 = fj_v;
+        }
+        {
+            auto fj_v = hCC_01;
+            for (int fj_o = 16; fj_o > 0; fj_o /= 2) {
+                fj_v += __shfl_xor_sync(0xffffffffull, fj_v, fj_o, 32);
+            }
+            hCC_01 = fj_v;
+        }
+        {
+            auto fj_v = hCC_02;
+            for (int fj_o = 16; fj_o > 0; fj_o /= 2) {
+                fj_v += __shfl_xor_sync(0xffffffffull, fj_v, fj_o, 32);
+            }
+            hCC_02 = fj_v;
+        }
+        {
+            auto fj_v = hCC_11;
+            for (int fj_o = 16; fj_o > 0; fj_o /= 2) {
+                fj_v += __shfl_xor_sync(0xffffffffull, fj_v, fj_o, 32);
+            }
+            hCC_11 = fj_v;
+        }
+        {
+            auto fj_v = hCC_12;
+            for (int fj_o = 16; fj_o > 0; fj_o /= 2) {
+                fj_v += __shfl_xor_sync(0xffffffffull, fj_v, fj_o, 32);
+            }
+            hCC_12 = fj_v;
+        }
+        {
+            auto fj_v = hCC_22;
+            for (int fj_o = 16; fj_o > 0; fj_o /= 2) {
+                fj_v += __shfl_xor_sync(0xffffffffull, fj_v, fj_o, 32);
+            }
+            hCC_22 = fj_v;
+        }
+        if ((int)threadIdx.y < 1) {
+            // AtomicAdd: every record of every pair on an atom adds into that atom's
+            // blocks of H
+            atomicAdd(&H[(((aa * 3 + 0) * n_atom + aa) * 3 + 0)], hAA_00);
+            atomicAdd(&H[(((aa * 3 + 0) * n_atom + aa) * 3 + 1)], hAA_01);
+            atomicAdd(&H[(((aa * 3 + 1) * n_atom + aa) * 3 + 0)], hAA_01);
+            atomicAdd(&H[(((aa * 3 + 0) * n_atom + aa) * 3 + 2)], hAA_02);
+            atomicAdd(&H[(((aa * 3 + 2) * n_atom + aa) * 3 + 0)], hAA_02);
+            atomicAdd(&H[(((aa * 3 + 1) * n_atom + aa) * 3 + 1)], hAA_11);
+            atomicAdd(&H[(((aa * 3 + 1) * n_atom + aa) * 3 + 2)], hAA_12);
+            atomicAdd(&H[(((aa * 3 + 2) * n_atom + aa) * 3 + 1)], hAA_12);
+            atomicAdd(&H[(((aa * 3 + 2) * n_atom + aa) * 3 + 2)], hAA_22);
+            atomicAdd(&H[(((ab * 3 + 0) * n_atom + ab) * 3 + 0)], hBB_00);
+            atomicAdd(&H[(((ab * 3 + 0) * n_atom + ab) * 3 + 1)], hBB_01);
+            atomicAdd(&H[(((ab * 3 + 1) * n_atom + ab) * 3 + 0)], hBB_01);
+            atomicAdd(&H[(((ab * 3 + 0) * n_atom + ab) * 3 + 2)], hBB_02);
+            atomicAdd(&H[(((ab * 3 + 2) * n_atom + ab) * 3 + 0)], hBB_02);
+            atomicAdd(&H[(((ab * 3 + 1) * n_atom + ab) * 3 + 1)], hBB_11);
+            atomicAdd(&H[(((ab * 3 + 1) * n_atom + ab) * 3 + 2)], hBB_12);
+            atomicAdd(&H[(((ab * 3 + 2) * n_atom + ab) * 3 + 1)], hBB_12);
+            atomicAdd(&H[(((ab * 3 + 2) * n_atom + ab) * 3 + 2)], hBB_22);
+            atomicAdd(&H[(((aa * 3 + 0) * n_atom + ab) * 3 + 0)], hAB_00);
+            atomicAdd(&H[(((ab * 3 + 0) * n_atom + aa) * 3 + 0)], hAB_00);
+            atomicAdd(&H[(((aa * 3 + 0) * n_atom + ab) * 3 + 1)], hAB_01);
+            atomicAdd(&H[(((ab * 3 + 1) * n_atom + aa) * 3 + 0)], hAB_01);
+            atomicAdd(&H[(((aa * 3 + 0) * n_atom + ab) * 3 + 2)], hAB_02);
+            atomicAdd(&H[(((ab * 3 + 2) * n_atom + aa) * 3 + 0)], hAB_02);
+            atomicAdd(&H[(((aa * 3 + 1) * n_atom + ab) * 3 + 0)], hAB_10);
+            atomicAdd(&H[(((ab * 3 + 0) * n_atom + aa) * 3 + 1)], hAB_10);
+            atomicAdd(&H[(((aa * 3 + 1) * n_atom + ab) * 3 + 1)], hAB_11);
+            atomicAdd(&H[(((ab * 3 + 1) * n_atom + aa) * 3 + 1)], hAB_11);
+            atomicAdd(&H[(((aa * 3 + 1) * n_atom + ab) * 3 + 2)], hAB_12);
+            atomicAdd(&H[(((ab * 3 + 2) * n_atom + aa) * 3 + 1)], hAB_12);
+            atomicAdd(&H[(((aa * 3 + 2) * n_atom + ab) * 3 + 0)], hAB_20);
+            atomicAdd(&H[(((ab * 3 + 0) * n_atom + aa) * 3 + 2)], hAB_20);
+            atomicAdd(&H[(((aa * 3 + 2) * n_atom + ab) * 3 + 1)], hAB_21);
+            atomicAdd(&H[(((ab * 3 + 1) * n_atom + aa) * 3 + 2)], hAB_21);
+            atomicAdd(&H[(((aa * 3 + 2) * n_atom + ab) * 3 + 2)], hAB_22);
+            atomicAdd(&H[(((ab * 3 + 2) * n_atom + aa) * 3 + 2)], hAB_22);
+            atomicAdd(&H[(((aa * 3 + 0) * n_atom + ap) * 3 + 0)], hAC_00);
+            atomicAdd(&H[(((ap * 3 + 0) * n_atom + aa) * 3 + 0)], hAC_00);
+            atomicAdd(&H[(((aa * 3 + 0) * n_atom + ap) * 3 + 1)], hAC_01);
+            atomicAdd(&H[(((ap * 3 + 1) * n_atom + aa) * 3 + 0)], hAC_01);
+            atomicAdd(&H[(((aa * 3 + 0) * n_atom + ap) * 3 + 2)], hAC_02);
+            atomicAdd(&H[(((ap * 3 + 2) * n_atom + aa) * 3 + 0)], hAC_02);
+            atomicAdd(&H[(((aa * 3 + 1) * n_atom + ap) * 3 + 0)], hAC_10);
+            atomicAdd(&H[(((ap * 3 + 0) * n_atom + aa) * 3 + 1)], hAC_10);
+            atomicAdd(&H[(((aa * 3 + 1) * n_atom + ap) * 3 + 1)], hAC_11);
+            atomicAdd(&H[(((ap * 3 + 1) * n_atom + aa) * 3 + 1)], hAC_11);
+            atomicAdd(&H[(((aa * 3 + 1) * n_atom + ap) * 3 + 2)], hAC_12);
+            atomicAdd(&H[(((ap * 3 + 2) * n_atom + aa) * 3 + 1)], hAC_12);
+            atomicAdd(&H[(((aa * 3 + 2) * n_atom + ap) * 3 + 0)], hAC_20);
+            atomicAdd(&H[(((ap * 3 + 0) * n_atom + aa) * 3 + 2)], hAC_20);
+            atomicAdd(&H[(((aa * 3 + 2) * n_atom + ap) * 3 + 1)], hAC_21);
+            atomicAdd(&H[(((ap * 3 + 1) * n_atom + aa) * 3 + 2)], hAC_21);
+            atomicAdd(&H[(((aa * 3 + 2) * n_atom + ap) * 3 + 2)], hAC_22);
+            atomicAdd(&H[(((ap * 3 + 2) * n_atom + aa) * 3 + 2)], hAC_22);
+            atomicAdd(&H[(((ab * 3 + 0) * n_atom + ap) * 3 + 0)], hBC_00);
+            atomicAdd(&H[(((ap * 3 + 0) * n_atom + ab) * 3 + 0)], hBC_00);
+            atomicAdd(&H[(((ab * 3 + 0) * n_atom + ap) * 3 + 1)], hBC_01);
+            atomicAdd(&H[(((ap * 3 + 1) * n_atom + ab) * 3 + 0)], hBC_01);
+            atomicAdd(&H[(((ab * 3 + 0) * n_atom + ap) * 3 + 2)], hBC_02);
+            atomicAdd(&H[(((ap * 3 + 2) * n_atom + ab) * 3 + 0)], hBC_02);
+            atomicAdd(&H[(((ab * 3 + 1) * n_atom + ap) * 3 + 0)], hBC_10);
+            atomicAdd(&H[(((ap * 3 + 0) * n_atom + ab) * 3 + 1)], hBC_10);
+            atomicAdd(&H[(((ab * 3 + 1) * n_atom + ap) * 3 + 1)], hBC_11);
+            atomicAdd(&H[(((ap * 3 + 1) * n_atom + ab) * 3 + 1)], hBC_11);
+            atomicAdd(&H[(((ab * 3 + 1) * n_atom + ap) * 3 + 2)], hBC_12);
+            atomicAdd(&H[(((ap * 3 + 2) * n_atom + ab) * 3 + 1)], hBC_12);
+            atomicAdd(&H[(((ab * 3 + 2) * n_atom + ap) * 3 + 0)], hBC_20);
+            atomicAdd(&H[(((ap * 3 + 0) * n_atom + ab) * 3 + 2)], hBC_20);
+            atomicAdd(&H[(((ab * 3 + 2) * n_atom + ap) * 3 + 1)], hBC_21);
+            atomicAdd(&H[(((ap * 3 + 1) * n_atom + ab) * 3 + 2)], hBC_21);
+            atomicAdd(&H[(((ab * 3 + 2) * n_atom + ap) * 3 + 2)], hBC_22);
+            atomicAdd(&H[(((ap * 3 + 2) * n_atom + ab) * 3 + 2)], hBC_22);
+            atomicAdd(&H[(((ap * 3 + 0) * n_atom + ap) * 3 + 0)], hCC_00);
+            atomicAdd(&H[(((ap * 3 + 0) * n_atom + ap) * 3 + 1)], hCC_01);
+            atomicAdd(&H[(((ap * 3 + 1) * n_atom + ap) * 3 + 0)], hCC_01);
+            atomicAdd(&H[(((ap * 3 + 0) * n_atom + ap) * 3 + 2)], hCC_02);
+            atomicAdd(&H[(((ap * 3 + 2) * n_atom + ap) * 3 + 0)], hCC_02);
+            atomicAdd(&H[(((ap * 3 + 1) * n_atom + ap) * 3 + 1)], hCC_11);
+            atomicAdd(&H[(((ap * 3 + 1) * n_atom + ap) * 3 + 2)], hCC_12);
+            atomicAdd(&H[(((ap * 3 + 2) * n_atom + ap) * 3 + 1)], hCC_12);
+            atomicAdd(&H[(((ap * 3 + 2) * n_atom + ap) * 3 + 2)], hCC_22);
+        }
     }
 }
