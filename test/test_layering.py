@@ -4081,15 +4081,19 @@ _HESS_1E_WITNESS = ("`hessian.host_1e` is the witness the kernel is "
 RULES |= {
     "hessian_host_1e": _rule(
         "hessian/host_1e.py: the contracted one-electron nuclear Hessians "
-        "of S, T, V on the AO layer -- kernel_h1e's witness -- from the "
-        "undressed E (`mmd.hermite`), the nucleus type, and the gradient "
-        "host's sweep (`shell_atoms`, `pair_weights`); `[t]^(0)` injected",
-        ("ao", "mmd.hermite", "one_electron.potential", "gradient.host"),
+        "of S, T, V and the multipole moments on the AO layer -- "
+        "kernel_h1e's and kernel_d2mu's witness -- from the undressed E "
+        "(`mmd.hermite`), the nucleus type, the Hermite moments "
+        "(`one_electron.multipole`), and the gradient host's sweep "
+        "(`shell_atoms`, `pair_weights`); `[t]^(0)` injected",
+        ("ao", "mmd.hermite", "one_electron.potential",
+         "one_electron.multipole", "gradient.host"),
         reference=_GROUND_TRUTH,
         **{"=ir": "a host reference is arithmetic, not instructions",
            "plan": "the reference recurses directly; the plan is what the "
                    "kernels it checks are built on",
-           "hessian.kernel_h1e": "the kernel is what this module checks"}),
+           "hessian.kernel_h1e": "the kernel is what this module checks",
+           "hessian.kernel_d2mu": "the kernel is what this module checks"}),
     "h1e_builder": _rule(
         "kernel_h1e.py: the S, T and V Hessian kernels -- key -> IR, "
         "`kernel_g1e`'s record head, weights and table reader, `V`'s "
@@ -4108,7 +4112,8 @@ RULE_OF |= {
 }
 EDGES |= {k: frozenset(v) for k, v in {
     "hessian.host_1e": ("ao.pairs", "ao.shell", "gradient.host",
-                        "mmd.hermite", "one_electron.potential"),
+                        "mmd.hermite", "one_electron.multipole",
+                        "one_electron.potential"),
     "hessian.kernel_h1e": ("gradient.kernel_g1e", "ir", "mmd.e_fragment",
                            "mmd.recurrence", "one_electron.kernel_v",
                            "plan.targets", "spec"),
@@ -5072,6 +5077,53 @@ RULES["driver"] = Rule(RULES["driver"].why + ", and the moment-gradient "
                        RULES["driver"].must_not)
 EDGES["emit.__main__"] = EDGES["emit.__main__"] | frozenset(
     ("gradient.kernel_gmu",))
+
+
+# The dipole and quadrupole Hessians: `hessian.kernel_d2mu` (DIPOLE /
+# QUADRUPOLE at d2), `kernel_h1e`'s operated factors on `kernel_gmu`'s
+# moments and `kernel_g1e`'s record head, checked against
+# `hessian.host_1e.multipole_hessian` in the interpreter. The generator CLI
+# writes its ladder (`--hess-mu-l`).
+RULES |= {
+    "d2mu_builder": _rule(
+        "kernel_d2mu.py: the dipole and quadrupole Hessian kernels -- key "
+        "-> IR, `kernel_g1e`'s record head, weights and per-axis tables, "
+        "`kernel_gmu`'s Hermite moments and `kernel_h1e`'s per-axis "
+        "operators",
+        ("spec", "=ir", "mmd.e_fragment", "gradient.kernel_g1e",
+         "gradient.kernel_gmu", "hessian.kernel_h1e"),
+        ao=_HESS_1E_WITNESS, **{"hessian.host_1e": _HESS_1E_WITNESS,
+                                "gradient.host": _HESS_1E_WITNESS},
+        reference=_GROUND_TRUTH, **_NO_MACHINE),
+}
+RULE_OF["hessian.kernel_d2mu"] = "d2mu_builder"
+EDGES["hessian.kernel_d2mu"] = frozenset(
+    ("gradient.kernel_g1e", "gradient.kernel_gmu", "hessian.kernel_h1e",
+     "ir", "mmd.e_fragment", "spec"))
+RULES["driver"] = Rule(RULES["driver"].why + ", and the moment-Hessian "
+                       "ladder through `kernel_d2mu`",
+                       RULES["driver"].may
+                       | frozenset(("hessian.kernel_d2mu",)),
+                       RULES["driver"].must_not)
+EDGES["emit.__main__"] = EDGES["emit.__main__"] | frozenset(
+    ("hessian.kernel_d2mu",))
+
+
+def test_the_d2mu_builder_reaches_neither_its_witness_nor_a_machine(
+        ) -> None:
+    graph = _graph()
+    seen: set[str] = set()
+    todo = ["hessian.kernel_d2mu"]
+    while todo:
+        for e in graph.get(todo.pop(), set()):
+            if e not in seen:
+                seen.add(e)
+                todo.append(e)
+    assert {"gradient.kernel_gmu", "hessian.kernel_h1e"} <= seen
+    for banned in (_REF, "ao", *_LEFT_AO, "ir.interp", "emit",
+                   "performance.device", "gradient.host", "hessian.host_1e"):
+        hit = sorted(e for e in seen if _under(e, banned))
+        assert not hit, f"kernel_d2mu reaches {hit}"
 
 
 def test_the_gmu_builder_reaches_neither_its_witness_nor_a_machine() -> None:

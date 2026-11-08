@@ -731,14 +731,18 @@ _GRADIENT_REFUSAL = (
 # included), `K`, the exchange energy's Hessian (`hessian.kernel_hkx`),
 # and the density-fitting `METRIC`, `SUM_PQ W_PQ d2(P|Q)/dR dR`
 # (`hessian.kernel_d2metric`), and `ERI3`, `SUM_mnP M_mnP d2(mn|P)/dR dR`
-# (`hessian.kernel_d2eri3`). MMD only.
+# (`hessian.kernel_d2eri3`), and `DIPOLE` and `QUADRUPOLE`, `SUM_mn M_mn
+# d2MU^c_mn/dR dR` per component about a fixed origin
+# (`hessian.kernel_d2mu`). MMD only.
 HESSIAN_TARGETS = frozenset((Target.JAB, Target.S, Target.T, Target.V,
-                             Target.K, Target.METRIC, Target.ERI3))
+                             Target.K, Target.METRIC, Target.ERI3,
+                             Target.DIPOLE, Target.QUADRUPOLE))
 
 _HESSIAN_REFUSAL = (
     "a second derivative is built for JAB (the Coulomb energy's Hessian), "
     "S, T, V (the one-electron Hessians), K (the exchange energy's), "
-    "METRIC (the DF metric's) and ERI3 (the three-center DF integral's) on "
+    "METRIC (the DF metric's), ERI3 (the three-center DF integral's) and "
+    "DIPOLE, QUADRUPOLE (the moments' about a fixed origin) on "
     "the MMD engine only (felizjueves.hessian); this target's Hessian is a "
     "follow-up"
 )

@@ -107,6 +107,7 @@ __all__ = [
     "gmu_name",
     "gmu_spec",
     "launch_shape",
+    "moment_reader",
     "n_components",
 ]
 
@@ -176,9 +177,10 @@ def _i32(name: str, shape: tuple[Expr, ...]) -> Param:
     return Param(name, Scalar.I32, array=True, shape=shape)
 
 
-def _moments(e: int, pool: Locals):
+def moment_reader(e: int, pool: Locals):
     """`M^n_t` on axis `d` for `n <= e` (module docstring): a Python
-    number where it is a constant, else a pooled local."""
+    number where it is a constant, else a pooled local. Shared with
+    `hessian.kernel_d2mu`, the moments' d2."""
     if e > 2:
         raise ValueError(f"e = {e}: the moments are spelled through e = 2")
 
@@ -214,7 +216,7 @@ def build_gmu_kernel(cls: Spec | tuple[Target, int, int], *,
     head = record_head(la + 1, lb + 1)
     E = axis_reader(la + 1, lb + 1)
     pool = Locals()
-    moment = _moments(e, pool)
+    moment = moment_reader(e, pool)
 
     def F(d: int, n: int, i: int, j: int) -> Expr:
         def make() -> Expr:
