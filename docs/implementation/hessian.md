@@ -1,8 +1,9 @@
-# Analytic nuclear Hessians by McMurchie–Davidson: `E_J`, `E_K`, `S`, `T`, `V`, and the DF `(P|Q)` and `(mn|P)`
+# Analytic nuclear Hessians by McMurchie–Davidson: `E_J`, `E_K`, `S`, `T`, `V`, the dipole and quadrupole, and the DF `(P|Q)` and `(mn|P)`
 
-The Coulomb energy's Hessian is this note's first part. Five later
+The Coulomb energy's Hessian is this note's first part. Six later
 sections each have their own status line: the one-electron Hessians of
-`S`, `T` and `V` ("The one-electron Hessians"), the DF metric's ("The DF
+`S`, `T` and `V` ("The one-electron Hessians"), the dipole's and
+quadrupole's ("The dipole and quadrupole Hessians"), the DF metric's ("The DF
 metric Hessian"), the three-center DF integral's ("The three-center DF
 Hessian"), and the CPHF right-hand side's exchange and Coulomb derivative
 matrices ("The exchange derivative matrix", "The Coulomb derivative
@@ -37,8 +38,8 @@ or floor was added. The spike is not imported anywhere.
 
 `spec.DERIVATIVE_ORDERS` is `(0, 1, 2)`. Order 2 is legal on
 `spec.HESSIAN_TARGETS` only — `JAB`, and since the one-electron Hessians
-`S`, `T` and `V`, the exchange Hessian `K` and the DF `METRIC` and `ERI3`,
-on MMD — and refused elsewhere with
+`S`, `T` and `V`, the exchange Hessian `K`, the DF `METRIC` and `ERI3`,
+and the moments `DIPOLE` and `QUADRUPOLE`, on MMD — and refused elsewhere with
 `_HESSIAN_REFUSAL`. Order 1 gained `DQ` (`GRADIENT_TARGETS`), the ket
 pre-contraction differentiated on each ket centre, which only the Hessian
 reads. Every d0 and d1 key is byte-identical:
@@ -562,6 +563,66 @@ byte count and sha256 in `test/golden/hessian_digests.json`.
   reaches (`t > i + j`, the doubly raised corner); packing them is a
   follow-up. `S` and `T` stay unrolled (`d2t_33` is 456 KB).
 - No screening, Cartesian only.
+
+## The dipole and quadrupole Hessians (`hessian/kernel_d2mu.py`)
+
+**Status: generated, interpreted through (ff) against the host, the host
+held to central differences of the libcint-witnessed d1 host; every unit
+through (ff) compiled warning-free by nvcc 13.0 (sm_86) and hipcc / ROCm
+7.2.4 (gfx1200), 2026-11-08, a device-less cloud container;
+not run on a card, not measured.**
+
+`Target.DIPOLE` and `Target.QUADRUPOLE` at `derivative_order = 2`, MMD
+only: `dipole/d2/(la,lb)/b1/dipole/literal` and
+`quadrupole/d2/(la,lb)/b1/quadrupole/literal` (an HGP moment at d2 is
+refused, `_HESSIAN_REFUSAL`). The kernel writes, per component `c` of
+`<a| q (r - C)^(ex,ey,ez) |b>` (x, y, z; or the raw second moments xx,
+xy, xz, yy, yz, zz, `kernel_mu`'s order),
+
+    H[c, A, k, B, l] += SUM_mn M_mn d2MU^c_mn / dR_{A,k} dR_{B,l}
+                                                 H[n_comp, n_atom, 3, n_atom, 3]
+
+the skeleton (fixed-density) term of the dipole's (or quadrupole's)
+second nuclear derivative -- the electronic part of an IR intensity's
+derivative of the atomic polar tensor, or the Raman / quadrupole analogue;
+the response is the caller's. It is `d2s` with the overlap factor replaced
+by the d1 kernel's moment factor: per axis `F^n_ij = SUM_{t <= min(n,
+i+j)} E^{ij}_t M^n_t` (`kernel_gmu.moment_reader`, the Hermite moments
+about `C` at the record's `P`), and `kernel_h1e.operated`'s rule once or
+twice per axis (`kernel_h1e.axis_ops`, the 21 centre-centre components) on
+`E` tables two indices up on each side. **The origin is fixed, not a
+nucleus**: there is no operator term, so the blocks are centre-centre only,
+as for `S`, and `SUM_B H^c[A, k, B, l]` is the origin shift of the d1
+gradient -- `q delta_cl G_S[A, k]` for the dipole, `q (delta_cl
+G_MU^d[A, k] + delta_dl G_MU^c[A, k])` for the quadrupole's `cd`, a check.
+`C` and `q` are runtime scalars; `H` is zeroed by the caller; `36 n_comp`
+`AtomicAdd`s per record. One form (unrolled): `d2mu_33` is 461 KB of CUDA
+source and `d2quad_33` 815 KB, neither tracked.
+
+The host reference is `hessian.host_1e.multipole_hessian` (one `H` per
+component), by `host_1e`'s other route: each 3-D function differentiated
+as moved Cartesians, then the 3-D moment of each.
+
+| What | Against | Where | Worst |
+|---|---|---|---|
+| `host_1e.multipole_hessian` | central FD (`h = 1e-4`) of `gradient.host.multipole_gradient`, itself held to libcint's `int1e_irp` / `int1e_irrp` | H₂O/STO-3G (`test_kernel_d2mu.py`) | ~4e-9 / 6e-9 of `max\|H\|` (`O(h²)`), gate 1e-7 |
+| the same | the origin shift through the d1 hosts; `q` an exact factor | H₂O/STO-3G | gate 1e-13 of `max\|H\|`; bitwise |
+| `kernel_d2mu`, interpreted | the host per class, `M` non-symmetric | every ordered class (ss)–(ff) on HF/cc-pVTZ (above L + 2 = 4 `slow`); whole H₂O/STO-3G | 0.23 / 0.27 eps of the absolute twin (`d2mu_10`, `d2quad_10`), gate 16 eps |
+| the goldens | text | (ss)–(dd), 12 per backend (`test_emit_hess_mu.py`) | -- |
+| nvcc / hipcc compile | #92's warning filter | `test_emit_hess_mu.py`'s 40 `cuda` / `hip` cases through (ff) | passed, no warning in generated text (2026-11-08) |
+| on a card | -- | -- | **not run**: no device harness, no card in that session |
+
+Emit ladder `python -m felizjueves.emit --hess-mu-l [LMAX]` (2 bare,
+0..3), never in the bare default nor `KERNEL_GEN_CMD`.
+
+### What is not done
+
+- No device harness and no card; nothing measured.
+- No libcint d2 witness directly (`int1e_ipiprp`-style moment Hessians
+  were not wired): the host is held to finite differences of the
+  libcint-held d1 host instead.
+- The traceless (Buckingham) quadrupole is the caller's linear map of the
+  raw moments; the nuclear contribution and the response are the caller's.
 
 ## The one-electron derivative matrices (`S^x`, `T^x`, `V^x`, #687)
 

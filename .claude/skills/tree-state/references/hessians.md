@@ -129,6 +129,29 @@ unrolled `d2v_22` is pinned by its old digest (`d2v_22.unrolled`) in
 H₂O/STO-3G and cc-pVDZ (`slow`), against the host, 6 passed per card;
 worst 1.57e-16 (RTX 3080) and 2.30e-16 (RX 9060 XT) of the absolute twin,
 `d2v` on cc-pVDZ. Nothing above (dd) on a card, nothing measured; the low-stack `d2v` has not run on a card (clang 18's CUDA front end passed `d2v_22` / `d2v_33`, a proxy).
+**The dipole and quadrupole Hessians are generated, interpreted and
+compiled by nvcc and hipcc, on no card** (`hessian.md`, "The dipole and
+quadrupole Hessians"): `Target.DIPOLE` and `QUADRUPOLE` join
+`spec.HESSIAN_TARGETS` (MMD only; an HGP moment at d2 refused).
+`hessian/kernel_d2mu.py` (`d2mu_`, `d2quad_{la}{lb}`): `H[c, A, k, B, l]
++= SUM_mn M_mn d2MU^c_mn/dR_{A,k} dR_{B,l}` per component (3, or the six
+raw second moments in `kernel_mu`'s order) about a FIXED origin `C` (no
+operator term; centre-centre blocks only, as `d2s`), `kernel_gmu`'s
+moment factor `F^n_ij` under `kernel_h1e.operated`'s rule on tables two
+indices up, `36 n_comp` atomics, `C` and `q` runtime scalars, `H[n_comp,
+n_atom, 3, n_atom, 3]` zeroed by the caller. Host
+`hessian.host_1e.multipole_hessian` (moved Cartesians), held to central
+differences of `gradient.host.multipole_gradient` (itself held to
+libcint's `int1e_irp` / `int1e_irrp`) and to the origin shift through the
+d1 hosts on H₂O/STO-3G (`test_kernel_d2mu.py`). Interpreted, every
+ordered class (ss)-(ff) on HF/cc-pVTZ and the whole H₂O/STO-3G Hessian
+within 16 eps (measured <= 0.27) of the absolute twin. Ladder `python -m
+felizjueves.emit --hess-mu-l [LMAX]` (2 bare, 0..3), never in the bare
+default nor `KERNEL_GEN_CMD`; 12 goldens per backend (ss)-(dd)
+(`test_emit_hess_mu.py`). Every unit through (ff)
+compiled warning-free by nvcc (sm_86) and hipcc (gfx1200) (the 40 `cuda` /
+`hip` cases, 2026-11-08, a device-less cloud container). No device
+harness, no card, nothing measured; no libcint d2 witness directly.
 **The exchange
 energy's Hessian too, through (ff|ff), on both cards (#691)** (`hessian.md`, "The
 exchange Hessian"): `Target.K` joins `spec.HESSIAN_TARGETS`, a d2 K key in

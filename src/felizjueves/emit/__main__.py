@@ -304,6 +304,17 @@ for CUDA, `.hip` for HIP):
   KERNEL_GEN_CMD. Every name starts `d2s_`, `d2t_` or `d2v_` (not `hs_`:
   the HGP one-electron ladder's), so none collides with another ladder's.
 
+- the moment-Hessian ladder, `--hess-mu-l [LMAX]`
+  (`hessian.kernel_d2mu`): for every pair class `(la, lb)`,
+  `la <= lb <= LMAX` (2 when the flag is given bare), the dipole's and the
+  quadrupole's d2 kernels `d2mu_` and `d2quad_{la}{lb}` (`SUM_mn M_mn
+  d2MU^c_mn/dR dR` per component about a fixed origin). Accepted
+  0..`HESS_MU_L_MAX` = 3 (validated through (ff), interpreted, against the
+  host and, through it, central differences of the d1 host); above it is a
+  2. It ADDS units beside the J ladders, as `--hess-one-e-l` does, and is
+  NEVER in the no-flag default nor in KERNEL_GEN_CMD. Every name starts
+  `d2mu_` or `d2quad_`, so none collides with another ladder's.
+
 - the one-electron derivative-matrix ladder, `--ip-one-e-l [LMAX]`
   (`hessian.kernel_ip1e`, #687): for every pair class `(la, lb)`,
   `la <= lb <= LMAX` (2 when the flag is given bare), `ips_`, `ipt_`,
@@ -664,6 +675,7 @@ from felizjueves.gradient.kernel_ipmetric import build_ipmetric_kernel
 from felizjueves.gradient.kernel_xeri3 import build_xeri3_kernel
 from felizjueves.hessian.kernel_d2eri3 import build_d2eri3_kernel
 from felizjueves.hessian.kernel_d2metric import build_d2metric_kernel
+from felizjueves.hessian.kernel_d2mu import HESSIAN_MOMENTS, build_d2mu_kernel
 from felizjueves.hessian.kernel_h1e import HESSIAN_1E, build_h1e_kernel
 from felizjueves.hessian.kernel_hdq import build_hdq_kernel
 from felizjueves.hessian.kernel_hjab import build_hjab_kernel
@@ -737,6 +749,8 @@ DEFAULT_HESS_KX_L = 1  # `--hess-kx-l` bare: every s / p K class, 32 units
 HESS_KX_L_MAX = 3  # kernel_kx is validated through (ff|ff) interpreted
 DEFAULT_HESS_ONE_E_L = 2  # `--hess-one-e-l` bare: (ss) through (dd), 18 units
 HESS_ONE_E_L_MAX = 3  # kernel_h1e is validated through (ff) interpreted
+DEFAULT_HESS_MU_L = 2  # `--hess-mu-l` bare: (ss) through (dd), 12 units
+HESS_MU_L_MAX = 3  # kernel_d2mu is validated through (ff) interpreted
 DEFAULT_IP_ONE_E_L = 2  # `--ip-one-e-l` bare: (ss) through (dd), 24 units
 IP_ONE_E_L_MAX = 3  # kernel_ip1e is validated through (ff) interpreted
 DEFAULT_HESS_METRIC_L = 2  # `--hess-metric-l` bare: aux l <= 2, 6 units
@@ -1423,6 +1437,30 @@ def generate_hess_one_e(backend: str, arch: Arch, out: Path,
 
 
 # ---------------------------------------------------------------------------
+# The moment-Hessian ladder (hessian.kernel_d2mu)
+# ---------------------------------------------------------------------------
+
+
+def hess_mu_classes(lmax: int) -> list[tuple[int, int]]:
+    """Every pair class `(la, lb)`, `la <= lb <= lmax`, over
+    `0..HESS_MU_L_MAX`."""
+    if type(lmax) is not int or not 0 <= lmax <= HESS_MU_L_MAX:
+        raise ValueError(f"--hess-mu-l {lmax!r} is outside "
+                         f"0..{HESS_MU_L_MAX}")
+    return [(la, lb) for la in range(lmax + 1) for lb in range(la, lmax + 1)]
+
+
+def generate_hess_mu(backend: str, arch: Arch, out: Path,
+                     lmax: int) -> list[Path]:
+    """Emit the moment d2 units of every pair class through `lmax` into
+    `out`: `d2mu_` and `d2quad_{la}{lb}` per class; return the paths."""
+    kernels = [build_d2mu_kernel((t, *c)) for c in hess_mu_classes(lmax)
+               for t in HESSIAN_MOMENTS]
+    out.mkdir(parents=True, exist_ok=True)
+    return [_write(backend, arch, out, k) for k in kernels]
+
+
+# ---------------------------------------------------------------------------
 # The one-electron derivative-matrix ladder (hessian.kernel_ip1e, #687)
 # ---------------------------------------------------------------------------
 
@@ -1842,6 +1880,7 @@ def _main_hgp(args: argparse.Namespace, other_path: bool) -> int:
             or args.hess_kx_l is not None
             or args.jx_l is not None
             or args.hess_one_e_l is not None
+            or args.hess_mu_l is not None
             or args.ip_one_e_l is not None
             or args.hess_metric_l is not None
             or args.ip_metric_l is not None
@@ -1978,6 +2017,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     ap.add_argument("--hess-one-e-l", dest="hess_one_e_l", type=int,
                     nargs="?", const=DEFAULT_HESS_ONE_E_L, default=None,
                     metavar="LMAX")
+    ap.add_argument("--hess-mu-l", dest="hess_mu_l", type=int, nargs="?",
+                    const=DEFAULT_HESS_MU_L, default=None, metavar="LMAX")
     ap.add_argument("--ip-one-e-l", dest="ip_one_e_l", type=int, nargs="?",
                     const=DEFAULT_IP_ONE_E_L, default=None, metavar="LMAX")
     ap.add_argument("--hess-eri3-l", dest="hess_eri3_l", type=int,
@@ -2068,6 +2109,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             or args.hess_kx_l is not None
             or args.jx_l is not None
             or args.hess_one_e_l is not None
+            or args.hess_mu_l is not None
             or args.ip_one_e_l is not None
             or args.hess_metric_l is not None
             or args.ip_metric_l is not None
@@ -2124,6 +2166,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             or args.hess_kx_l is not None
             or args.jx_l is not None
             or args.hess_one_e_l is not None
+            or args.hess_mu_l is not None
             or args.ip_one_e_l is not None
             or args.hess_metric_l is not None
             or args.ip_metric_l is not None
@@ -2295,6 +2338,12 @@ def main(argv: Sequence[str] | None = None) -> int:
               f"0..{HESS_ONE_E_L_MAX}: the one-electron Hessian kernels are "
               "validated through (ff) only", file=sys.stderr)
         return 2
+    if (args.hess_mu_l is not None
+            and not 0 <= args.hess_mu_l <= HESS_MU_L_MAX):
+        print(f"emit: --hess-mu-l {args.hess_mu_l} is outside "
+              f"0..{HESS_MU_L_MAX}: the moment Hessian kernels are "
+              "validated through (ff) only", file=sys.stderr)
+        return 2
     if (args.ip_one_e_l is not None
             and not 0 <= args.ip_one_e_l <= IP_ONE_E_L_MAX):
         print(f"emit: --ip-one-e-l {args.ip_one_e_l} is outside "
@@ -2443,6 +2492,9 @@ def main(argv: Sequence[str] | None = None) -> int:
     if args.hess_one_e_l is not None:  # beside the J chain, never by default
         written += generate_hess_one_e(args.backend, arch, args.out,
                                        args.hess_one_e_l)
+    if args.hess_mu_l is not None:  # beside the J chain, never by default
+        written += generate_hess_mu(args.backend, arch, args.out,
+                                    args.hess_mu_l)
     if args.ip_one_e_l is not None:  # beside the J chain, never by default
         written += generate_ip_one_e(args.backend, arch, args.out, args.ip_one_e_l)
     if args.hess_metric_l is not None:  # beside the J chain, never by default

@@ -382,10 +382,12 @@ def test_jab_takes_order_two_and_dq_order_one_for_the_hessian() -> None:
     # (S, T and V at d2 are the one-electron Hessians, hessian.kernel_h1e;
     # K at d2 the exchange energy's, hessian.kernel_hkx; METRIC at d2 the DF
     # metric's, hessian.kernel_d2metric; ERI3 at d2 the three-center DF
-    # integral's, hessian.kernel_d2eri3.)
+    # integral's, hessian.kernel_d2eri3; DIPOLE and QUADRUPOLE at d2 the
+    # moments', hessian.kernel_d2mu.)
     assert HESSIAN_TARGETS == frozenset({Target.JAB, Target.S, Target.T,
                                          Target.V, Target.K, Target.METRIC,
-                                         Target.ERI3})
+                                         Target.ERI3, Target.DIPOLE,
+                                         Target.QUADRUPOLE})
     assert Target.DQ in GRADIENT_TARGETS
     d2 = Spec(Operator.COULOMB, 2, (2, 1), Target.JAB)
     assert d2.key() == "coulomb/d2/(2,1)/b1/jab/literal"
@@ -789,11 +791,17 @@ def test_the_dipole_takes_its_own_operator_and_a_pair() -> None:
     for am in ((2, 1, 0, 0), (2, 1, 0), (2,), (2, -1)):
         with pytest.raises(ValueError):
             _dipole(am)
-    # d1 is the moment's nuclear gradient (gradient.kernel_gmu); d2 is not
+    # d1 is the moment's nuclear gradient (gradient.kernel_gmu), d2 its
+    # Hessian (hessian.kernel_d2mu), both on MMD only
     assert Spec(Operator.DIPOLE, 1, (2, 1), Target.DIPOLE).key() == (
         "dipole/d1/(2,1)/b1/dipole/literal")
-    with pytest.raises(ValueError, match="derivative order"):
-        Spec(Operator.DIPOLE, 2, (2, 1), Target.DIPOLE)
+    assert Spec(Operator.DIPOLE, 2, (2, 1), Target.DIPOLE).key() == (
+        "dipole/d2/(2,1)/b1/dipole/literal")
+    assert Spec(Operator.QUADRUPOLE, 2, (1, 2), Target.QUADRUPOLE).key() == (
+        "quadrupole/d2/(1,2)/b1/quadrupole/literal")
+    for target in (Target.DIPOLE, Target.QUADRUPOLE):
+        with pytest.raises(ValueError, match="derivative order"):
+            Spec(OPERATOR_OF[target], 2, (2, 1), target, engine=Engine.HGP)
 
 
 @pytest.mark.parametrize("n", [3, 6, 9, 12])

@@ -3,6 +3,7 @@
     overlap_hessian(basis, M, nuclei, absolute=)                 -> H
     kinetic_hessian(basis, M, nuclei, absolute=)                 -> H
     potential_hessian(basis, M, nuclei, one_centre=, absolute=)  -> H
+    multipole_hessian(basis, M, nuclei, C, e=, q=, absolute=)     -> [H]
 
 `H` is `n_atom x 3 x n_atom x 3`, `H[A][k][B][l] = SUM_mn M_mn d2X_mn /
 dR_{A,k} dR_{B,l}` (the package docstring) -- over every shell pair, or
@@ -26,6 +27,12 @@ term is an ordinary 3-D integral of the moved Cartesians:
 - `T(u, v) = -1/2 SUM_k [4 b^2 S(u, v + 2_k) - 2b (2 v_k + 1) S(u, v)
   + v_k (v_k - 1) S(u, v - 2_k)]`, the Laplacian on the ket (a moved ket
   Cartesian keeps its exponent `b`)
+- `MU^c(u, v) = q PROD_d F^{e_d}(u_d, v_d)`, `F^n(i, j) = SUM_{t <=
+  min(n, i+j)} E^{ij}_t M^n_t` about the FIXED origin `C`
+  (`one_electron.multipole`: `multipole_axis`, `hermite_moments`), one
+  `H` per component `c` of `cartesians(e)` -- the dipole at `e = 1`, the
+  quadrupole's raw second moments at `e = 2`; the origin is not a
+  nucleus, so no operator term
 - `V(u, v; n) = -Z SUM_t E^{uv}_t [t + n]^(0)(P - C)`, the shift `n`
   the operator's derivative: `+1_l` with sign `-1` per shift, so
   `dC_l V = +Z SUM E [t + 1_l]`, `dC_k dC_l V = -Z SUM E [t + 1_k + 1_l]`
@@ -59,6 +66,7 @@ from felizjueves.ao.pairs import OneCentre, primitive_pairs
 from felizjueves.ao.shell import Basis, Shell, cartesians
 from felizjueves.gradient.host import Pairs, pair_weights, shell_atoms
 from felizjueves.mmd.hermite import e_axis, hermite_order
+from felizjueves.one_electron.multipole import hermite_moments
 from felizjueves.one_electron.potential import Nucleus
 
 Ang = tuple[int, int, int]
@@ -292,3 +300,42 @@ def potential_hessian(basis: Basis, M: Matrix, nuclei: Sequence[Nucleus],
 
     return _sweep(basis, M, nuc, integral_of, pairs=pairs, absolute=absolute,
                   nuclear=True)
+
+
+def multipole_hessian(basis: Basis, M: Matrix, nuclei: Sequence[Nucleus],
+                      C: Sequence[float], e: int = 1, q: float = 1.0, *,
+                      pairs: Pairs = None, absolute: bool = False
+                      ) -> list[Hess]:
+    """`H[c][A][k][B][l] = SUM_mn M_mn d2MU^c_mn / dR_{A,k} dR_{B,l}`, one
+    `H` per component `c` of `cartesians(e)` (module docstring, `MU^c`)."""
+    if type(e) is not int or e < 0:
+        raise ValueError(f"e = {e!r} is not an int >= 0")
+    c = tuple(float(x) for x in C)
+    if len(c) != 3 or not all(math.isfinite(x) for x in c):
+        raise ValueError(f"origin C = {C!r} is not three finite floats")
+    f = abs if absolute else float
+    fq = f(float(q))
+
+    def component(ex: Ang) -> Hess:
+        def integral_of(sa, sb, rec):
+            zeta, P, _, _, _ = rec
+            ax = _Axes(zeta, P, sa.centre, sb.centre, sa.l + 2, sb.l + 2)
+            mom = [hermite_moments(ex[d], P[d] - c[d], zeta)
+                   for d in range(3)]
+
+            def F(d: int, i: int, j: int) -> float:
+                et = ax.e(d, i, j)
+                v = 0.0
+                for t in range(min(len(et), len(mom[d]))):
+                    v += f(et[t]) * f(mom[d][t])
+                return v
+
+            def X(u, v, shift):
+                return [fq * (F(0, u[0], v[0]) * F(1, u[1], v[1])
+                              * F(2, u[2], v[2]))]
+            return X
+
+        return _sweep(basis, M, nuclei, integral_of, pairs=pairs,
+                      absolute=absolute, nuclear=False)
+
+    return [component(ex) for ex in cartesians(e)]

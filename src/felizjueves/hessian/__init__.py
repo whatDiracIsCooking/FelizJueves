@@ -1,5 +1,6 @@
 """Analytic nuclear Hessians by McMurchie-Davidson: the Coulomb energy's,
-the exchange energy's, the one-electron `S`, `T`, `V`, and the
+the exchange energy's, the one-electron `S`, `T`, `V`, the dipole and
+quadrupole moments about a fixed origin, and the
 density-fitting metric `(P|Q)` and three-center integral `(mn|P)`, as host
 references and as generated kernels (`Spec.derivative_order = 2`).
 
@@ -30,6 +31,10 @@ references and as generated kernels (`Spec.derivative_order = 2`).
                      (`M = D` for T and V, `W` for S; V's operator moves
                      with its nucleus: centre-nucleus and nucleus-nucleus
                      terms by `d/dC_k [t]^(0) = -[t + 1_k]^(0)`)
+    kernel_d2mu.py   Target.DIPOLE / QUADRUPOLE at d2: d2mu_ / d2quad_{la}{lb},
+                     H[c, A, k, B, l] += SUM_mn M_mn d2MU^c_mn / dR dR per
+                     component about a fixed origin (d2s with kernel_gmu's
+                     moment factor; host_1e.multipole_hessian its witness)
     host_jx.py       the Coulomb derivative matrix J^X (#688) and its ip1
                      bra half J1, pure Python: the CPHF right-hand side's
                      two-electron Coulomb part, an AO matrix per (atom, axis)
