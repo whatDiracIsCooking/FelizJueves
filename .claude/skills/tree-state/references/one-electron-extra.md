@@ -126,7 +126,7 @@ hipcc (gfx1200), a device-less cloud container; nothing measured.
 **The dipole is built on the Rys engine too, through (ff): interpreted,
 and compiled by nvcc and hipcc, on no card** (`one_electron.md`, "The Rys
 route", 2026-11-09): `Target.DIPOLE` with `engine=Engine.RYS` (slot
-`dipole.rys`, refusing every lever; `QUADRUPOLE` and `SX` stay refused;
+`dipole.rys`, refusing every lever; `SX` stays refused;
 d1/d2 refused), built by the same `kernel_rys` (`rmu_{la}{lb}`, `l <= 3`):
 the overlap's nodeless 1D tables, unweighted, to `la + lb + 1`, into
 `kernel_hgp`'s moment skeleton (`MU_d = q [(a|b+1_d) + (B - C)_d (a|b)]`,
@@ -144,3 +144,22 @@ warning-free by nvcc (sm_86, CUDA 13.0) and hipcc (gfx1200, ROCm 7.2.4),
 20 of 20 (with `rs_` / `rt_` / `rv_`, 80 of 80), a device-less cloud
 container. No device driver, no card run,
 nothing measured; registry cases `rys`/`dipole` L 0..6, compile only.
+**The quadrupole is also built on the Rys engine, through (ff):
+interpreted, and compiled by nvcc and hipcc, on no card**
+(`one_electron.md`, "The Rys route"): `Target.QUADRUPOLE` with
+`engine=Engine.RYS` (slot `quadrupole.rys`, no lever), built by the same
+`kernel_rys` (`rquad_{la}{lb}`, `l <= 3`): the overlap's nodeless 1D tables
+per primitive pair into the one table `hquad_` reads (its boundary to
+`la + lb + 2`, the operator moved onto the ket twice), `kernel_hgp.assemble`
+forming the six raw second moments into `MU[6, ...]` -- a drop-in for the
+`hquad_` unit of its class (parameter blocks tested equal). Interpreted
+(`test_kernel_rys_one_e.py`): the MMD host's `multipole_matrix(e = 2)` and
+the HGP `hquad_` on the synthetic basis through d (fast) and f (`slow`),
+worst 2.4e-16 of `max|M|`; libcint's `int1e_rr_cart` on
+`hf_ccpvtz_spd_quadrupole` at its origin and at 0 (worst 1.5e-15); the
+charge an exact factor. No libcint quadrupole witness at f. `python -m
+felizjueves.emit --rys-quad-l [LMAX]` (2 bare, 0..3 only), never in the
+bare default nor `KERNEL_GEN_CMD`; 8 goldens per backend plus 2 digests
+(`test_emit_rys_quad.py`). Every unit (ss) through (ff) compiled
+warning-free by nvcc (sm_86) and hipcc (gfx1200), 2026-11-09, a device-less
+cloud container. No card program runs it; nothing measured.

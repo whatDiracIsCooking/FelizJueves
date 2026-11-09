@@ -402,6 +402,17 @@ for CUDA, `.hip` for HIP):
   KERNEL_GEN_CMD. The `cuda` and `hip` backends carry `fj_rys`; there is no
   CLI `gpu` backend.
 
+- the Rys quadrupole ladder, `--rys-quad-l [LMAX]`: for every pair class
+  `(la, lb)`, `la <= lb <= LMAX` (2 when the flag is given bare),
+  `kernel_rys.build_rys_kernel` for `Target.QUADRUPOLE` on `Engine.RYS`
+  (`rquad_{la}{lb}`): the overlap's nodeless 1D tables per primitive pair
+  into `kernel_hgp`'s quadrupole boundary and HRR, the operator moved onto
+  the ket, `MU[6, n_ao, n_ao]`, the origin `C` and the charge `q` runtime
+  scalars -- a drop-in for the `hquad_` unit of the same class. Accepted
+  0..`RYS_QUAD_L_MAX` = 3 ONLY (built and checked through (ff); above it is
+  a 2). It ADDS units beside the J ladders and is NEVER in the no-flag
+  default nor in KERNEL_GEN_CMD.
+
 - the HGP one-electron gradient ladder, `--hgp-grad-l [LMAX]`: for every
   pair class `(la, lb)`, `la <= lb <= LMAX` (1 when the flag is given bare),
   `kernel_hgt.build_hgt_kernel`, `Target.T` at derivative order 1 on
@@ -773,6 +784,8 @@ HGP_ONE_E_TARGETS = (Target.S, Target.T, Target.V, Target.DIPOLE)
 DEFAULT_HGP_MU_L = 2  # `--hgp-mu-l` given bare: (ss) through (dd), 12 units
 DEFAULT_RYS_ONE_E_L = 3  # `--rys-one-e-l` given bare: (ss) through (ff), 40
 RYS_ONE_E_L_MAX = 3  # kernel_rys.L_MAX: built and checked through (ff)
+DEFAULT_RYS_QUAD_L = 2  # `--rys-quad-l` given bare: (ss) through (dd), 6 units
+RYS_QUAD_L_MAX = 3  # kernel_rys.L_MAX: built and checked through (ff)
 # `--hgp-grad-l` given bare: hgt_, hgs_, ghv_, hgmu_ (ss) (sp) (pp)
 DEFAULT_HGP_GRAD_L = 1
 # kernel_hgt.L_MAX = kernel_hgs.L_MAX = kernel_ghv.L_MAX = kernel_hgmu.L_MAX:
@@ -1613,6 +1626,31 @@ def generate_rys_one_e(backend: str, arch: Arch, out: Path,
     return [_write(backend, arch, out, k) for k in kernels]
 
 
+def rys_quad_classes(lmax: int) -> list[tuple[int, int]]:
+    """Every pair class `(la, lb)`, `la <= lb <= lmax`, over
+    `0..RYS_QUAD_L_MAX` (the Rys quadrupole is built through (ff))."""
+    if type(lmax) is not int or not 0 <= lmax <= RYS_QUAD_L_MAX:
+        raise ValueError(f"--rys-quad-l {lmax!r} is outside "
+                         f"0..{RYS_QUAD_L_MAX}: the Rys quadrupole kernels "
+                         "are built for shells through f only")
+    return pair_classes(lmax)
+
+
+def rys_quad_kernels(lmax: int) -> list[Kernel]:
+    """`rquad_{la}{lb}` for every class through `lmax`."""
+    return [build_rys_kernel((Target.QUADRUPOLE, la, lb))
+            for la, lb in rys_quad_classes(lmax)]
+
+
+def generate_rys_quad(backend: str, arch: Arch, out: Path,
+                      lmax: int) -> list[Path]:
+    """Emit the Rys quadrupole unit of every pair class through `lmax` into
+    `out`; return the paths."""
+    kernels = rys_quad_kernels(lmax)
+    out.mkdir(parents=True, exist_ok=True)
+    return [_write(backend, arch, out, k) for k in kernels]
+
+
 # ---------------------------------------------------------------------------
 # The Fock path (#287)
 # ---------------------------------------------------------------------------
@@ -1897,6 +1935,7 @@ def _main_hgp(args: argparse.Namespace, other_path: bool) -> int:
             or args.hgp_one_e_l is not None
             or args.hgp_mu_l is not None
             or args.rys_one_e_l is not None
+            or args.rys_quad_l is not None
             or args.hgp_grad_l is not None
             or _hgp_df(args)):
         print("emit: --hgp-j-l / --hgp-k-l / --hgp-class (and --ordered) is a "
@@ -1912,7 +1951,8 @@ def _main_hgp(args: argparse.Namespace, other_path: bool) -> int:
               "--hess-one-e-l / --ip-one-e-l / --hess-metric-l / "
               "--ip-metric-l / "
               "--hess-eri3-l / "
-              "--hgp-one-e-l / --hgp-mu-l / --rys-one-e-l / --hgp-grad-l / "
+              "--hgp-one-e-l / --hgp-mu-l / --rys-one-e-l / --rys-quad-l / "
+              "--hgp-grad-l / "
               "--class / "
               "--shell-ls / "
               "--fock-l / --fock-class and every lever flag; give one",
@@ -2048,6 +2088,8 @@ def main(argv: Sequence[str] | None = None) -> int:
                     const=DEFAULT_HGP_MU_L, default=None, metavar="LMAX")
     ap.add_argument("--rys-one-e-l", dest="rys_one_e_l", type=int, nargs="?",
                     const=DEFAULT_RYS_ONE_E_L, default=None, metavar="LMAX")
+    ap.add_argument("--rys-quad-l", dest="rys_quad_l", type=int, nargs="?",
+                    const=DEFAULT_RYS_QUAD_L, default=None, metavar="LMAX")
     ap.add_argument("--hgp-grad-l", dest="hgp_grad_l", type=int, nargs="?",
                     const=DEFAULT_HGP_GRAD_L, default=None, metavar="LMAX")
     ap.add_argument("--fock-l", dest="fock_l", type=int, default=None,
@@ -2125,7 +2167,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             or args.hess_eri3_l is not None
                  or args.hgp_one_e_l is not None
                  or args.hgp_mu_l is not None
-                 or args.rys_one_e_l is not None or _hgp_df(args)
+                 or args.rys_one_e_l is not None
+            or args.rys_quad_l is not None or _hgp_df(args)
                  or args.hgp_grad_l is not None
                  or ladder_levers):
         print("emit: --fock-l / --fock-class (and an F lever flag) is a "
@@ -2141,7 +2184,8 @@ def main(argv: Sequence[str] | None = None) -> int:
               "--hess-one-e-l / --ip-one-e-l / --hess-metric-l / "
               "--ip-metric-l / "
               "--hess-eri3-l / "
-              "--hgp-one-e-l / --hgp-mu-l / --rys-one-e-l / --hgp-grad-l / "
+              "--hgp-one-e-l / --hgp-mu-l / --rys-one-e-l / --rys-quad-l / "
+              "--hgp-grad-l / "
               "--class / "
               "--shell-ls and "
               "the J / K "
@@ -2182,7 +2226,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             or args.hess_eri3_l is not None
                      or args.hgp_one_e_l is not None
                      or args.hgp_mu_l is not None
-                 or args.rys_one_e_l is not None or _hgp_df(args)
+                 or args.rys_one_e_l is not None
+            or args.rys_quad_l is not None or _hgp_df(args)
                  or args.hgp_grad_l is not None
                      or ladder_levers):
         print("emit: --L / --pair-l / --one-e-l / --schwarz-l / --sx-l / "
@@ -2196,7 +2241,8 @@ def main(argv: Sequence[str] | None = None) -> int:
               "--hess-one-e-l / --ip-one-e-l / --hess-metric-l / "
               "--ip-metric-l / "
               "--hess-eri3-l / "
-              "--hgp-one-e-l / --hgp-mu-l / --rys-one-e-l / --hgp-grad-l (and a lever "
+              "--hgp-one-e-l / --hgp-mu-l / --rys-one-e-l / --rys-quad-l / "
+              "--hgp-grad-l (and a lever "
               "flag) and "
               "--class / --shell-ls are separate paths; give one",
               file=sys.stderr)
@@ -2405,6 +2451,12 @@ def main(argv: Sequence[str] | None = None) -> int:
               f"0..{RYS_ONE_E_L_MAX}: the Rys one-electron kernels are built "
               "for shells through f only", file=sys.stderr)
         return 2
+    if (args.rys_quad_l is not None
+            and not 0 <= args.rys_quad_l <= RYS_QUAD_L_MAX):
+        print(f"emit: --rys-quad-l {args.rys_quad_l} is outside "
+              f"0..{RYS_QUAD_L_MAX}: the Rys quadrupole kernels are built "
+              "for shells through f only", file=sys.stderr)
+        return 2
     if (args.hgp_grad_l is not None
             and not 0 <= args.hgp_grad_l <= HGP_GRAD_L_MAX):
         print(f"emit: --hgp-grad-l {args.hgp_grad_l} is outside "
@@ -2526,6 +2578,9 @@ def main(argv: Sequence[str] | None = None) -> int:
     if args.rys_one_e_l is not None:  # beside the J chain, never by default
         written += generate_rys_one_e(args.backend, arch, args.out,
                                       args.rys_one_e_l)
+    if args.rys_quad_l is not None:  # beside the J chain, never by default
+        written += generate_rys_quad(args.backend, arch, args.out,
+                                     args.rys_quad_l)
     if args.hgp_grad_l is not None:  # beside the J chain, never by default
         written += generate_hgp_grad(args.backend, arch, args.out,
                                      args.hgp_grad_l)

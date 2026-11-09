@@ -727,8 +727,8 @@ or measured.
 `Operator.QUADRUPOLE`) is a pair class `(la, lb)`; an example key is
 `quadrupole/d0/(2,1)/b1/quadrupole/literal`. Every pre-existing key is
 unchanged. Its batching refusal is the dipole's structural one; HGP is
-legal (`quadrupole.hgp`, "The HGP route" below), and Rys is refused by the
-general `_NO_RYS` (the dipole is legal there, "The Rys route" below).
+legal (`quadrupole.hgp`, "The HGP route" below), and so is Rys
+(`quadrupole.rys`, "The Rys route" below).
 
 **The kernel is the dipole's builder at `e = 2`.** `kernel_mu.ORDER` maps
 each target to its order, and `build_quad_kernel(cls)` (`quad_{la}{lb}`) is
@@ -919,7 +919,7 @@ on 2026-11-09, and that session compiled every unit of all four, (ss)
 through (ff), warning-free under nvcc (sm_86, CUDA 13.0) and hipcc
 (gfx1200, ROCm 7.2.4): 80 of 80, a device-less cloud container.
 `one_electron/kernel_rys.py` builds
-`S`, `T`, `V` and the dipole on the Rys factorisation of #468's spike
+`S`, `T`, `V` and the dipole (and, below, the quadrupole) on the Rys factorisation of #468's spike
 (`experimental/rys/`), whose two-electron instance is the fused F's
 `eri/fock/kernel_frys.py` (`docs/implementation/rys_fock.md`). The MMD and
 HGP kernels are untouched; every HGP golden is byte-identical.
@@ -927,8 +927,8 @@ HGP kernels are untouched; every HGP golden is byte-identical.
 **Keys.** `Target.S`, `T` and `V` with `engine=Engine.RYS`
 (`kernel_rys.rys_spec`; `spec.py`, "A RYS ONE-ELECTRON CLASS"), keyed
 `overlap/d0/(1,0)/b1/s.rys/literal`; `s.rys`, `t.rys`, `v.rys`,
-`dipole.rys` are engine slots that refuse every lever. `QUADRUPOLE` and `SX`
-stay refused on Rys. Units are `rs_{la}{lb}`, `rt_`, `rv_`, `rmu_`, every
+`dipole.rys` are engine slots that refuse every lever. `QUADRUPOLE` is
+legal too (below, `quadrupole.rys`); `SX` stays refused on Rys. Units are `rs_{la}{lb}`, `rt_`, `rv_`, `rmu_`, every
 shell `l <= 3` (`kernel_rys.L_MAX`).
 
 **The route.** Per primitive pair, each boundary value is a product of
@@ -994,6 +994,37 @@ term a Rys kernel, and the charge a plain scale. Goldens:
 `rs_` / `rt_` / `rv_` text byte-identical with the dipole's addition, and
 every nvcc / hipcc compile case passed, 80 of 80, (ss) through (ff)).
 
+**The quadrupole on Rys** (`rquad_{la}{lb}`, `Target.QUADRUPOLE` on
+`Engine.RYS`, keyed `quadrupole/d0/(la,lb)/b1/quadrupole.rys/literal`, slot
+`quadrupole.rys`, no lever). **Interpreted through (ff) and compiled by
+nvcc and hipcc; NOT run on a card.** The raw second moments
+`<a| q (r − C)_d (r − C)_e |b>`, six components xx xy xz yy yz zz into
+`MU[6, n_ao, n_ao]` (`kernel_mu`'s order; not the traceless tensor). The
+integrand is a Gaussian times a polynomial, so it is the overlap's route:
+no node, the nodeless 1D tables filling the one table `kernel_hgp`'s
+`hquad_` reads, whose boundary runs to `|e| = la + lb + 2` because the
+operator is moved onto the ket twice, `(r − C)_d |b> = |b+1_d> + (B − C)_d |b>`;
+`kernel_hgp.assemble` forms the six components from the HRR's values and
+`BC = B − C` as for `hquad_`. Its parameter block is `hquad_`'s (tested
+equal, every class through (ff)): a drop-in. Witnesses, observed (within
+`1e-13` of `max|M|` of an engine, `1e-12` of libcint):
+
+| Against | quadrupole |
+|---|---|
+| MMD host `multipole_matrix(e = 2)`, synthetic s–d (fast) | 2.3e-16 |
+| MMD host, synthetic s–f (`slow`) | 2.4e-16 |
+| HGP `hquad_`, synthetic s–d / s–f | 1.5e-16 / 1.6e-16 |
+| libcint `int1e_rr_cart`, `hf_ccpvtz_spd_quadrupole`, its origin / 0 | 1.5e-15 / 9.2e-16 |
+
+and the charge is an exact factor. No libcint quadrupole witness at f is
+tracked (the HGP moments' gap too). Goldens:
+`test/golden/{cuda,hip}/rquad_{la}{lb}` for `la + lb <= 4`, (df) and (ff)
+pinned in `test/golden/rys_quad_digests.json`; every unit (ss) through (ff)
+compiled warning-free by nvcc (sm_86) and hipcc (gfx1200)
+(`test_emit_rys_quad.py`, 2026-11-09, a device-less cloud container).
+`python -m felizjueves.emit --rys-quad-l [LMAX]` (2 bare, **0..3 only**,
+exit 2 above), never in the bare default nor `KERNEL_GEN_CMD`.
+
 **The generator.** `python -m felizjueves.emit --rys-one-e-l [LMAX]` (3
 bare, **0..3 only**, exit 2 above) adds the units beside the J ladders;
 never in the bare default, not in `KERNEL_GEN_CMD`. The `cuda` and `hip`
@@ -1001,8 +1032,8 @@ backends carry `fj_rys`; `emit/gpu.py` refuses a `Rys` statement, so `rv_`
 has no `gpu` spelling yet.
 
 **Not done.** No card run of any Rys one-electron unit (a device driver would be
-`test/hgp_one_e_driver.py` with the builder swapped); the quadrupole
-and `SX` on Rys; g and above (the rule reaches `N = 5`, (gg), but the
+`test/hgp_one_e_driver.py` with the builder swapped); `SX` on Rys; g and
+above (the rule reaches `N = 5`, (gg), but the
 builder refuses `l > 3`); nothing measured, and no cost comparison with the
 MMD and HGP kernels.
 

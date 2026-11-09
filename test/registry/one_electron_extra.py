@@ -25,6 +25,9 @@ CASES = [
     # never on a card.
     *(case for q in ("s", "t", "v", "dipole")
       for case in ladder("rys", q, 0, compile=range(7))),
+    # The Rys quadrupole through (ff): interpreted, and compiled by nvcc and
+    # hipcc; never on a card.
+    *ladder("rys", "quadrupole", 0, compile=range(7)),
 ]
 
 # HGP one-electron: s and p shells only (kernel_hgp.L_MAX = 1).
@@ -85,4 +88,6 @@ TESTS = {
     "test/test_hgp_one_e_device.py::test_X_hgp_one_e_program_compiles": ById(_HGP),
     "test/test_hgp_one_e_device.py::test_X_hgp_one_e_matches_libcint": Allow(MOLECULE),
     "test/test_emit_rys_one_e.py::test_X_compiles_the_unit": Classes("rys", "s"),
+    "test/test_emit_rys_quad.py::test_X_compiles_the_unit":
+        Classes("rys", "quadrupole"),
 }

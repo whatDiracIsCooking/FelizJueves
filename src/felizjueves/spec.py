@@ -194,7 +194,7 @@ fragment, record and scatter, six components where the dipole writes three.
 These are the raw second moments, not the traceless (Buckingham) tensor,
 which is a linear combination of them the consumer forms. Unbatched for the
 dipole's structural reason; HGP is legal, as for the dipole (below), and
-Rys is refused (`_NO_RYS`).
+so is Rys (`one_electron.kernel_rys`, below).
 
 AN HGP ONE-ELECTRON CLASS. `Target.S`, `T`, `V`, `DIPOLE` and `QUADRUPOLE`
 are legal on `Engine.HGP` too: `one_electron.kernel_hgp` builds each on Head-Gordon &
@@ -219,8 +219,10 @@ same contracted boundary `kernel_hgp`'s HRR reads. Keyed
 ``overlap/d0/(1,0)/b1/s.rys/literal``, `am` the pair `(la, lb)`, unbatched
 as the HGP class is; shells through f (`kernel_rys.L_MAX`). The dipole is
 the overlap's nodeless 1D tables into `kernel_hgp`'s moment skeleton
-(``dipole/d0/(1,0)/b1/dipole.rys/literal``). `QUADRUPOLE` and `SX` stay
-refused on Rys (`_NO_RYS`).
+(``dipole/d0/(1,0)/b1/dipole.rys/literal``), and so is the quadrupole
+(``quadrupole/d0/(la,lb)/b1/quadrupole.rys/literal``, `rquad_{la}{lb}`, its
+boundary one step higher, the operator moved onto the ket twice). `SX`
+stays refused on Rys (`_NO_RYS`).
 
 AN F CLASS IS UNBATCHED, FOR ITS OWN REASON (#272). It is not the pair rule:
 a pair target is unbatched because a pair has no Hermite targets to
@@ -560,8 +562,8 @@ def _mmd_only(what: str) -> str:
 _NO_RYS = (
     "the Rys engine is built for the fused F (eri/fock/kernel_frys.py), "
     "the split J and K (eri/hjk/kernel_rj.py, kernel_rk.py), the "
-    "one-electron S, T, V and dipole (one_electron/kernel_rys.py), the DF "
-    "metric "
+    "one-electron S, T, V, dipole and quadrupole "
+    "(one_electron/kernel_rys.py), the DF metric "
     "(eri/density_fit/kernel_rmetric.py) and the three-center (mn|P) "
     "(eri/density_fit/kernel_reri3.py) only: its VRR feeds the HGP HRR of "
     "kernel_f / kernel_hj / kernel_hk / kernel_hgp; "
@@ -569,7 +571,8 @@ _NO_RYS = (
     "follow-up nobody has declared"
 )
 _RYS_TARGETS = (Target.F, Target.J, Target.K, Target.S, Target.T, Target.V,
-                Target.DIPOLE, Target.METRIC, Target.ERI3)
+                Target.DIPOLE, Target.QUADRUPOLE, Target.METRIC,
+                Target.ERI3)
 
 
 _ENGINE_REFUSAL: dict[tuple[Target, Engine], str] = {

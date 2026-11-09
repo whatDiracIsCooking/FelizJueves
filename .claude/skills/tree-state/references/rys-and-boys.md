@@ -7,7 +7,7 @@ compiled by nvcc / hipcc and NOT run on a card** (`docs/implementation/rys_fock.
 is the one place with the detail; #468's spike, `experimental/rys/`, brought
 into `src/`): `Target.F` on `Engine.RYS` (`spec.Engine.RYS`, key slot
 `f.rys`, refused on every target but `F`, `J` and `K` (below) and the
-one-electron `S`, `T`, `V` and dipole (`one-electron-extra.md`), no lever), `eri/fock/kernel_frys.py`'s
+one-electron `S`, `T`, `V`, dipole and quadrupole (`one-electron-extra.md`), no lever), `eri/fock/kernel_frys.py`'s
 `build_frys_kernel` (`fr_{la}{lb}{lc}{ld}`, the 21 classes through
 `(dd|dd)`): `kernel_f`'s skeleton and seams with `ket_prim`,
 `quartet_scalars`, `vrr` and `accumulate` replaced -- the `N = L // 2 + 1`
