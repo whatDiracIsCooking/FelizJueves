@@ -1,5 +1,6 @@
-"""Analytic nuclear Hessians by McMurchie-Davidson: the Coulomb energy's,
-the exchange energy's, the one-electron `S`, `T`, `V`, the dipole and
+"""Analytic nuclear Hessians by McMurchie-Davidson -- and the two-electron
+energies' by HGP (`kernel_hgp2`): the Coulomb energy's, the exchange
+energy's, the one-electron `S`, `T`, `V`, the dipole and
 quadrupole moments about a fixed origin (on HGP too: `kernel_hd2mu`),
 and the density-fitting metric `(P|Q)` and three-center integral `(mn|P)`, as host
 references and as generated kernels (`Spec.derivative_order = 2`).
@@ -61,6 +62,13 @@ references and as generated kernels (`Spec.derivative_order = 2`).
                      hgd2eri3_{la}{lb}{lP}, d2eri3's contract by the
                      Cartesian rule twice on all three centres, one VRR and
                      a bra HRR per (class, primitive weight) table
+    kernel_hgp2.py   Target.F at d2, and J and K at d2 on Engine.HGP:
+                     d2f_ / d2hj_ / d2hk_{..}, kernel_gf's mapping with the
+                     rule applied twice on all four centres, one VRR to
+                     L + 2 over fifteen weight families, one HRR per
+                     (family, shifted class); weights derived per target
+    interpreted.py   the HGP Hessian kernels run in the interpreter over
+                     gradient.interpreted.gf_launches' stream
 
 The sections below are the Coulomb kernels'; the one-electron ones apply
 the same rule twice on ONE pair (no split), and `kernel_h1e`'s docstring
