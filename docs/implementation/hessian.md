@@ -1,15 +1,17 @@
-# Analytic nuclear Hessians by McMurchie–Davidson: `E_J`, `E_K`, `S`, `T`, `V`, the dipole and quadrupole, and the DF `(P|Q)` and `(mn|P)`
+# Analytic nuclear Hessians by McMurchie–Davidson: `E_J`, `E_K`, `S`, `T`, `V`, the dipole and quadrupole, and the DF `(P|Q)` and `(mn|P)`; and `E_J`, `E_K` and the fused `F` by HGP
 
-The Coulomb energy's Hessian is this note's first part. Nine later
+The Coulomb energy's Hessian is this note's first part. Ten later
 sections each have their own status line: the one-electron Hessians of
 `S`, `T` and `V` ("The one-electron Hessians", and on HGP "The
 one-electron Hessians on HGP"), the dipole's and
 quadrupole's ("The dipole and quadrupole Hessians", and on HGP "The dipole
 and quadrupole Hessians on HGP"), the DF metric's ("The DF
 metric Hessian"), the three-center DF integral's ("The three-center DF
-Hessian"), the HGP twins of those two ("The DF Hessians on HGP"), and
-the CPHF right-hand side's exchange and Coulomb derivative matrices ("The
-exchange derivative matrix", "The Coulomb derivative matrix").
+Hessian"), the HGP twins of those two ("The DF Hessians on HGP"), the
+CPHF right-hand side's exchange and Coulomb derivative matrices ("The
+exchange derivative matrix", "The Coulomb derivative matrix"), and the
+two-electron Hessians on the HGP recurrence ("The two-electron Hessians
+on HGP").
 
 **Status: implemented host-side and as generated kernels through (ff),
 compiled by nvcc and hipcc and run on both cards** (the RTX 3080 and the
@@ -43,7 +45,10 @@ or floor was added. The spike is not imported anywhere.
 `S`, `T` and `V`, the exchange Hessian `K`, the DF `METRIC` and `ERI3`,
 and the moments `DIPOLE` and `QUADRUPOLE`, on MMD, and the two moments on
 HGP too (`spec.HESSIAN_OFF_NATIVE`, "The dipole and quadrupole Hessians on
-HGP" below) — and refused elsewhere with `_HESSIAN_REFUSAL`. Order 1 gained `DQ` (`GRADIENT_TARGETS`), the ket
+HGP" below); and `F` on its native HGP, with `J` and `K` on HGP too
+(`HESSIAN_OFF_NATIVE`, "The two-electron Hessians on HGP" below) — and
+refused elsewhere with `_HESSIAN_REFUSAL`. Order 1 gained `DQ`
+(`GRADIENT_TARGETS`), the ket
 pre-contraction differentiated on each ket centre, which only the Hessian
 reads. Every d0 and d1 key is byte-identical:
 
@@ -1476,4 +1481,101 @@ each `l <= LMAX` (2 bare, 0..3). It is never in the bare default nor in
   is tracked for a faster witness.
 - No unrolled form, so no rule choosing between forms.
 - No one-electron half (#687), so no assembled `F^x`; no CPHF solve.
+- Cartesian only.
+
+## The two-electron Hessians on HGP (`d2f_`, `d2hj_`, `d2hk_`)
+
+**Status: generated, interpreted and compiled by nvcc and hipcc; on no
+card, nothing measured.** One builder, `hessian/kernel_hgp2.py`, writes
+the skeleton Hessian of three energies by the Head-Gordon–Pople
+recurrence: the fused Fock build's two-electron energy `E_J - 1/2 E_K`
+(`Target.F` at d2, its native engine), and `E_J` and `E_K` alone
+(`Target.J` and `Target.K` at d2 on `Engine.HGP`, the new
+`spec.HESSIAN_OFF_NATIVE`). Interpreted, every class through (dd|dd) on
+synthetic bases against the MMD hosts of this note (`hessian.host`), and
+H₂O/STO-3G against libcint; every ladder unit through (pp|pp) compiled
+warning-free by nvcc 13.0 (`sm_86`) and hipcc 7.2.4 (`gfx1200`) in a
+device-less cloud container (2026-11-09). Nothing here is scored.
+
+### Their keys
+
+- `coulomb/d2/(la,lb|lc,ld)/b1/f/literal` — `d2f_{la}{lb}{lc}{ld}`;
+- `coulomb/d2/(la,lb|lc,ld)/b1/j.hgp/literal` — `d2hj_{la}{lb}{lc}{ld}`;
+- `coulomb/d2/(la,lc|lb,ld)/b1/k.hgp/literal` — `d2hk_{la}{lc}{lb}{ld}`,
+  K's pairing, which for the ERI `(ac|bd)` is its AO order.
+
+So every class is the ERI's AO order, and one stream serves all three:
+`gradient.interpreted.gf_launches` (every unique quartet once, `diag` on
+the batch diagonal), which `hessian/interpreted.py`'s `hgp2_hessian`
+runs into one zeroed `H[n_atom, 3, n_atom, 3]`. MMD `J` at d2 stays
+refused (its Hessian is `JAB`'s); F, J and K on Rys at d2 are refused.
+No lever, unbatched.
+
+### What is computed
+
+    H[X, k, Y, l] += d2 E / dR_{X,k} dR_{Y,l}     for a fixed, symmetric D
+
+the same `H` as `coulomb_hessian` (J), `exchange_hessian` (K, the RHF
+`-1/2` the caller's, as for `hkx_`) and `coulomb - 1/2 exchange` (F).
+No response term.
+
+### The kernel (`hessian/kernel_hgp2.py`)
+
+`gradient.kernel_gf`'s mapping, record (`GREC`, with the pair's two
+exponents), staging, nest (ket primitives outer, bra inner), quartet
+scalars and canonical half, imported unchanged. The weights are derived
+from `kernel_gf`'s orbit count (8 Coulomb images, 4 per exchange
+pairing): per unique quartet `w = deg (cJ D_ab D_cd + cK (D_ac D_bd +
+D_ad D_bc))` with `(cJ, cK) = (4, -1)` for F, `(4, 0)` for J and
+`(0, 2)` for K.
+
+The rule `d/dX_k phi = 2x phi_{+1_k} - t_k phi_{-1_k}`, composed twice
+symbolically per ERI target (`second`), gives for centres at AO positions
+`p != q` the four terms `[X+k Y+l]^{2x 2y} - t_Yl [X+k Y-l]^{2x} - t_Xk
+[X-k Y+l]^{2y} + t_Xk t_Yl [X-k Y-l]`, and on one centre `[X+2k]^{4x^2}
+- (2t_k + 1) [X]^{2x} + t_k (t_k - 1) [X-2k]` (and its `k != l` twin).
+`[..]^w` is the contracted integral with every primitive quartet weighted
+by `w`, so the kernel reads up to fifteen weight families (1, `2x` per
+centre, `2x 2y` per unordered pair, squares included). The HRR holds on
+contracted values with any primitive weights, so per primitive quartet
+ONE VRR runs to Boys order `L + 2` over the union of every family's
+boundary, each family accumulates `w [e0|f0]^(0)`, and after the nest one
+HRR per `(family, shifted class)` (`derivative_terms`; 14 at (ss|ss))
+gives that class's ERIs. All four centres are differentiated; no
+translational invariance is assumed, so zero net force and `H = H^T` are
+checks.
+
+The write: 78 component sums (nine per centre pair, six per centre), the
+bra-bra ones carried over the thread's ket loop and added once (36
+`AtomicAdd`s), the rest per quartet (108); each off-diagonal sum is also
+added at its transpose. `H` is zeroed by the caller. No screen.
+
+### The generator
+
+`python -m felizjueves.emit --hess-hgp-l [LMAX]` writes `d2f_`, `d2hj_`
+and `d2hk_` of every F ladder class with each `l <= LMAX` (1 bare: 6
+classes, 18 units; 0..2 accepted, a 2 above), never in the bare default
+nor in `KERNEL_GEN_CMD`. The three `(ss|ss)` texts are goldens per
+backend; the other 15 units through (pp|pp) are pinned in
+`test/golden/hgp2_digests.json` (`test_emit_hess_hgp.py`). The units are
+unrolled and large: 76 KB at (ss|ss), 3.7 MB at (pp|pp), 0.5–66 MB for a d
+class, so the d classes are neither digested nor compiled.
+
+### Witnesses, and what ran where
+
+| What | Against | Where | Result |
+|---|---|---|---|
+| whole bases, interpreted | `coulomb_hessian`, `exchange_hessian`, `J - K/2` | a three-atom s basis (fast); with a p and a d shell (`slow`; the d one reaches every ladder class through (dd\|dd)) | worst 1.7e-14 of `max\|H\|` (F, d basis); J 7.1e-15, K 4.5e-15; gate 1e-13; `H = H^T` and `SUM_X H = 0` to 1e-12 |
+| H₂O/STO-3G, interpreted | libcint, the numeric goldens `hjab_h2o_sto3g_bse` (J) and `hkx_h2o_sto3g_bse` (K) (`slow`) | `test_kernel_hgp2.py` | J 8.0e-13, K 2.4e-13 of `max\|H\|` (the store's 1e-12 tier) |
+| a wrong weight | J with `cJ = 2` | the s basis | half the host's, and seen |
+| nvcc / hipcc compile | #92's warning filter | all 18 units through (pp\|pp) (`test_emit_hess_hgp.py`) | **pass**; worst `d2f_1111` 125 s nvcc / 79 s hipcc (one 4-worker run, not a stored row) |
+| on a card | — | — | **not run**: no card in that session; no device harness |
+
+### What is not done
+
+- No device harness, no card run, nothing measured; no frame or spill
+  reading is stored.
+- No rolled or low-stack form: the unrolled text grows to 66 MB at
+  (dd|dd), so nothing above (pp|pp) is compiled.
+- No screen; no response term, so no whole RHF Hessian.
 - Cartesian only.

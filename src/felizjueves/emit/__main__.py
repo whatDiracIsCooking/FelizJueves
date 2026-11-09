@@ -322,6 +322,17 @@ for CUDA, `.hip` for HIP):
   NEVER in the no-flag default nor in KERNEL_GEN_CMD. Every name starts
   `d2mu_` or `d2quad_`, so none collides with another ladder's.
 
+- the HGP two-electron Hessian ladder, `--hess-hgp-l [LMAX]`
+  (`hessian.kernel_hgp2`): for every F class of milestone 12's ladder
+  (`fock_classes`: AO order, canonical) with each `l <= LMAX` (1 when the
+  flag is given bare: 6 classes, 18 units), the fused F's, HGP J's and HGP
+  K's d2 kernels `d2f_`, `d2hj_` and `d2hk_{la}{lb}{lc}{ld}` (the ERI's AO
+  order; for K that is its `(la, lc | lb, ld)` pairing). Accepted
+  0..`HESS_HGP_L_MAX` = 2 (validated through (dd|dd), interpreted, against
+  `hessian.host`); above it is a 2. It ADDS units beside the J ladders and
+  is NEVER in the no-flag default nor in KERNEL_GEN_CMD. Every name starts
+  `d2f_`, `d2hj_` or `d2hk_`, so none collides with another ladder's.
+
 - the one-electron derivative-matrix ladder, `--ip-one-e-l [LMAX]`
   (`hessian.kernel_ip1e`, #687): for every pair class `(la, lb)`,
   `la <= lb <= LMAX` (2 when the flag is given bare), `ips_`, `ipt_`,
@@ -733,6 +744,11 @@ from felizjueves.hessian.kernel_hgd2 import TARGETS as HGD2_TARGETS
 from felizjueves.hessian.kernel_hgd2 import build_hgd2_kernel
 from felizjueves.hessian.kernel_hgd2eri3 import build_hgd2eri3_kernel
 from felizjueves.hessian.kernel_hgd2metric import build_hgd2metric_kernel
+from felizjueves.hessian.kernel_hgp2 import (
+    HGP2_TARGETS,
+    build_d2_kernel,
+    d2_spec,
+)
 from felizjueves.hessian.kernel_hjab import build_hjab_kernel
 from felizjueves.hessian.kernel_hkx import build_hkx_kernel
 from felizjueves.hessian.kernel_ip1e import IP1E, build_ip1e_kernel
@@ -806,6 +822,8 @@ DEFAULT_HESS_ONE_E_L = 2  # `--hess-one-e-l` bare: (ss) through (dd), 18 units
 HESS_ONE_E_L_MAX = 3  # kernel_h1e is validated through (ff) interpreted
 DEFAULT_HESS_MU_L = 2  # `--hess-mu-l` bare: (ss) through (dd), 12 units
 HESS_MU_L_MAX = 3  # kernel_d2mu is validated through (ff) interpreted
+DEFAULT_HESS_HGP_L = 1  # `--hess-hgp-l` bare: the F classes through (pp|pp), 18 units
+HESS_HGP_L_MAX = 2  # kernel_hgp2 is validated through (dd|dd) interpreted
 DEFAULT_IP_ONE_E_L = 2  # `--ip-one-e-l` bare: (ss) through (dd), 24 units
 IP_ONE_E_L_MAX = 3  # kernel_ip1e is validated through (ff) interpreted
 DEFAULT_HESS_METRIC_L = 2  # `--hess-metric-l` bare: aux l <= 2, 6 units
@@ -1548,6 +1566,30 @@ def generate_hess_mu(backend: str, arch: Arch, out: Path,
 
 
 # ---------------------------------------------------------------------------
+# The HGP two-electron Hessian ladder (hessian.kernel_hgp2)
+# ---------------------------------------------------------------------------
+
+
+def hess_hgp_classes(lmax: int) -> list[Am]:
+    """Every F ladder class (`FOCK_CLASSES`) with each `l <= lmax`, over
+    `0..HESS_HGP_L_MAX`."""
+    if type(lmax) is not int or not 0 <= lmax <= HESS_HGP_L_MAX:
+        raise ValueError(f"--hess-hgp-l {lmax!r} is outside "
+                         f"0..{HESS_HGP_L_MAX}")
+    return [c for c in FOCK_CLASSES if max(c) <= lmax]
+
+
+def generate_hess_hgp(backend: str, arch: Arch, out: Path,
+                      lmax: int) -> list[Path]:
+    """Emit `d2f_`, `d2hj_` and `d2hk_` of every class through `lmax` into
+    `out`; return the paths."""
+    kernels = [build_d2_kernel(d2_spec(t, c)) for c in hess_hgp_classes(lmax)
+               for t in HGP2_TARGETS]
+    out.mkdir(parents=True, exist_ok=True)
+    return [_write(backend, arch, out, k) for k in kernels]
+
+
+# ---------------------------------------------------------------------------
 # The one-electron derivative-matrix ladder (hessian.kernel_ip1e, #687)
 # ---------------------------------------------------------------------------
 
@@ -2060,6 +2102,7 @@ def _main_hgp(args: argparse.Namespace, other_path: bool) -> int:
             or args.jx_l is not None
             or args.hess_one_e_l is not None
             or args.hess_mu_l is not None
+            or args.hess_hgp_l is not None
             or args.ip_one_e_l is not None
             or args.hess_metric_l is not None
             or args.ip_metric_l is not None
@@ -2083,7 +2126,7 @@ def _main_hgp(args: argparse.Namespace, other_path: bool) -> int:
               "--grad-f-l / "
               "--grad-df-l / --grad-dfx-l / --hess-l / --jx-l / "
               "--hess-k-l / --hess-kx-l / "
-              "--hess-one-e-l / --ip-one-e-l / --hess-metric-l / "
+              "--hess-one-e-l / --ip-one-e-l / --hess-metric-l / --hess-hgp-l / "
               "--ip-metric-l / "
               "--hess-eri3-l / "
               "--hgp-one-e-l / --hgp-mu-l / --rys-one-e-l / --rys-quad-l / "
@@ -2209,6 +2252,12 @@ def main(argv: Sequence[str] | None = None) -> int:
                     metavar="LMAX")
     ap.add_argument("--hess-mu-l", dest="hess_mu_l", type=int, nargs="?",
                     const=DEFAULT_HESS_MU_L, default=None, metavar="LMAX")
+    ap.add_argument("--hess-hgp-l", dest="hess_hgp_l", type=int, nargs="?",
+                    const=DEFAULT_HESS_HGP_L, default=None, metavar="LMAX",
+                    help="also emit the HGP two-electron Hessians d2f_, "
+                    "d2hj_, d2hk_ of every F ladder class with each l <= "
+                    f"LMAX ({DEFAULT_HESS_HGP_L} if bare, at most "
+                    f"{HESS_HGP_L_MAX}); never in the default")
     ap.add_argument("--ip-one-e-l", dest="ip_one_e_l", type=int, nargs="?",
                     const=DEFAULT_IP_ONE_E_L, default=None, metavar="LMAX")
     ap.add_argument("--hess-eri3-l", dest="hess_eri3_l", type=int,
@@ -2307,6 +2356,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             or args.jx_l is not None
             or args.hess_one_e_l is not None
             or args.hess_mu_l is not None
+            or args.hess_hgp_l is not None
             or args.ip_one_e_l is not None
             or args.hess_metric_l is not None
             or args.ip_metric_l is not None
@@ -2330,7 +2380,7 @@ def main(argv: Sequence[str] | None = None) -> int:
               "--grad-f-l / "
               "--grad-df-l / --grad-dfx-l / --hess-l / --jx-l / "
               "--hess-k-l / --hess-kx-l / "
-              "--hess-one-e-l / --ip-one-e-l / --hess-metric-l / "
+              "--hess-one-e-l / --ip-one-e-l / --hess-metric-l / --hess-hgp-l / "
               "--ip-metric-l / "
               "--hess-eri3-l / "
               "--hgp-one-e-l / --hgp-mu-l / --rys-one-e-l / --rys-quad-l / "
@@ -2369,6 +2419,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             or args.jx_l is not None
             or args.hess_one_e_l is not None
             or args.hess_mu_l is not None
+            or args.hess_hgp_l is not None
             or args.ip_one_e_l is not None
             or args.hess_metric_l is not None
             or args.ip_metric_l is not None
@@ -2389,7 +2440,7 @@ def main(argv: Sequence[str] | None = None) -> int:
               "--grad-f-l / "
               "--grad-df-l / --grad-dfx-l / --hess-l / --jx-l / "
               "--hess-k-l / --hess-kx-l / "
-              "--hess-one-e-l / --ip-one-e-l / --hess-metric-l / "
+              "--hess-one-e-l / --ip-one-e-l / --hess-metric-l / --hess-hgp-l / "
               "--ip-metric-l / "
               "--hess-eri3-l / "
               "--hgp-one-e-l / --hgp-mu-l / --rys-one-e-l / --rys-quad-l / "
@@ -2545,6 +2596,12 @@ def main(argv: Sequence[str] | None = None) -> int:
         print(f"emit: --hess-one-e-l {args.hess_one_e_l} is outside "
               f"0..{HESS_ONE_E_L_MAX}: the one-electron Hessian kernels are "
               "validated through (ff) only", file=sys.stderr)
+        return 2
+    if (args.hess_hgp_l is not None
+            and not 0 <= args.hess_hgp_l <= HESS_HGP_L_MAX):
+        print(f"emit: --hess-hgp-l {args.hess_hgp_l} is outside "
+              f"0..{HESS_HGP_L_MAX}: the HGP two-electron Hessian kernels "
+              "are validated through (dd|dd) only", file=sys.stderr)
         return 2
     if (args.hess_mu_l is not None
             and not 0 <= args.hess_mu_l <= HESS_MU_L_MAX):
@@ -2725,6 +2782,9 @@ def main(argv: Sequence[str] | None = None) -> int:
     if args.hess_mu_l is not None:  # beside the J chain, never by default
         written += generate_hess_mu(args.backend, arch, args.out,
                                     args.hess_mu_l)
+    if args.hess_hgp_l is not None:  # beside the J chain, never by default
+        written += generate_hess_hgp(args.backend, arch, args.out,
+                                     args.hess_hgp_l)
     if args.ip_one_e_l is not None:  # beside the J chain, never by default
         written += generate_ip_one_e(args.backend, arch, args.out, args.ip_one_e_l)
     if args.hess_metric_l is not None:  # beside the J chain, never by default

@@ -18,9 +18,10 @@ integral engines (`spec.Engine`) and lowered through one IR
 
 - **MMD**, McMurchie–Davidson in the Hermite basis, with the sub-batching
   of Palethorpe & Barca (`[JEngine]`). The workhorse: every family, and
-  the only engine with two-electron Hessians.
+  every Hessian but the fused `F`'s (HGP has twins of most of them).
 - **HGP**, Head-Gordon–Pople (vertical then horizontal recurrence), the
-  engine of the fused Fock kernel of `[Fock]` §3.
+  engine of the fused Fock kernel of `[Fock]` §3, and of its, `J`'s and
+  `K`'s Hessians (`hessian/kernel_hgp2.py`).
 - **Rys**, Rys quadrature with a 2D vertical recurrence feeding the same
   HGP horizontal step, so a Rys unit is a drop-in for its HGP twin.
 

@@ -103,8 +103,10 @@ def test_mmd_j_and_rys_j_k_stay_refused_at_d1() -> None:
         Spec(Operator.COULOMB, 1, (1, 0, 0, 0), Target.K, engine=Engine.RYS)
     with pytest.raises(ValueError, match="derivative order 1"):
         Spec(Operator.COULOMB, 1, (1, 0, 0, 0), Target.J, engine=Engine.RYS)
+    # HGP J at d2 is legal since hessian.kernel_hgp2 (test_kernel_hgp2.py);
+    # MMD J at d2 is not (its Hessian is JAB's)
     with pytest.raises(ValueError, match="derivative order 2"):
-        Spec(Operator.COULOMB, 2, (1, 0, 0, 0), Target.J, engine=Engine.HGP)
+        Spec(Operator.COULOMB, 2, (1, 0, 0, 0), Target.J)
 
 
 def test_the_builder_refuses_another_key_and_any_lever() -> None:

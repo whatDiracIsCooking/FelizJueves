@@ -60,6 +60,11 @@ CASES = [
     # hipcc; no device test.
     *ladder("hgp", "metric", 2, compile=range(3), interpreted=range(5)),
     *ladder("hgp", "eri3", 2, compile=range(4), interpreted=range(5)),
+    # d2f / d2hj / d2hk, the two-electron Hessians on HGP (kernel_hgp2):
+    # interpreted through (dd|dd) against the MMD hosts, compiled by nvcc
+    # and hipcc through (pp|pp); no device test.
+    *(case for q in "fjk" for case in ladder(
+        "hgp", q, 2, compile=range(5), interpreted=range(9))),
 ]
 
 # #694's ladder: one program per aux l of the d1 DF ladder's aux-i system
@@ -126,6 +131,8 @@ TESTS = {
         Classes("hgp", "dipole", 2),
     "test/test_emit_hgp_hess.py::test_X_compiles_the_unit":
         Classes("hgp", "s", 2),
+    "test/test_emit_hess_hgp.py::test_X_compiles_the_hgp_hessian_unit":
+        Classes("hgp", "f", 2),
     "test/test_emit_hess_k.py::test_X_compiles_the_exchange_hessian_unit":
         Classes("mmd", "k", 2),
     "test/test_emit_hess_kx.py::test_X_compiles_the_derivative_matrix_unit":

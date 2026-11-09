@@ -492,3 +492,35 @@ STO-3G's `J^X` with the host ket half, on `hess_driver`)
 written, **not run on either card**. With `K^X` (`kx1`/`kxc`, above) both
 two-electron parts of `F^x` exist; no one-electron half (#687), so no
 assembled `F^x`, no CPHF solve, nothing measured.
+**The two-electron Hessians on HGP are generated, interpreted and
+compiled by nvcc and hipcc, on no card** (`hessian.md`, "The two-electron
+Hessians on HGP"): `Target.F` joins `spec.HESSIAN_TARGETS` on its native
+HGP engine and `(J, HGP)`, `(K, HGP)` form `spec.HESSIAN_OFF_NATIVE`
+(keys `coulomb/d2/(la,lb|lc,ld)/b1/f/literal`, `.../j.hgp/...`, and K's
+pairing `coulomb/d2/(la,lc|lb,ld)/b1/k.hgp/literal`, each the ERI's AO
+order); MMD `J` at d2 stays refused. One builder,
+`hessian/kernel_hgp2.py` (`d2f_`, `d2hj_`, `d2hk_{..}`): `kernel_gf`'s
+mapping, record, nest and canonical half with the rule applied twice on
+all four centres -- one VRR to `L + 2` per primitive quartet over up to
+fifteen weight families (1, `2x`, `2x 2y`), one HRR per (family, shifted
+class), the weights derived from `kernel_gf`'s orbit count (F `(4, -1)`,
+J `(4, 0)`, K `(0, 2)`), 78 component sums and 144 `AtomicAdd`s into a
+caller-zeroed `H[n_atom, 3, n_atom, 3]`, no screen, no lever, no
+translational invariance assumed. Interpreted (`hessian/interpreted.py`'s
+`hgp2_hessian` over `gf_launches`' stream; `test_kernel_hgp2.py`) on
+three-atom synthetic bases against `hessian.host.coulomb_hessian`,
+`exchange_hessian` and `J - K/2`: s (fast), p and d (`slow`, the d basis
+reaching every ladder class through (dd|dd)), worst 1.7e-14 of `max|H|`
+(gate 1e-13), `H = H^T` and zero net force to 1e-12; H₂O/STO-3G against
+libcint's numeric goldens `hjab_h2o_sto3g_bse` / `hkx_h2o_sto3g_bse`, J
+8.0e-13 and K 2.4e-13 of `max|H|` (the store's 1e-12 tier; `slow`).
+Ladder `--hess-hgp-l [LMAX]` (1 bare: 18 units, 0..2), never in the bare
+default nor `KERNEL_GEN_CMD`; 3 goldens per backend at (ss|ss) and 15
+digests through (pp|pp) (`test_emit_hess_hgp.py`,
+`test/golden/hgp2_digests.json`). **All 18 units through (pp|pp)
+compiled warning-free** by nvcc 13.0 (sm_86) and hipcc 7.2.4 (gfx1200)
+(a device-less cloud container, 2026-11-09; worst `d2f_1111` 125 s / 79
+s, not a stored row). The text is unrolled (3.7 MB at (pp|pp), 66 MB at
+(dd|dd)): nothing above (pp|pp) compiled, no rolled form. No device
+harness, no card, nothing measured; registry `hgp/{f,j,k}/d2` (compile
+through L = 4, interpreted through L = 8, modelled cost).

@@ -5475,6 +5475,74 @@ def _reaches_neither(graph, mod: str) -> None:
         assert not hit, f"{mod} reaches {hit}"
 
 
+# ---------------------------------------------------------------------------
+# The two-electron Hessians on HGP (`hessian.kernel_hgp2`: `d2f_`, `d2hj_`,
+# `d2hk_`): `kernel_gf`'s mapping, record, nest and scalars differentiated
+# twice on `hgp.recurrence`'s VRR / HRR, checked against `hessian.host` in
+# the interpreter (`hessian.interpreted`, which runs `gf_launches`' stream).
+# The generator CLI writes them on `--hess-hgp-l`.
+# ---------------------------------------------------------------------------
+
+RULES |= {
+    "hgp2_builder": _rule(
+        "kernel_hgp2.py: the HGP two-electron Hessian kernel -- key -> IR, "
+        "one VRR over every weight family's boundary and one HRR per "
+        "(family, shifted class) (`hgp.recurrence`), `kernel_gf`'s record, "
+        "staging, nest, scalars and orbit-derived weights",
+        ("spec", "=ir", "hgp.hrr", "hgp.recurrence", "hgp.vrr",
+         "gradient.kernel_gf"),
+        ao=_HESS_WITNESS, **{"hessian.host": _HESS_WITNESS,
+                             "gradient.host": _HESS_WITNESS},
+        plan="the plan layer is MMD machinery keyed on a [JEngine] row an "
+             "HGP class does not have",
+        mmd="McMurchie-Davidson is another engine (#292)",
+        reference=_GROUND_TRUTH, **_NO_MACHINE),
+    "hess_interpreted": _rule(
+        "hessian/interpreted.py: the HGP Hessian kernels run in `ir.interp` "
+        "over `gradient.interpreted.gf_launches`' stream; Boys injected",
+        ("ao.shell", "spec", "ir", "one_electron.potential",
+         "gradient.interpreted", "gradient.kernel_gf",
+         "hessian.kernel_hgp2"),
+        reference=_GROUND_TRUTH,
+        emit="interpreted, never emitted: no card, no compiler",
+        **{"performance.device": "no card is reached",
+           "hessian.host": "the host is the witness the runs are checked "
+                           "against"}),
+}
+RULE_OF |= {
+    "hessian.kernel_hgp2": "hgp2_builder",
+    "hessian.interpreted": "hess_interpreted",
+}
+EDGES |= {k: frozenset(v) for k, v in {
+    "hessian.kernel_hgp2": ("gradient.kernel_gf", "hgp.hrr",
+                            "hgp.recurrence", "hgp.vrr", "ir", "spec"),
+    "hessian.interpreted": ("ao.shell", "gradient.interpreted",
+                            "gradient.kernel_gf", "hessian.kernel_hgp2", "ir",
+                            "ir.interp", "one_electron.potential", "spec"),
+}.items()}
+RULES["driver"] = Rule(RULES["driver"].why + ", and the HGP two-electron "
+                       "Hessian ladder through `kernel_hgp2`",
+                       RULES["driver"].may | {"hessian.kernel_hgp2"},
+                       RULES["driver"].must_not)
+EDGES["emit.__main__"] = EDGES["emit.__main__"] | {"hessian.kernel_hgp2"}
+
+
+def test_the_hgp2_builder_reaches_neither_its_witness_nor_a_machine() -> None:
+    graph = _graph()
+    seen: set[str] = set()
+    todo = ["hessian.kernel_hgp2"]
+    while todo:
+        for e in graph.get(todo.pop(), set()):
+            if e not in seen:
+                seen.add(e)
+                todo.append(e)
+    assert {"gradient.kernel_gf", "hgp.recurrence", "hgp.hrr"} <= seen
+    for banned in (_REF, "ao", "gradient.host", "hessian.host", "ir.interp",
+                   "emit", "plan", "mmd", "performance.device"):
+        hit = sorted(e for e in seen if _under(e, banned))
+        assert not hit, f"kernel_hgp2 reaches {hit}"
+
+
 if __name__ == "__main__":
     import sys
 
