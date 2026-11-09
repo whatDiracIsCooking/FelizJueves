@@ -102,6 +102,9 @@ def test_the_keys_are_d2_on_hgp() -> None:
     assert Target.F in HESSIAN_TARGETS
     assert HESSIAN_OFF_NATIVE == {(Target.DIPOLE, Engine.HGP),
                                   (Target.QUADRUPOLE, Engine.HGP),
+                                  (Target.S, Engine.HGP),
+                                  (Target.T, Engine.HGP),
+                                  (Target.V, Engine.HGP),
                                   (Target.METRIC, Engine.HGP),
                                   (Target.ERI3, Engine.HGP),
                                   (Target.J, Engine.HGP),

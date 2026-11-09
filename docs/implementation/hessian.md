@@ -1,8 +1,9 @@
 # Analytic nuclear Hessians by McMurchie–Davidson: `E_J`, `E_K`, `S`, `T`, `V`, the dipole and quadrupole, and the DF `(P|Q)` and `(mn|P)`; and `E_J`, `E_K` and the fused `F` by HGP
 
-The Coulomb energy's Hessian is this note's first part. Eight later
+The Coulomb energy's Hessian is this note's first part. Ten later
 sections each have their own status line: the one-electron Hessians of
-`S`, `T` and `V` ("The one-electron Hessians"), the dipole's and
+`S`, `T` and `V` ("The one-electron Hessians", and on HGP "The
+one-electron Hessians on HGP"), the dipole's and
 quadrupole's ("The dipole and quadrupole Hessians", and on HGP "The dipole
 and quadrupole Hessians on HGP"), the DF metric's ("The DF
 metric Hessian"), the three-center DF integral's ("The three-center DF
@@ -695,6 +696,80 @@ Emit ladder `python -m felizjueves.emit --hgp-hess-mu-l [LMAX]` (2 bare,
 - Everything the MMD section lists as not done (no direct libcint d2
   witness; the traceless form, the nuclear term and the response are the
   caller's).
+## The one-electron Hessians on HGP (`hessian/kernel_hgd2.py`)
+
+**Status: generated, interpreted through (ff) against the host and the MMD
+kernels; every unit through (ff) compiled warning-free by nvcc 13.0
+(sm_86) and hipcc / ROCm 7.2.4 (gfx1200), 2026-11-09, a device-less cloud
+container; not run on a card, not measured.**
+
+`S`, `T` and `V` at `derivative_order = 2` on `Engine.HGP`
+(`spec.HESSIAN_OFF_NATIVE`): `overlap/d2/(la,lb)/b1/s.hgp/literal`,
+`kinetic/d2/(la,lb)/b1/t.hgp/literal`, `nuclear/d2/(la,lb)/b1/v.hgp/literal`.
+The same contraction as `d2s_` / `d2t_` / `d2v_` ("The one-electron
+Hessians", above),
+
+    H[X, k, Y, l] += SUM_mn M_mn d2X_mn / dR_{X,k} dR_{Y,l}
+
+on the route of the d1 HGP kernels `hgs_`, `hgt_`, `ghv_`: Obara & Saika's
+VRR per primitive pair, the contraction, Head-Gordon & Pople's HRR on
+contracted values. Nothing of MMD's (no `E`, no Hermite `[t]^(0)`).
+
+**The rule twice.** `D_k |a) = 2 alpha |a + 1_k) - a_k |a - 1_k)` composed
+with itself gives
+
+    D_l D_k |a) = 4 alpha^2 |a + 1_k + 1_l)
+                  - 2 alpha [(a_l + d_kl) |a + 1_k - 1_l) + a_k |a - 1_k + 1_l)]
+                  + a_k (a_l - d_kl) |a - 1_k - 1_l)
+
+and `D^A_k D^B_l` is the rule once on each index. The exponents are per
+primitive and the HRR's `AB` is not, so every power is folded into the
+boundary before the contraction, `hgt_`'s device: one contracted table per
+weight `(2 alpha)^p (2 beta)^q beta^n` that some term reads (`tables`), each
+its own HRR, all on one VRR per record (to `la + lb + 2`; `T` two more on
+the ket).
+
+**Which blocks are computed.** `S` and `T` depend on `A - B` alone: the
+kernel forms the six symmetric `h_kl = SUM_r w_r D^A_k D^A_l (r)` and adds
+`+h` to the `AA` and `BB` blocks, `-h` to `AB` and `BA` (36 `AtomicAdd`s
+per shell pair). `T`'s value is `hgt_`'s kinetic combination of the
+`beta^n` tables at each derivative power. `V`'s one nucleus depends on
+`A - C` and `B - C` alone, so per nucleus the kernel forms the 21
+centre-centre sums (`AA`, `BB` symmetric, `AB` not) from six tables
+`(2 alpha)^p (2 beta)^q`, `p + q <= 2`, writes the nucleus blocks by `dC =
+-(dA + dB)` -- `H[A, C] = -(AA + AB)`, `H[B, C] = -(AB^T + BB)`, `H[C, C] =
+AA + AB + AB^T + BB`, and their transposes, 45 `AtomicAdd`s per nucleus --
+and accumulates the centre blocks over the nuclei, added once after the
+loop (36). The record loop runs inside the nucleus loop, `ghv_`'s reason (a
+contracted table is one nucleus's), so the seed and Boys values are
+recomputed per nucleus.
+
+One thread per contracted shell pair, `gradient.host.pair_records`'
+staging, `kernel_g1e.weights`' `w_r` (exact for any `M`), `H[n_atom, 3,
+n_atom, 3]` zeroed by the caller. One form, unrolled: at (ff) `hgd2t_33`
+and `hgd2v_33` are ~1 MB of CUDA source each, 21,656 B and 19,200 B of
+`sm_86` stack by one ptxas reading (13 s / 12 s of nvcc), not a stored row;
+no low-stack form.
+
+| What | Against | Where | Worst |
+|---|---|---|---|
+| `kernel_hgd2`, interpreted | `host_1e` per class, `M` non-symmetric, and `d2s_` / `d2t_` / `d2v_` interpreted on the same pairs | every ordered class (ss)–(ff) on HF/cc-pVTZ (above L + 2 = 4 `slow`) | 2.02 eps of the absolute twin (`hgd2t_30`); `S` 0.57, `V` 0.22; gate 16 eps |
+| the same, whole | `host_1e`; `H = H^T`, `SUM_A H[A] = 0` | H₂O/STO-3G; CO/cc-pVTZ (`slow`) | 0.18 / 0.08 eps |
+| the goldens | text | (ss) (sp) (pp), 9 per backend (`test_emit_hgp_hess.py`) | -- |
+| nvcc / hipcc compile | #92's warning filter | `test_emit_hgp_hess.py`'s 60 `cuda` / `hip` cases through (ff) | passed, no warning in generated text (2026-11-09) |
+| on a card | -- | -- | **not run**: no device harness, no card in that session |
+
+Emit ladder `python -m felizjueves.emit --hgp-hess-l [LMAX]` (1 bare,
+0..3), never in the bare default nor `KERNEL_GEN_CMD`.
+
+### What is not done
+
+- No device harness and no card; nothing measured.
+- No low-stack form: the (ff) frames above #613's 14,000 B are a reading,
+  not a decision.
+- No HGP Hessian of any other target but the moments (`hd2mu_`, its own
+  section): the two-electron energies and the DF integrals are refused
+  with their reason.
 
 ## The one-electron derivative matrices (`S^x`, `T^x`, `V^x`, #687)
 

@@ -464,6 +464,17 @@ for CUDA, `.hip` for HIP):
   ladders, as `--hess-mu-l` does, and is NEVER in the no-flag default nor
   in KERNEL_GEN_CMD. Every name starts `hd2mu_` or `hd2quad_`, so none
   collides with another ladder's.
+- the HGP one-electron Hessian ladder, `--hgp-hess-l [LMAX]`: for every
+  pair class `(la, lb)`, `la <= lb <= LMAX` (1 when the flag is given bare),
+  `kernel_hgd2.build_hgd2_kernel` for `Target.S`, `T` and `V` at
+  derivative order 2 on `Engine.HGP` (`hgd2s_`, `hgd2t_`, `hgd2v_{la}{lb}`,
+  class-major): the HGP gradient ladder's route with the derivative rule
+  applied twice, one contracted table per weight `(2 alpha)^p (2 beta)^q
+  beta^n`, `S`'s and `T`'s `B` blocks and `V`'s nucleus blocks by
+  translational invariance, into `H[n_atom, 3, n_atom, 3]`. Accepted
+  0..`HGP_HESS_L_MAX` = 3 ONLY (checked through (ff), interpreted; above it
+  is a 2). It ADDS units beside the J ladders and is NEVER in the no-flag
+  default nor in KERNEL_GEN_CMD. No name collides with MMD's `d2s_`.
 
 With NEITHER `--L` nor `--pair-l` both J ladders are written -- `[p|q]`
 L = 0..16 and the pair classes (ss) through (ff), 17 + 20 units: the J chain
@@ -729,6 +740,8 @@ from felizjueves.hessian.kernel_d2mu import HESSIAN_MOMENTS, build_d2mu_kernel
 from felizjueves.hessian.kernel_h1e import HESSIAN_1E, build_h1e_kernel
 from felizjueves.hessian.kernel_hd2mu import build_hd2mu_kernel
 from felizjueves.hessian.kernel_hdq import build_hdq_kernel
+from felizjueves.hessian.kernel_hgd2 import TARGETS as HGD2_TARGETS
+from felizjueves.hessian.kernel_hgd2 import build_hgd2_kernel
 from felizjueves.hessian.kernel_hgd2eri3 import build_hgd2eri3_kernel
 from felizjueves.hessian.kernel_hgd2metric import build_hgd2metric_kernel
 from felizjueves.hessian.kernel_hgp2 import (
@@ -837,6 +850,9 @@ DEFAULT_HGP_GRAD_L = 1
 HGP_GRAD_L_MAX = 3
 DEFAULT_HGP_HESS_MU_L = 2  # `--hgp-hess-mu-l` bare: (ss) through (dd), 12 units
 HGP_HESS_MU_L_MAX = 3  # kernel_hd2mu is validated through (ff) interpreted
+# `--hgp-hess-l` given bare: hgd2s_, hgd2t_, hgd2v_ (ss) (sp) (pp)
+DEFAULT_HGP_HESS_L = 1
+HGP_HESS_L_MAX = 3  # kernel_hgd2.L_MAX: interpreted through (ff)
 FOCK_L_MAX = 2  # milestone 12's ladder tops out at (dd|dd) (pin 3)
 _FOCK_PAIRS = tuple((a, b) for a in range(FOCK_L_MAX + 1)
                     for b in range(a, FOCK_L_MAX + 1))
@@ -1720,6 +1736,39 @@ def generate_hgp_hess_mu(backend: str, arch: Arch, out: Path,
 
 
 # ---------------------------------------------------------------------------
+# The HGP one-electron Hessian ladder (hessian.kernel_hgd2)
+# ---------------------------------------------------------------------------
+
+
+def hgp_hess_classes(lmax: int) -> list[tuple[int, int]]:
+    """Every pair class `(la, lb)`, `la <= lb <= lmax`, over
+    `0..HGP_HESS_L_MAX` (the HGP one-electron Hessians are built through
+    (ff))."""
+    if type(lmax) is not int or not 0 <= lmax <= HGP_HESS_L_MAX:
+        raise ValueError(f"--hgp-hess-l {lmax!r} is outside "
+                         f"0..{HGP_HESS_L_MAX}: the HGP one-electron "
+                         "Hessian kernels are built for shells through f "
+                         "only")
+    return pair_classes(lmax)
+
+
+def hgp_hess_kernels(lmax: int) -> list[Kernel]:
+    """`hgd2s_`, `hgd2t_`, `hgd2v_{la}{lb}` for every class through `lmax`,
+    class-major."""
+    return [build_hgd2_kernel((t, la, lb))
+            for la, lb in hgp_hess_classes(lmax) for t in HGD2_TARGETS]
+
+
+def generate_hgp_hess(backend: str, arch: Arch, out: Path,
+                      lmax: int) -> list[Path]:
+    """Emit the HGP `S`, `T`, `V` Hessian units of every pair class through
+    `lmax` into `out`; return the paths."""
+    kernels = hgp_hess_kernels(lmax)
+    out.mkdir(parents=True, exist_ok=True)
+    return [_write(backend, arch, out, k) for k in kernels]
+
+
+# ---------------------------------------------------------------------------
 # The Rys one-electron ladder
 # ---------------------------------------------------------------------------
 
@@ -2064,6 +2113,7 @@ def _main_hgp(args: argparse.Namespace, other_path: bool) -> int:
             or args.rys_quad_l is not None
             or args.hgp_grad_l is not None
             or args.hgp_hess_mu_l is not None
+            or args.hgp_hess_l is not None
             or _hgp_df(args)):
         print("emit: --hgp-j-l / --hgp-k-l / --hgp-class (and --ordered) is a "
               "separate path from --L / --pair-l / --one-e-l / --schwarz-l / "
@@ -2080,7 +2130,7 @@ def _main_hgp(args: argparse.Namespace, other_path: bool) -> int:
               "--ip-metric-l / "
               "--hess-eri3-l / "
               "--hgp-one-e-l / --hgp-mu-l / --rys-one-e-l / --rys-quad-l / "
-              "--hgp-grad-l / --hgp-hess-mu-l / "
+              "--hgp-grad-l / --hgp-hess-mu-l / --hgp-hess-l / "
               "--class / "
               "--shell-ls / "
               "--fock-l / --fock-class and every lever flag; give one",
@@ -2235,6 +2285,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     ap.add_argument("--hgp-hess-mu-l", dest="hgp_hess_mu_l", type=int,
                     nargs="?", const=DEFAULT_HGP_HESS_MU_L, default=None,
                     metavar="LMAX")
+    ap.add_argument("--hgp-hess-l", dest="hgp_hess_l", type=int, nargs="?",
+                    const=DEFAULT_HGP_HESS_L, default=None, metavar="LMAX")
     ap.add_argument("--fock-l", dest="fock_l", type=int, default=None,
                     metavar="LMAX")
     ap.add_argument("--fock-class", dest="fock_classes", type=int, nargs=4,
@@ -2315,6 +2367,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             or args.rys_quad_l is not None or _hgp_df(args)
                  or args.hgp_grad_l is not None
                  or args.hgp_hess_mu_l is not None
+                 or args.hgp_hess_l is not None
                  or ladder_levers):
         print("emit: --fock-l / --fock-class (and an F lever flag) is a "
               "separate path from --L / --pair-l / --one-e-l / --schwarz-l / "
@@ -2331,7 +2384,7 @@ def main(argv: Sequence[str] | None = None) -> int:
               "--ip-metric-l / "
               "--hess-eri3-l / "
               "--hgp-one-e-l / --hgp-mu-l / --rys-one-e-l / --rys-quad-l / "
-              "--hgp-grad-l / --hgp-hess-mu-l / "
+              "--hgp-grad-l / --hgp-hess-mu-l / --hgp-hess-l / "
               "--class / "
               "--shell-ls and "
               "the J / K "
@@ -2377,6 +2430,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             or args.rys_quad_l is not None or _hgp_df(args)
                  or args.hgp_grad_l is not None
                  or args.hgp_hess_mu_l is not None
+                 or args.hgp_hess_l is not None
                      or ladder_levers):
         print("emit: --L / --pair-l / --one-e-l / --schwarz-l / --sx-l / "
               "--metric-l / --eri3-l / --hgp-metric-l / --hgp-eri3-l / "
@@ -2390,7 +2444,7 @@ def main(argv: Sequence[str] | None = None) -> int:
               "--ip-metric-l / "
               "--hess-eri3-l / "
               "--hgp-one-e-l / --hgp-mu-l / --rys-one-e-l / --rys-quad-l / "
-              "--hgp-grad-l / --hgp-hess-mu-l (and a lever "
+              "--hgp-grad-l / --hgp-hess-mu-l / --hgp-hess-l (and a lever "
               "flag) and "
               "--class / --shell-ls are separate paths; give one",
               file=sys.stderr)
@@ -2625,6 +2679,12 @@ def main(argv: Sequence[str] | None = None) -> int:
               f"0..{HGP_HESS_MU_L_MAX}: the HGP moment Hessian kernels are "
               "validated through (ff) only", file=sys.stderr)
         return 2
+    if (args.hgp_hess_l is not None
+            and not 0 <= args.hgp_hess_l <= HGP_HESS_L_MAX):
+        print(f"emit: --hgp-hess-l {args.hgp_hess_l} is outside "
+              f"0..{HGP_HESS_L_MAX}: the HGP one-electron Hessian kernels "
+              "are built for shells through f only", file=sys.stderr)
+        return 2
     try:
         arch = resolve_arch(args.backend, args.arch)
         lever_units = [k for lf, a in given for k in lever_kernels(lf, a)]
@@ -2756,6 +2816,9 @@ def main(argv: Sequence[str] | None = None) -> int:
     if args.hgp_hess_mu_l is not None:  # beside the J chain, never by default
         written += generate_hgp_hess_mu(args.backend, arch, args.out,
                                         args.hgp_hess_mu_l)
+    if args.hgp_hess_l is not None:  # beside the J chain, never by default
+        written += generate_hgp_hess(args.backend, arch, args.out,
+                                     args.hgp_hess_l)
     # #339: the J / K lever ladders, beside the J chain, never by default
     written += generate_levers(args.backend, arch, args.out, lever_units)
     print(f"emit: {len(written)} {args.backend} translation unit(s) for "

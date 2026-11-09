@@ -314,8 +314,25 @@ def test_a_one_electron_target_takes_orders_one_and_two_and_no_higher(
 
 
 def test_order_two_is_refused_on_a_non_native_engine() -> None:
-    with pytest.raises(ValueError, match="derivative order 2 on target v.hgp"):
-        Spec(Operator.NUCLEAR, 2, (1, 0), Target.V, engine=Engine.HGP)
+    # S, T, V (hessian.kernel_hgd2) and the moments (kernel_hd2mu) on HGP
+    # are the exception (HESSIAN_OFF_NATIVE); every other non-native d2 is
+    # refused.
+    with pytest.raises(ValueError, match="derivative order 2 on target v.rys"):
+        Spec(Operator.NUCLEAR, 2, (1, 0), Target.V, engine=Engine.RYS)
+    with pytest.raises(ValueError,
+                       match="derivative order 2 on target eri3.rys"):
+        Spec(Operator.COULOMB, 2, (1, 0, 0), Target.ERI3, engine=Engine.RYS)
+    assert HESSIAN_OFF_NATIVE == {(Target.DIPOLE, Engine.HGP),
+                                  (Target.QUADRUPOLE, Engine.HGP),
+                                  (Target.S, Engine.HGP),
+                                  (Target.T, Engine.HGP),
+                                  (Target.V, Engine.HGP),
+                                  (Target.METRIC, Engine.HGP),
+                                  (Target.ERI3, Engine.HGP),
+                                  (Target.J, Engine.HGP),
+                                  (Target.K, Engine.HGP)}
+    assert Spec(Operator.NUCLEAR, 2, (1, 0), Target.V,
+                engine=Engine.HGP).key() == "nuclear/d2/(1,0)/b1/v.hgp/literal"
 
 
 @pytest.mark.parametrize("target", [t for t in Target
@@ -428,6 +445,9 @@ def test_f_and_hgp_j_take_order_two() -> None:
     assert j2.key() == "coulomb/d2/(1,0|1,1)/b1/j.hgp/literal"
     assert HESSIAN_OFF_NATIVE == {(Target.DIPOLE, Engine.HGP),
                                   (Target.QUADRUPOLE, Engine.HGP),
+                                  (Target.S, Engine.HGP),
+                                  (Target.T, Engine.HGP),
+                                  (Target.V, Engine.HGP),
                                   (Target.METRIC, Engine.HGP),
                                   (Target.ERI3, Engine.HGP),
                                   (Target.J, Engine.HGP),
@@ -450,6 +470,9 @@ def test_the_metric_takes_order_two_on_mmd_and_hgp() -> None:
     assert h2.key() == "coulomb/d2/(1,2)/b1/metric.hgp/literal"
     assert HESSIAN_OFF_NATIVE == {(Target.DIPOLE, Engine.HGP),
                                   (Target.QUADRUPOLE, Engine.HGP),
+                                  (Target.S, Engine.HGP),
+                                  (Target.T, Engine.HGP),
+                                  (Target.V, Engine.HGP),
                                   (Target.METRIC, Engine.HGP),
                                   (Target.ERI3, Engine.HGP),
                                   (Target.J, Engine.HGP),
@@ -845,6 +868,9 @@ def test_the_dipole_takes_its_own_operator_and_a_pair() -> None:
         "quadrupole/d2/(1,2)/b1/quadrupole/literal")
     assert HESSIAN_OFF_NATIVE == {(Target.DIPOLE, Engine.HGP),
                                   (Target.QUADRUPOLE, Engine.HGP),
+                                  (Target.S, Engine.HGP),
+                                  (Target.T, Engine.HGP),
+                                  (Target.V, Engine.HGP),
                                   (Target.METRIC, Engine.HGP),
                                   (Target.ERI3, Engine.HGP),
                                   (Target.J, Engine.HGP),

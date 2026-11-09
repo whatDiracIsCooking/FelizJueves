@@ -18,7 +18,7 @@ integral engines (`spec.Engine`) and lowered through one IR
 
 - **MMD**, McMurchie–Davidson in the Hermite basis, with the sub-batching
   of Palethorpe & Barca (`[JEngine]`). The workhorse: every family, and
-  every Hessian but the two-electron ones on HGP.
+  every Hessian but the fused `F`'s (HGP has twins of most of them).
 - **HGP**, Head-Gordon–Pople (vertical then horizontal recurrence), the
   engine of the fused Fock kernel of `[Fock]` §3, and of its, `J`'s and
   `K`'s Hessians (`hessian/kernel_hgp2.py`).
@@ -86,7 +86,7 @@ class's total angular momentum.
 |---|---|---|---|
 | Coulomb (`hdq` → `[p\|q]` to L = 14 → `hjab`) | **both cards**, through (ff); H₂O/cc-pVDZ against libcint | — | — |
 | Exchange (`hkx`) | **both cards**, through (ff\|ff); H₂O/cc-pVDZ against libcint | — | — |
-| `S`, `T`, `V` (`d2s`, `d2t`, `d2v`) | **both cards**, through (dd) | — | — |
+| `S`, `T`, `V` (`d2s`, `d2t`, `d2v`) | **both cards**, through (dd) | `hgd2s_`, `hgd2t_`, `hgd2v_`: compiled, through (ff) | — |
 | DF metric, `(mn\|P)` (`d2metric`, `d2eri3`) | **both cards**, through (i\|i) / (ff\|i) | — | — |
 | Dipole, quadrupole (`d2mu_`, `d2quad_`) | compiled, through (ff) | `hd2mu_`, `hd2quad_`: compiled, through (ff) | — |
 

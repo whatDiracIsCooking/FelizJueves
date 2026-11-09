@@ -171,6 +171,37 @@ their symmetry and the origin shift (`test_kernel_hd2mu.py`). Ladder
 `KERNEL_GEN_CMD`; 6 goldens per backend (ss) (sp) (pp)
 (`test_emit_hd2mu.py`). Every unit through (ff) compiled warning-free by nvcc (sm_86) and hipcc (gfx1200) (the 40 `cuda` / `hip` cases, 2026-11-09, a device-less cloud container). Unrolled only: `hd2quad_33` is ~4.3 MB
 of CUDA source. No device harness, no card, nothing measured.
+**`S`, `T` and `V` at d2 on HGP too: generated, interpreted through (ff)
+and nvcc- and hipcc-compiled through (ff), on no card** (`hessian.md`, "The
+one-electron Hessians on HGP"): `spec.HESSIAN_OFF_NATIVE` makes `(S, HGP)`,
+`(T, HGP)`, `(V, HGP)` legal at d2 (keys `overlap/d2/(la,lb)/b1/s.hgp/literal`
+and the `t.hgp`, `v.hgp` twins, beside the moments' `hd2mu_`; every other
+non-native d2 still refused).
+`hessian/kernel_hgd2.py` (`hgd2s_`, `hgd2t_`, `hgd2v_{la}{lb}`; not `hs_`,
+the d0 HGP ladder's, nor MMD's `d2s_`) writes `kernel_h1e`'s `H[A, k, B, l]
++= SUM_mn M_mn d2X_mn/dR dR` on the d1 HGP kernels' route (`hgs_`, `hgt_`,
+`ghv_`): the rule applied twice, symbolically (`_second`), one contracted
+table per weight `(2 alpha)^p (2 beta)^q beta^n` some term reads, each its
+own HRR on contracted values over ONE VRR per record; one thread per
+contracted shell pair, `gradient.host.pair_records`' staging, `kernel_g1e`'s
+weights. `S` and `T` by translational invariance (the six `dA dA`, added
+`+` to `AA`/`BB` and `-` to `AB`/`BA`, 36 atomics a pair; `T` is
+`hgt_`'s kinetic combination of the `beta^n` tables); `V` per nucleus
+(the record loop inside it, `ghv_`'s reason): the 21 centre-centre sums,
+the nucleus blocks by `dC = -(dA + dB)` per nucleus (45 atomics a
+nucleus), the centre blocks accumulated and added once (36). Interpreted
+(`test_kernel_hgd2.py`, L + 2 > 4 `slow`): every ordered class (ss)–(ff)
+on HF/cc-pVTZ against `host_1e` and against `d2s_`/`d2t_`/`d2v_`, worst
+2.02 eps of the absolute twin (`hgd2t_30`; `S` <= 0.57, `V` <= 0.22), gate
+16; the whole H₂O/STO-3G and CO/cc-pVTZ (`slow`) within 0.18 / 0.08 eps,
+`H = H^T` and invariance. Ladder `--hgp-hess-l [LMAX]` (1 bare, 0..3),
+never in the bare default nor `KERNEL_GEN_CMD`; 9 goldens per backend
+(ss)–(pp) (`test_emit_hgp_hess.py`). All 30 units through (ff) compiled
+warning-free by nvcc 13.0 (sm_86) and hipcc 7.2.4 (gfx1200) (60 `cuda` /
+`hip` cases, 2026-11-09, a device-less cloud container). Unrolled at every
+class, no low-stack form: one ptxas reading (not a stored row) gives
+`hgd2t_33` 21,656 B and `hgd2v_33` 19,200 B of `sm_86` stack, 13 / 12 s of
+nvcc, ~1 MB of CUDA each. No device harness, no card, nothing measured.
 **The exchange
 energy's Hessian too, through (ff|ff), on both cards (#691)** (`hessian.md`, "The
 exchange Hessian"): `Target.K` joins `spec.HESSIAN_TARGETS`, a d2 K key in

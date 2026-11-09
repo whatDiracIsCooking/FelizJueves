@@ -5171,6 +5171,54 @@ EDGES["emit.__main__"] = EDGES["emit.__main__"] | frozenset(
     ("hessian.kernel_d2mu",))
 
 
+# The one-electron Hessians on HGP: `hessian.kernel_hgd2` (S, T, V at d2 on
+# Engine.HGP), the rule applied twice on `kernel_hgp`'s VRR / contracted HRR
+# machinery, `kernel_g1e`'s weights and locals pool and `kernel_h1e`'s
+# precondition note, checked against `hessian.host_1e` (and `d2s_`, `d2t_`,
+# `d2v_`) in the interpreter. The generator CLI writes its ladder
+# (`--hgp-hess-l`).
+RULES |= {
+    "hgd2_builder": _rule(
+        "kernel_hgd2.py: the HGP one-electron Hessian kernels -- key -> IR, "
+        "`kernel_hgp`'s VRR and contracted HRR over one table per weight, "
+        "`kernel_g1e`'s weights from M",
+        ("spec", "=ir", "hgp.hrr", "hgp.recurrence", "hgp.vrr",
+         "=one_electron.kernel_hgp", "gradient.kernel_g1e",
+         "hessian.kernel_h1e"),
+        ao=_HESS_1E_WITNESS, **{"hessian.host_1e": _HESS_1E_WITNESS,
+                                "gradient.host": _HESS_1E_WITNESS},
+        reference=_GROUND_TRUTH, **_NO_MACHINE),
+}
+RULE_OF["hessian.kernel_hgd2"] = "hgd2_builder"
+EDGES["hessian.kernel_hgd2"] = frozenset(
+    ("gradient.kernel_g1e", "hessian.kernel_h1e", "hgp.hrr",
+     "hgp.recurrence", "hgp.vrr", "ir", "one_electron.kernel_hgp", "spec"))
+RULES["driver"] = Rule(RULES["driver"].why + ", and the HGP one-electron "
+                       "Hessian ladder through `kernel_hgd2`",
+                       RULES["driver"].may
+                       | frozenset(("hessian.kernel_hgd2",)),
+                       RULES["driver"].must_not)
+EDGES["emit.__main__"] = EDGES["emit.__main__"] | frozenset(
+    ("hessian.kernel_hgd2",))
+
+
+def test_the_hgd2_builder_reaches_neither_its_witness_nor_a_machine(
+        ) -> None:
+    graph = _graph()
+    seen: set[str] = set()
+    todo = ["hessian.kernel_hgd2"]
+    while todo:
+        for e in graph.get(todo.pop(), set()):
+            if e not in seen:
+                seen.add(e)
+                todo.append(e)
+    assert {"one_electron.kernel_hgp", "hgp.recurrence"} <= seen
+    for banned in (_REF, "ao", *_LEFT_AO, "ir.interp", "emit",
+                   "performance.device", "gradient.host", "hessian.host_1e"):
+        hit = sorted(e for e in seen if _under(e, banned))
+        assert not hit, f"kernel_hgd2 reaches {hit}"
+
+
 def test_the_d2mu_builder_reaches_neither_its_witness_nor_a_machine(
         ) -> None:
     graph = _graph()

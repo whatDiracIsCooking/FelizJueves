@@ -324,9 +324,10 @@ is a key. Unbatched by its builder (`gk`'s reason).
 A HESSIAN CLASS IS ITS INTEGRAL'S CLASS AT `derivative_order = 2`, legal on
 `HESSIAN_TARGETS` alone -- `JAB`, `S`, `T`, `V`, `K`, `METRIC`, `ERI3`,
 `DIPOLE` and `QUADRUPOLE` on MMD, and `F` on HGP -- and on the pairs of
-`HESSIAN_OFF_NATIVE`: the two moments and `METRIC` and `ERI3` on
-`Engine.HGP` (`hessian.kernel_hd2mu`, `hd2mu_` / `hd2quad_`,
-``dipole/d2/(2,1)/b1/dipole.hgp/literal``; `hessian.kernel_hgd2metric`,
+`HESSIAN_OFF_NATIVE`: the two moments, `S`, `T`, `V`, `METRIC` and `ERI3`
+on `Engine.HGP` (`hessian.kernel_hd2mu`, `hd2mu_` / `hd2quad_`,
+``dipole/d2/(2,1)/b1/dipole.hgp/literal``; `hessian.kernel_hgd2`,
+``overlap/d2/(2,1)/b1/s.hgp/literal``; `hessian.kernel_hgd2metric`,
 `hessian.kernel_hgd2eri3`), and `J` and `K` on `Engine.HGP` -- every other
 target refusing it (`_HESSIAN_REFUSAL`). `F`, `J.hgp` and `K.hgp` at d2
 are the two-electron energies' Hessians by the HGP recurrence, one kernel
@@ -769,9 +770,9 @@ _GRADIENT_REFUSAL = (
 # (`hessian.kernel_d2metric`), and `ERI3`, `SUM_mnP M_mnP d2(mn|P)/dR dR`
 # (`hessian.kernel_d2eri3`), and `DIPOLE` and `QUADRUPOLE`, `SUM_mn M_mn
 # d2MU^c_mn/dR dR` per component about a fixed origin
-# (`hessian.kernel_d2mu`), each on MMD, the two moments and `METRIC` and
-# `ERI3` on HGP too (`HESSIAN_OFF_NATIVE`); and `F`, the fused Fock build's
-# two-electron energy `E_J - 1/2 E_K`, on its native HGP engine
+# (`hessian.kernel_d2mu`), each on MMD, the two moments, `S`, `T`, `V`,
+# `METRIC` and `ERI3` on HGP too (`HESSIAN_OFF_NATIVE`); and `F`, the fused
+# Fock build's two-electron energy `E_J - 1/2 E_K`, on its native HGP engine
 # (`hessian.kernel_hgp2`, `d2f_`).
 HESSIAN_TARGETS = frozenset((Target.JAB, Target.S, Target.T, Target.V,
                              Target.K, Target.METRIC, Target.ERI3,
@@ -781,15 +782,20 @@ HESSIAN_TARGETS = frozenset((Target.JAB, Target.S, Target.T, Target.V,
 # is built: `DIPOLE` and `QUADRUPOLE` on HGP, the moments' Hessians about a
 # fixed origin on `hgmu_` / `hgquad_`'s route, the derivative rule applied
 # twice over six contracted tables (`hessian.kernel_hd2mu`); the
-# density-fitting `METRIC` and `ERI3` on HGP, the Cartesian rule applied
-# twice on the HGP VRR (and, for `ERI3`, the bra HRR):
-# `hessian.kernel_hgd2metric`, `hessian.kernel_hgd2eri3`; and `J` and `K`
-# on HGP, the Coulomb and exchange energies' Hessians by `gf_`'s mapping
-# differentiated twice on all four centres (`hessian.kernel_hgp2`, `d2hj_`
-# / `d2hk_`; the F kernel with its weights split). MMD `J` at d2 stays
-# refused: its Hessian is `JAB`'s.
+# one-electron `S`, `T` and `V` on HGP (`hessian.kernel_hgd2`: the rule
+# applied twice on the HGP one-electron route of `gradient.kernel_hgs` /
+# `kernel_hgt` / `kernel_ghv`); the density-fitting `METRIC` and `ERI3` on
+# HGP, the Cartesian rule applied twice on the HGP VRR (and, for `ERI3`,
+# the bra HRR): `hessian.kernel_hgd2metric`, `hessian.kernel_hgd2eri3`; and
+# `J` and `K` on HGP, the Coulomb and exchange energies' Hessians by `gf_`'s
+# mapping differentiated twice on all four centres (`hessian.kernel_hgp2`,
+# `d2hj_` / `d2hk_`; the F kernel with its weights split). MMD `J` at d2
+# stays refused: its Hessian is `JAB`'s.
 HESSIAN_OFF_NATIVE = frozenset(((Target.DIPOLE, Engine.HGP),
                                 (Target.QUADRUPOLE, Engine.HGP),
+                                (Target.S, Engine.HGP),
+                                (Target.T, Engine.HGP),
+                                (Target.V, Engine.HGP),
                                 (Target.METRIC, Engine.HGP),
                                 (Target.ERI3, Engine.HGP),
                                 (Target.J, Engine.HGP),
@@ -800,8 +806,9 @@ _HESSIAN_REFUSAL = (
     "S, T, V (the one-electron Hessians), K (the exchange energy's), "
     "METRIC (the DF metric's), ERI3 (the three-center DF integral's) and "
     "DIPOLE, QUADRUPOLE (the moments' about a fixed origin) on "
-    "the MMD engine, DIPOLE, QUADRUPOLE, METRIC and ERI3 on the HGP engine "
-    "too, and F, J and K (the two-electron energies') on the HGP engine "
+    "the MMD engine, DIPOLE, QUADRUPOLE, S, T, V, METRIC and ERI3 on the "
+    "HGP engine too, and F, J and K (the two-electron energies') on the HGP "
+    "engine "
     "(felizjueves.hessian); this target's Hessian is a follow-up"
 )
 
