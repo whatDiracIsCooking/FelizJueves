@@ -169,7 +169,7 @@ ordered class (ss)-(ff) on HF/cc-pVTZ against the host and against
 their symmetry and the origin shift (`test_kernel_hd2mu.py`). Ladder
 `--hgp-hess-mu-l [LMAX]` (2 bare, 0..3), never in the bare default nor
 `KERNEL_GEN_CMD`; 6 goldens per backend (ss) (sp) (pp)
-(`test_emit_hd2mu.py`). COMPILE_TREE. Unrolled only: `hd2quad_33` is ~4.3 MB
+(`test_emit_hd2mu.py`). Every unit through (ff) compiled warning-free by nvcc (sm_86) and hipcc (gfx1200) (the 40 `cuda` / `hip` cases, 2026-11-09, a device-less cloud container). Unrolled only: `hd2quad_33` is ~4.3 MB
 of CUDA source. No device harness, no card, nothing measured.
 **The exchange
 energy's Hessian too, through (ff|ff), on both cards (#691)** (`hessian.md`, "The

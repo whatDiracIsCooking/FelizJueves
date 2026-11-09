@@ -629,7 +629,7 @@ Emit ladder `python -m felizjueves.emit --hess-mu-l [LMAX]` (2 bare,
 
 **Status: generated, interpreted through (ff) against the host and
 against `d2mu_` / `d2quad_`; every unit through (ff) compiled by nvcc 13.0
-(sm_86) and hipcc / ROCm 7.2.4 (gfx1200), COMPILE_DATE, a device-less cloud
+(sm_86) and hipcc / ROCm 7.2.4 (gfx1200), 2026-11-09, a device-less cloud
 container; not run on a card, not measured.**
 
 The first `derivative_order = 2` key off its target's native engine:
@@ -674,7 +674,7 @@ reads per-axis factors. A low-stack or rolled form is a follow-up.
 | the same | `d2mu_` / `d2quad_` interpreted, per class | the same classes | the same gate |
 | the same | the host, the symmetry `H[c,A,k,B,l] = H[c,B,l,A,k]`, and the origin shift through the d1 hosts | whole H₂O/STO-3G; CO/cc-pVTZ (`slow`) | the same gate; 1e-13 / 1e-12 of `max\|H\|` |
 | the goldens | text | (ss) (sp) (pp), 6 per backend (`test_emit_hd2mu.py`) | -- |
-| nvcc / hipcc compile | #92's warning filter | `test_emit_hd2mu.py`'s 40 `cuda` / `hip` cases through (ff) | COMPILE_RESULT |
+| nvcc / hipcc compile | #92's warning filter | `test_emit_hd2mu.py`'s 40 `cuda` / `hip` cases through (ff) | passed, no warning in generated text (2026-11-09; 6m21s for the 40 at `-n 4`, `hd2quad_33` the longest) |
 | on a card | -- | -- | **not run**: no device harness, no card in that session |
 
 Emit ladder `python -m felizjueves.emit --hgp-hess-mu-l [LMAX]` (2 bare,
