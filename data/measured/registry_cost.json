@@ -13,11 +13,11 @@
  },
  "counts": {
   "compile/cuda/measured": 119,
-  "compile/cuda/modelled": 367,
+  "compile/cuda/modelled": 374,
   "compile/hip/measured": 119,
-  "compile/hip/modelled": 367,
-  "gpu/cuda/modelled": 486,
-  "gpu/hip/modelled": 486
+  "compile/hip/modelled": 374,
+  "gpu/cuda/modelled": 493,
+  "gpu/hip/modelled": 493
  },
  "held_out": {
   "compile/cuda": {
