@@ -1,5 +1,6 @@
-"""`kernel_rys`: the Rys one-electron kernels, `S`, `T` and `V` on
-`Engine.RYS`, interpreted. Every shell through f (`kernel_rys.L_MAX = 3`).
+"""`kernel_rys`: the Rys one-electron kernels, `S`, `T`, `V` and the dipole
+on `Engine.RYS`, interpreted. Every shell through f (`kernel_rys.L_MAX =
+3`).
 
 The rule is injected as `rys=rys.roots.roots_weights` (the device routine's
 operation order; test/test_rys_roots.py holds it to a 40-digit route and
@@ -8,24 +9,30 @@ the `fj_rys` text run as host C++ to it bitwise).
 THE WITNESSES, three, none of which shares the kernels' route:
 
 - THE MMD HOST, `one_electron.overlap` / `kinetic` / `potential`'s whole
-  matrices (McMurchie & Davidson's `E`, the Boys function for `V`), within
+  matrices (McMurchie & Davidson's `E`, the Boys function for `V`) and
+  `multipole.multipole_matrix(e = 1)` for the dipole at `ORIGIN`, within
   `HOST_TOL` of the matrix's largest element. Not bitwise: another
   recurrence, another association, and a quadrature in place of the Boys
   function. On SYNTHETIC bases, contracted, on three off-axis centres under
   four nuclei (every `PA`, `AB`, `P - C` component nonzero), every ordered
   class launched once over all its shell pairs, diagonal and off-diagonal
   mixed: s, p, d (fast: every class L <= 4) and s through f (`slow`).
-- THE HGP KERNELS (`kernel_hgp`, s and p), the same skeleton on another
+- THE HGP KERNELS (`kernel_hgp`, s and p; the dipole's `hmu_` through f),
+  the same skeleton on another
   per-record route, within `HOST_TOL`; and their parameter blocks equal,
   so a `rs_` unit is a drop-in for the `hs_` unit of its class.
 - LIBCINT, through the tracked fixtures, within `LIBCINT_TOL` of the
   largest element: `int1e_ovlp`, `int1e_kin`, `int1e_nuc` on H2O/STO-3G and
   6-31G (s and p, fast), H2O/cc-pVDZ (d) and `prim_spdf` (one primitive per
   l = 0..3, f) `slow` -- the kernels interpreted over `one_electron_launch`'s
-  plan, staged by `OneEClass.hgp_arrays`.
+  plan, staged by `OneEClass.hgp_arrays`; and `int1e_r_cart` for the dipole
+  on H2O/STO-3G and 6-31G (fast), `hf_ccpvtz_spd_dipole` (d) and
+  `hf_ccpvtz_dipole` (f) `slow`, at the fixtures' origin and at 0. And the
+  dipole's origin shift, `MU(0)_d = MU(C)_d + C_d S`, every term a Rys
+  kernel.
 
 And the kernel's shape: the key and name, the refusals (g, an HGP key, the
-dipole, `SX`, a lever), the parameter block equal to the staging's names, no
+quadrupole, `SX`, a lever), the parameter block equal to the staging's names, no
 atomics, a `Rys` statement in `V` alone with `N = (la + lb) // 2 + 1` nodes,
 and every local read (a declared but unread local is a warning on both
 compilers, #92's filter).
@@ -61,6 +68,7 @@ from felizjueves.ir.interp import Interpreter, Launch
 from felizjueves.one_electron import kernel_hgp as kh
 from felizjueves.one_electron import kernel_rys as kr
 from felizjueves.one_electron.kinetic import kinetic_matrix
+from felizjueves.one_electron.multipole import multipole_matrix
 from felizjueves.one_electron.overlap import overlap_matrix
 from felizjueves.one_electron.potential import potential_matrix
 from felizjueves.reference.boys import boys
@@ -78,6 +86,8 @@ A = (0.05, -0.02, 0.11)
 B = (0.94, 0.13, -0.31)
 C = (-0.41, 0.88, -0.27)
 NUCLEI = ((7.0, A), (1.0, B), (1.0, C), (2.0, (0.37, -0.79, -0.42)))
+ORIGIN = (0.3, -0.7, 1.1)  # the dipole's origin, off every centre
+ZERO = (0.0, 0.0, 0.0)
 
 
 def _synthetic(lmax: int) -> Basis:
@@ -97,18 +107,23 @@ def _arrays(c, target, basis):
             for k, v in c.hgp_arrays(target, basis).items()}
 
 
-def _build(basis, nuclei, target, *, engine=Engine.RYS, threads=3):
+def _build(basis, nuclei, target, *, engine=Engine.RYS, threads=3,
+           C=ORIGIN, q=1.0):
     """`target`'s matrix from the Rys (or HGP) kernels, interpreted over
     `one_electron_launch`'s plan (tau = 0): one launch per class."""
     plan = one_electron_launch(basis, nuclei, tau=0.0, bound=overlap_bound)
     n = basis.n_ao
     out = kh.OUT[target]
-    M = np.zeros((n, n))
+    M = np.zeros((kh.n_components(target), n, n) if target in kh.MOMENTS
+                 else (n, n))
     for c in plan:
         extra: dict = {}
         if target is Target.V:
             extra = dict(n_nuc=len(plan.nuclei), Z=np.array(plan.Z),
                          Cnuc=np.array(plan.Cnuc))
+        if target in kh.MOMENTS:
+            extra = dict(C_x=float(C[0]), C_y=float(C[1]), C_z=float(C[2]),
+                         q=float(q))
         grid, block = kh.launch_shape(len(c.blocks), threads)
         if engine is Engine.RYS:
             k = kr.build_rys_kernel(kr.rys_spec(target, c.la, c.lb))
@@ -121,11 +136,13 @@ def _build(basis, nuclei, target, *, engine=Engine.RYS, threads=3):
     return M
 
 
-def _host(basis, nuclei, target):
+def _host(basis, nuclei, target, C=ORIGIN, q=1.0):
     if target is Target.S:
         return np.array(overlap_matrix(basis))
     if target is Target.T:
         return np.array(kinetic_matrix(basis))
+    if target is Target.DIPOLE:
+        return np.array(multipole_matrix(basis, C, e=1, q=q))
     return np.array(potential_matrix(basis, nuclei, one_centre=one_centre))
 
 
@@ -152,11 +169,14 @@ def test_the_key_and_the_name() -> None:
         "overlap/d0/(1,0)/b1/s.rys/literal"
     assert kr.rys_spec(Target.V, 2, 3).key() == \
         "nuclear/d0/(2,3)/b1/v.rys/literal"
+    assert kr.rys_spec(Target.DIPOLE, 1, 0).key() == \
+        "dipole/d0/(1,0)/b1/dipole.rys/literal"
     names = {kr.rys_name((t, la, lb)) for t in kr.TARGETS
              for la, lb in CLASSES}
-    assert len(names) == 3 * len(CLASSES)
+    assert len(names) == len(kr.TARGETS) * len(CLASSES)
     assert kr.rys_name((Target.T, 1, 3)) == "rt_13"
     assert kr.rys_name((Target.V, 0, 0)) == "rv_00"
+    assert kr.rys_name((Target.DIPOLE, 2, 3)) == "rmu_23"
     for t in kr.TARGETS:
         assert kr.build_rys_kernel((t, 1, 0)).name == \
             kr.rys_name((t, 1, 0))
@@ -169,8 +189,8 @@ def test_the_refusals() -> None:
         kr.build_rys_kernel(Spec(Operator.OVERLAP, 0, (0, 0), Target.S))
     with pytest.raises(ValueError, match="not a Rys key"):
         kr.build_rys_kernel(kh.hgp_spec(Target.T, 0, 0))
-    with pytest.raises(ValueError, match="engine rys on target dipole"):
-        kr.rys_spec(Target.DIPOLE, 0, 0)
+    with pytest.raises(ValueError, match="engine rys on target quadrupole"):
+        kr.rys_spec(Target.QUADRUPOLE, 0, 0)
     with pytest.raises(ValueError, match="engine rys on target sx"):
         kr.rys_spec(Target.SX, 0, 0)
     with pytest.raises(ValueError, match="Rys one-electron kernels are"):
@@ -238,7 +258,8 @@ def test_no_atomics_the_rule_in_v_and_every_local_read(target, cls) -> None:
 
 def test_ss_reads_no_recurrence_scalar() -> None:
     # (ss) has no 1D step and no HRR step: no PA, inv2p, node or AB. (Not
-    # T: its table 2 reads (a|b+2_d), so (ss) steps twice and transfers.)
+    # T: its table 2 reads (a|b+2_d), so (ss) steps twice and transfers,
+    # nor the dipole: it reads (a|b+1_d).)
     for t in (Target.S, Target.V):
         k = kr.build_rys_kernel((t, 0, 0))
         names = {s.name for s in walk(k.body) if isinstance(s, Decl)}
@@ -258,14 +279,29 @@ def test_the_whole_matrix_is_the_mmd_hosts(target, lmax) -> None:
     got = _build(basis, NUCLEI, target)
     assert _rel(got, _host(basis, NUCLEI, target)) <= HOST_TOL
     # every element written once by a plain store: symmetric by construction
-    assert np.array_equal(got, got.T)
+    assert np.array_equal(got, np.swapaxes(got, -1, -2))
 
 
 @pytest.mark.parametrize("target", TARGETS)
 def test_the_whole_matrix_is_the_hgp_kernels(target) -> None:
-    basis = _synthetic(kh.L_MAX)
+    # the HGP dipole is built through f; S, T, V for s and p
+    basis = _synthetic(2 if target is Target.DIPOLE else kh.L_MAX)
     assert _rel(_build(basis, NUCLEI, target),
                 _build(basis, NUCLEI, target, engine=Engine.HGP)) <= HOST_TOL
+
+
+@pytest.mark.parametrize("lmax", [by_l(2, 4, "spd"), by_l(3, 6, "spdf")])
+def test_the_dipoles_origin_shift(lmax) -> None:
+    # (r - 0) = (r - C) + C: MU(0)_d = MU(C)_d + C_d S, every term a Rys
+    # kernel's
+    basis = _synthetic(lmax)
+    a = _build(basis, (), Target.DIPOLE, C=ORIGIN)
+    b = _build(basis, (), Target.DIPOLE, C=ZERO)
+    S = _build(basis, (), Target.S)
+    for d in range(3):
+        assert _rel(b[d], a[d] + ORIGIN[d] * S) <= HOST_TOL
+    # and the charge is a plain scale
+    assert np.array_equal(_build(basis, (), Target.DIPOLE, q=-1.0), -a)
 
 
 def test_the_far_nucleus_reaches_the_laguerre_branch() -> None:
@@ -294,3 +330,24 @@ def test_s_t_v_are_libcints(name, target, array) -> None:
     assert max(s.l for s in basis.shells) <= kr.L_MAX
     assert _rel(_build(basis, nuclei, target), fx.arrays[array]) \
         <= LIBCINT_TOL
+
+
+@pytest.mark.parametrize("name", ["h2o_sto3g", "h2o_631g"])
+def test_the_dipole_is_libcints_int1e_r_cart(name) -> None:
+    p = manifest.dipole_pair(name)
+    basis = ob.from_fixture(p.dipole)
+    for C, want in ((p.origin, p.r), (ZERO, p.r0)):
+        assert _rel(_build(basis, (), Target.DIPOLE, C=C), want) \
+            <= LIBCINT_TOL, tuple(C)
+
+
+@pytest.mark.parametrize("case", [
+    by_l(manifest.SPD_DIPOLE, 4, id="spd"),
+    by_l(manifest.F_DIPOLE, 6, id="f")])
+def test_the_dipole_above_p_is_libcints_int1e_r_cart(case) -> None:
+    d = manifest.dipole_integrals(case)
+    basis = ob.from_fixture(d.fixture)
+    assert max(s.l for s in basis.shells) <= kr.L_MAX
+    for C, want in ((d.origin, d.r), (ZERO, d.r0)):
+        assert _rel(_build(basis, (), Target.DIPOLE, C=C), want) \
+            <= LIBCINT_TOL, tuple(C)

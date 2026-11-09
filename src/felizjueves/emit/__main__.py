@@ -389,12 +389,13 @@ for CUDA, `.hip` for HIP):
 
 - the Rys one-electron ladder, `--rys-one-e-l [LMAX]`: for every pair class
   `(la, lb)`, `la <= lb <= LMAX` (3 when the flag is given bare),
-  `kernel_rys.build_rys_kernel` for `Target.S`, `T` and `V` on
-  `Engine.RYS` (`rs_{la}{lb}`, `rt_`, `rv_`): the Rys factorisation per
+  `kernel_rys.build_rys_kernel` for `Target.S`, `T`, `V` and `DIPOLE` on
+  `Engine.RYS` (`rs_{la}{lb}`, `rt_`, `rv_`, `rmu_`): the Rys factorisation per
   primitive pair (the 1D recurrences, and for `V` the Rys rule `fj_rys<N>`
   per nucleus, carried in the unit) into `kernel_hgp`'s contracted boundary
   and HRR, one thread per contracted shell pair -- a drop-in for the
-  `hs_` / `ht_` / `hv_` unit of the same class. Accepted
+  `hs_` / `ht_` / `hv_` / `hmu_` unit of the same class (the dipole's
+  origin `C` and charge `q` runtime scalars, as `hmu_`'s). Accepted
   0..`RYS_ONE_E_L_MAX` = 3 ONLY (the builder is built and checked through
   (ff); above it is a 2). It ADDS units beside the J ladders, as
   `--hgp-one-e-l` does, and is NEVER in the no-flag default nor in
@@ -770,7 +771,7 @@ HGP_ONE_E_L_MAX = 1  # kernel_hgp.L_MAX: built and checked for s and p only
 # `--hgp-one-e-l`'s targets: the quadrupole is `--hgp-mu-l`'s alone
 HGP_ONE_E_TARGETS = (Target.S, Target.T, Target.V, Target.DIPOLE)
 DEFAULT_HGP_MU_L = 2  # `--hgp-mu-l` given bare: (ss) through (dd), 12 units
-DEFAULT_RYS_ONE_E_L = 3  # `--rys-one-e-l` given bare: (ss) through (ff), 30
+DEFAULT_RYS_ONE_E_L = 3  # `--rys-one-e-l` given bare: (ss) through (ff), 40
 RYS_ONE_E_L_MAX = 3  # kernel_rys.L_MAX: built and checked through (ff)
 # `--hgp-grad-l` given bare: hgt_, hgs_, ghv_, hgmu_ (ss) (sp) (pp)
 DEFAULT_HGP_GRAD_L = 1
@@ -1597,7 +1598,7 @@ def rys_one_e_classes(lmax: int) -> list[tuple[int, int]]:
 
 
 def rys_one_e_kernels(lmax: int) -> list[Kernel]:
-    """`rs_`, `rt_`, `rv_{la}{lb}` for every class through `lmax`,
+    """`rs_`, `rt_`, `rv_`, `rmu_{la}{lb}` for every class through `lmax`,
     class-major."""
     return [build_rys_kernel((t, la, lb)) for la, lb in rys_one_e_classes(lmax)
             for t in RYS_ONE_E_TARGETS]
@@ -1605,7 +1606,7 @@ def rys_one_e_kernels(lmax: int) -> list[Kernel]:
 
 def generate_rys_one_e(backend: str, arch: Arch, out: Path,
                        lmax: int) -> list[Path]:
-    """Emit the Rys `S`, `T` and `V` unit of every pair class through `lmax`
+    """Emit the Rys `S`, `T`, `V` and dipole unit of every pair class through `lmax`
     into `out`; return the paths."""
     kernels = rys_one_e_kernels(lmax)
     out.mkdir(parents=True, exist_ok=True)

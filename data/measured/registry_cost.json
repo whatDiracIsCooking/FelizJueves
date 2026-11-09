@@ -13,11 +13,11 @@
  },
  "counts": {
   "compile/cuda/measured": 119,
-  "compile/cuda/modelled": 367,
+  "compile/cuda/modelled": 374,
   "compile/hip/measured": 119,
-  "compile/hip/modelled": 367,
-  "gpu/cuda/modelled": 486,
-  "gpu/hip/modelled": 486
+  "compile/hip/modelled": 374,
+  "gpu/cuda/modelled": 493,
+  "gpu/hip/modelled": 493
  },
  "held_out": {
   "compile/cuda": {
@@ -14520,6 +14520,223 @@
     },
     "hip": {
      "s": 12.084,
+     "basis": "modelled",
+     "source": "compile"
+    }
+   }
+  },
+  {
+   "engine": "rys",
+   "quantity": "dipole",
+   "deriv": 0,
+   "L": 0,
+   "family": "one-electron-extra",
+   "compile": {
+    "cuda": {
+     "s": 1.716,
+     "basis": "modelled",
+     "source": "fit:one-electron-extra"
+    },
+    "hip": {
+     "s": 2.517,
+     "basis": "modelled",
+     "source": "fit:one-electron-extra"
+    }
+   },
+   "gpu": {
+    "cuda": {
+     "s": 1.716,
+     "basis": "modelled",
+     "source": "compile"
+    },
+    "hip": {
+     "s": 2.517,
+     "basis": "modelled",
+     "source": "compile"
+    }
+   }
+  },
+  {
+   "engine": "rys",
+   "quantity": "dipole",
+   "deriv": 0,
+   "L": 1,
+   "family": "one-electron-extra",
+   "compile": {
+    "cuda": {
+     "s": 1.916,
+     "basis": "modelled",
+     "source": "fit:one-electron-extra"
+    },
+    "hip": {
+     "s": 2.825,
+     "basis": "modelled",
+     "source": "fit:one-electron-extra"
+    }
+   },
+   "gpu": {
+    "cuda": {
+     "s": 1.916,
+     "basis": "modelled",
+     "source": "compile"
+    },
+    "hip": {
+     "s": 2.825,
+     "basis": "modelled",
+     "source": "compile"
+    }
+   }
+  },
+  {
+   "engine": "rys",
+   "quantity": "dipole",
+   "deriv": 0,
+   "L": 2,
+   "family": "one-electron-extra",
+   "compile": {
+    "cuda": {
+     "s": 2.138,
+     "basis": "modelled",
+     "source": "fit:one-electron-extra"
+    },
+    "hip": {
+     "s": 3.172,
+     "basis": "modelled",
+     "source": "fit:one-electron-extra"
+    }
+   },
+   "gpu": {
+    "cuda": {
+     "s": 2.138,
+     "basis": "modelled",
+     "source": "compile"
+    },
+    "hip": {
+     "s": 3.172,
+     "basis": "modelled",
+     "source": "compile"
+    }
+   }
+  },
+  {
+   "engine": "rys",
+   "quantity": "dipole",
+   "deriv": 0,
+   "L": 3,
+   "family": "one-electron-extra",
+   "compile": {
+    "cuda": {
+     "s": 2.387,
+     "basis": "modelled",
+     "source": "fit:one-electron-extra"
+    },
+    "hip": {
+     "s": 3.56,
+     "basis": "modelled",
+     "source": "fit:one-electron-extra"
+    }
+   },
+   "gpu": {
+    "cuda": {
+     "s": 2.387,
+     "basis": "modelled",
+     "source": "compile"
+    },
+    "hip": {
+     "s": 3.56,
+     "basis": "modelled",
+     "source": "compile"
+    }
+   }
+  },
+  {
+   "engine": "rys",
+   "quantity": "dipole",
+   "deriv": 0,
+   "L": 4,
+   "family": "one-electron-extra",
+   "compile": {
+    "cuda": {
+     "s": 2.664,
+     "basis": "modelled",
+     "source": "fit:one-electron-extra"
+    },
+    "hip": {
+     "s": 3.997,
+     "basis": "modelled",
+     "source": "fit:one-electron-extra"
+    }
+   },
+   "gpu": {
+    "cuda": {
+     "s": 2.664,
+     "basis": "modelled",
+     "source": "compile"
+    },
+    "hip": {
+     "s": 3.997,
+     "basis": "modelled",
+     "source": "compile"
+    }
+   }
+  },
+  {
+   "engine": "rys",
+   "quantity": "dipole",
+   "deriv": 0,
+   "L": 5,
+   "family": "one-electron-extra",
+   "compile": {
+    "cuda": {
+     "s": 2.973,
+     "basis": "modelled",
+     "source": "fit:one-electron-extra, extrapolated past L 4"
+    },
+    "hip": {
+     "s": 4.487,
+     "basis": "modelled",
+     "source": "fit:one-electron-extra, extrapolated past L 4"
+    }
+   },
+   "gpu": {
+    "cuda": {
+     "s": 2.973,
+     "basis": "modelled",
+     "source": "compile"
+    },
+    "hip": {
+     "s": 4.487,
+     "basis": "modelled",
+     "source": "compile"
+    }
+   }
+  },
+  {
+   "engine": "rys",
+   "quantity": "dipole",
+   "deriv": 0,
+   "L": 6,
+   "family": "one-electron-extra",
+   "compile": {
+    "cuda": {
+     "s": 3.318,
+     "basis": "modelled",
+     "source": "fit:one-electron-extra, extrapolated past L 4"
+    },
+    "hip": {
+     "s": 5.037,
+     "basis": "modelled",
+     "source": "fit:one-electron-extra, extrapolated past L 4"
+    }
+   },
+   "gpu": {
+    "cuda": {
+     "s": 3.318,
+     "basis": "modelled",
+     "source": "compile"
+    },
+    "hip": {
+     "s": 5.037,
      "basis": "modelled",
      "source": "compile"
     }
