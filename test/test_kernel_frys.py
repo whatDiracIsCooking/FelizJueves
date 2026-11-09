@@ -97,11 +97,13 @@ def test_the_key_is_f_on_the_rys_engine() -> None:
 @pytest.mark.parametrize("target", [
     t for t in Target
     # F here; J and K in eri/hjk/kernel_rj.py / kernel_rk.py; S, T, V and
-    # the dipole in one_electron/kernel_rys.py (test_kernel_rys_one_e); the
-    # DF metric in eri/density_fit/kernel_rmetric.py (test_kernel_rmetric);
-    # ERI3 in eri/density_fit/kernel_reri3.py (test_kernel_reri3)
+    # the dipole and the quadrupole in one_electron/kernel_rys.py
+    # (test_kernel_rys_one_e); the DF metric in
+    # eri/density_fit/kernel_rmetric.py (test_kernel_rmetric); ERI3 in
+    # eri/density_fit/kernel_reri3.py (test_kernel_reri3)
     if t not in (Target.F, Target.J, Target.K, Target.S, Target.T, Target.V,
-                 Target.DIPOLE, Target.METRIC, Target.ERI3)])
+                 Target.DIPOLE, Target.QUADRUPOLE, Target.METRIC,
+                 Target.ERI3)])
 def test_rys_is_refused_on_every_other_target(target) -> None:
     from felizjueves.spec import AM_LENGTH, OPERATOR_OF
     with pytest.raises(ValueError, match=f"engine rys on target {target}"):

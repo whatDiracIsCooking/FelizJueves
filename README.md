@@ -61,7 +61,7 @@ class's total angular momentum.
 | Overlap `S`, kinetic `T`, nuclear `V` | **both cards**, through (ff) | s and p: **both cards** | compiled, through (ff) |
 | Cross-basis overlap `S_{B1,B2}` | **both cards** | — | — |
 | Dipole `MU` | **both cards**, through (ff) | **both cards** at s and p; compiled through (ff) | `rmu_`: compiled, through (ff) |
-| Quadrupole (raw second moments) | **both cards**, through (dd) | compiled, through (ff) | — |
+| Quadrupole (raw second moments) | **both cards**, through (dd) | compiled, through (ff) | `rquad_`: compiled, through (ff) |
 
 ### First derivatives (`derivative_order = 1`)
 

@@ -1,16 +1,30 @@
-"""The one-electron kernels by the Rys route: `S`, `T`, `V` and the dipole.
+"""The one-electron kernels by the Rys route: `S`, `T`, `V`, the dipole
+and the quadrupole.
 
     build_rys_kernel(spec | (target, la, lb)) -> Kernel   one per class
     rys_name(spec | (target, la, lb))         -> str      its name, unbuilt
     rys_spec(target, la, lb)                  -> Spec     the class's key
 
-`Target.S`, `T`, `V` and `DIPOLE` on `Engine.RYS` (`spec.py`, "A RYS
-ONE-ELECTRON CLASS"), every shell `l <= L_MAX = 3` (through (ff)),
-Cartesian. The MMD kernels (`kernel_s`, `kernel_t`, `kernel_v`,
-`kernel_mu`) and the HGP ones (`kernel_hgp`) are untouched; this is the
-third engine's instance of the same four matrices, and a DROP-IN for
-`kernel_hgp`'s unit of the same class: the same parameters, staging
-(`OneEClass.hgp_arrays`), launch (`kernel_hgp.launch_shape`) and output.
+`Target.S`, `T`, `V`, `DIPOLE` (`TARGETS`) and `QUADRUPOLE` (`MOMENTS`) on
+`Engine.RYS` (`spec.py`, "A RYS ONE-ELECTRON CLASS"), every shell
+`l <= L_MAX = 3` (through (ff)), Cartesian. The MMD kernels (`kernel_s`,
+`kernel_t`, `kernel_v`, `kernel_mu`) and the HGP ones (`kernel_hgp`) are
+untouched; this is the third engine's instance of the same five matrices,
+and a DROP-IN for `kernel_hgp`'s unit of the same class: the same
+parameters, staging (`OneEClass.hgp_arrays`), launch
+(`kernel_hgp.launch_shape`) and output.
+
+THE QUADRUPOLE (`rquad_{la}{lb}`, the raw second moments
+`<a| q (r - C)_d (r - C)_e |b>` into `MU[6, n_ao, n_ao]`, xx xy xz yy yz
+zz, `kernel_mu`'s component order; not the traceless tensor) is the
+dipole's route one step higher: `kernel_hgp` moves the operator onto the
+ket, `(r - C)_d |b> = |b+1_d> + (B - C)_d |b>`, twice, so its one table's
+HRR reads `(a|b)`, `(a|b+1_d)` and `(a|b+1_d+1_e)`, whose boundary `(e|0)`
+runs to `|e| = la + lb + 2`; the nodeless 1D tables here fill that
+boundary, and `kernel_hgp.assemble` forms the six components from the HRR's
+values and `BC = B - C` exactly as for `hquad_`. It has its own ladder
+(`--rys-quad-l`), as the HGP quadrupole has `--hgp-mu-l`, so it is in
+`MOMENTS`, not `TARGETS`.
 
 THE ROUTE: the Rys factorisation (#468, `experimental/rys/`; the fused F's
 `eri/fock/kernel_frys.py` is its two-electron instance). A one-electron
@@ -106,12 +120,15 @@ from felizjueves.rys import recurrence as rr
 from felizjueves.rys.roots import N_MAX, n_roots
 from felizjueves.spec import OPERATOR_OF, Engine, Spec, Target
 
-__all__ = ["L_MAX", "TARGETS", "build_rys_kernel", "rys_name", "rys_spec"]
+__all__ = ["ALL", "L_MAX", "MOMENTS", "TARGETS", "build_rys_kernel",
+           "rys_name", "rys_spec"]
 
 L_MAX = 3  # through (ff): the scope this instance is built and checked for
-TARGETS = (Target.S, Target.T, Target.V, Target.DIPOLE)
+TARGETS = (Target.S, Target.T, Target.V, Target.DIPOLE)  # `--rys-one-e-l`'s
+MOMENTS = (Target.QUADRUPOLE,)  # `--rys-quad-l`'s
+ALL = TARGETS + MOMENTS
 _PREFIX = {Target.S: "rs", Target.T: "rt", Target.V: "rv",
-           Target.DIPOLE: "rmu"}
+           Target.DIPOLE: "rmu", Target.QUADRUPOLE: "rquad"}
 _AXES = "xyz"
 _TWO_OVER_SQRT_PI = 2.0 / math.sqrt(math.pi)
 _REC = "kr"  # kernel_hgp.assemble's record loop variable
@@ -130,13 +147,13 @@ def rys_spec(target: Target, la: int, lb: int) -> Spec:
 
 def _class(cls: Spec | tuple[Target, int, int]) -> tuple[Target, int, int]:
     spec = cls if isinstance(cls, Spec) else rys_spec(*cls)
-    if spec.target not in TARGETS:
+    if spec.target not in ALL:
         raise ValueError(f"{spec.key()}: the Rys one-electron kernels are "
-                         f"{[t.value for t in TARGETS]}")
+                         f"{[t.value for t in ALL]}")
     if spec.engine is not Engine.RYS:
         raise ValueError(f"{spec.key()} is not a Rys key; the other engines' "
                          "kernels of this target are kernel_s / kernel_t / "
-                         "kernel_v (MMD) and kernel_hgp (HGP)")
+                         "kernel_v / kernel_mu (MMD) and kernel_hgp (HGP)")
     if spec.levers:
         raise ValueError(f"{spec.key()}: the Rys one-electron kernels take "
                          "no levers")
@@ -152,8 +169,8 @@ def _class(cls: Spec | tuple[Target, int, int]) -> tuple[Target, int, int]:
 
 def rys_name(cls: Spec | tuple[Target, int, int]) -> str:
     """The name `build_rys_kernel(cls)` gives its kernel, unbuilt:
-    `rs_{la}{lb}`, `rt_`, `rv_`, `rmu_` (`kernel_hgp`'s `hs_` / `hmu_`
-    with the engine's letter)."""
+    `rs_{la}{lb}`, `rt_`, `rv_`, `rmu_`, `rquad_` (`kernel_hgp`'s `hs_` /
+    `hmu_` / `hquad_` with the engine's letter)."""
     target, la, lb = _class(cls)
     return f"{_PREFIX[target]}_{la}{lb}"
 
@@ -244,9 +261,10 @@ def _record_scalars(es: tuple[Cart, ...]) -> list[Stmt]:
 
 def _overlap_record(target: Target,
                     bounds: dict[int, tuple[Cart, ...]]) -> list[Stmt]:
-    """`S`, `T` and the dipole: the 1D tables once, then every boundary
-    element's product into its tables' accumulators (`T`'s weighted by
-    `beta^n`; `S`'s and the dipole's one table unweighted)."""
+    """`S`, `T`, the dipole and the quadrupole: the 1D tables once, then
+    every boundary element's product into its tables' accumulators (`T`'s
+    weighted by `beta^n`; `S`'s and the moments' one table unweighted, the
+    dipole's reaching `la + lb + 1`, the quadrupole's `la + lb + 2`)."""
     es = boundary_union(bounds)
     record = _record_scalars(es)
     table_stmts, tables = _overlap_tables(es)
@@ -258,7 +276,7 @@ def _overlap_record(target: Target,
     record += [Note("the 1D overlap recurrence per axis, I(i + 1) = PA I(i) "
                     "+ i/(2 zeta) I(i - 1), the seed u in the z axis"),
                *table_stmts]
-    if target in (Target.S, Target.DIPOLE):
+    if target is not Target.T:
         record.append(Note("the boundary: (e|0) += I_x I_y I_z"))
         for e in bounds[0]:
             a = Var(acc_name(0, e))
@@ -332,7 +350,8 @@ def build_rys_kernel(cls: Spec | tuple[Target, int, int], *,
                      name: str | None = None) -> Kernel:
     """The Rys one-electron kernel of one class.
 
-    `cls` is a Rys `Target.S` / `T` / `V` / `DIPOLE` `Spec`, or
+    `cls` is a Rys `Target.S` / `T` / `V` / `DIPOLE` / `QUADRUPOLE`
+    `Spec`, or
     `(target, la, lb)`.
     See the module docstring.
     """
@@ -347,7 +366,9 @@ def build_rys_kernel(cls: Spec | tuple[Target, int, int], *,
         how = "the nodeless 1D recurrence"
     what = {Target.S: "overlap S", Target.T: "kinetic T",
             Target.V: "nuclear attraction V",
-            Target.DIPOLE: "dipole MU = <a| q (r - C) |b>"}[target]
+            Target.DIPOLE: "dipole MU = <a| q (r - C) |b>",
+            Target.QUADRUPOLE: ("quadrupole (raw second moments) "
+                                "<a| q (r - C)_d (r - C)_e |b>")}[target]
     return assemble(
         target, la, lb, hrrs, bounds, tuple(record),
         name=name or rys_name((target, la, lb)),

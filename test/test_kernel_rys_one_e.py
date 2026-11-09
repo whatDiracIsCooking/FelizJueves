@@ -1,6 +1,6 @@
-"""`kernel_rys`: the Rys one-electron kernels, `S`, `T`, `V` and the dipole
-on `Engine.RYS`, interpreted. Every shell through f (`kernel_rys.L_MAX =
-3`).
+"""`kernel_rys`: the Rys one-electron kernels, `S`, `T`, `V`, the dipole
+and the quadrupole on `Engine.RYS`, interpreted. Every shell through f
+(`kernel_rys.L_MAX = 3`).
 
 The rule is injected as `rys=rys.roots.roots_weights` (the device routine's
 operation order; test/test_rys_roots.py holds it to a 40-digit route and
@@ -31,8 +31,15 @@ THE WITNESSES, three, none of which shares the kernels' route:
   dipole's origin shift, `MU(0)_d = MU(C)_d + C_d S`, every term a Rys
   kernel.
 
-And the kernel's shape: the key and name, the refusals (g, an HGP key, the
-quadrupole, `SX`, a lever), the parameter block equal to the staging's names, no
+THE QUADRUPOLE (`rquad_`, the six raw second moments into `MU[6, ...]`) is
+held to the MMD host's `multipole_matrix(e = 2)` (d fast, f `slow`), to the
+HGP `hquad_` kernels on the same bases, to libcint's `int1e_rr_cart` on
+`hf_ccpvtz_spd_quadrupole` at its origin and at 0, all within the bounds
+above; the charge is an exact factor; and its parameter block is
+`hquad_`'s.
+
+And the kernel's shape: the key and name, the refusals (g, an HGP key, `SX`,
+a lever), the parameter block equal to the staging's names, no
 atomics, a `Rys` statement in `V` alone with `N = (la + lb) // 2 + 1` nodes,
 and every local read (a declared but unread local is a warning on both
 compilers, #92's filter).
@@ -88,6 +95,7 @@ C = (-0.41, 0.88, -0.27)
 NUCLEI = ((7.0, A), (1.0, B), (1.0, C), (2.0, (0.37, -0.79, -0.42)))
 ORIGIN = (0.3, -0.7, 1.1)  # the dipole's origin, off every centre
 ZERO = (0.0, 0.0, 0.0)
+QUAD = Target.QUADRUPOLE
 
 
 def _synthetic(lmax: int) -> Basis:
@@ -137,6 +145,8 @@ def _build(basis, nuclei, target, *, engine=Engine.RYS, threads=3,
 
 
 def _host(basis, nuclei, target, C=ORIGIN, q=1.0):
+    if target is QUAD:
+        return np.array(multipole_matrix(basis, C, e=2, q=q))
     if target is Target.S:
         return np.array(overlap_matrix(basis))
     if target is Target.T:
@@ -177,7 +187,10 @@ def test_the_key_and_the_name() -> None:
     assert kr.rys_name((Target.T, 1, 3)) == "rt_13"
     assert kr.rys_name((Target.V, 0, 0)) == "rv_00"
     assert kr.rys_name((Target.DIPOLE, 2, 3)) == "rmu_23"
-    for t in kr.TARGETS:
+    assert kr.rys_spec(QUAD, 2, 3).key() == \
+        "quadrupole/d0/(2,3)/b1/quadrupole.rys/literal"
+    assert kr.rys_name((QUAD, 3, 1)) == "rquad_31"
+    for t in kr.ALL:
         assert kr.build_rys_kernel((t, 1, 0)).name == \
             kr.rys_name((t, 1, 0))
 
@@ -189,8 +202,6 @@ def test_the_refusals() -> None:
         kr.build_rys_kernel(Spec(Operator.OVERLAP, 0, (0, 0), Target.S))
     with pytest.raises(ValueError, match="not a Rys key"):
         kr.build_rys_kernel(kh.hgp_spec(Target.T, 0, 0))
-    with pytest.raises(ValueError, match="engine rys on target quadrupole"):
-        kr.rys_spec(Target.QUADRUPOLE, 0, 0)
     with pytest.raises(ValueError, match="engine rys on target sx"):
         kr.rys_spec(Target.SX, 0, 0)
     with pytest.raises(ValueError, match="Rys one-electron kernels are"):
@@ -351,3 +362,51 @@ def test_the_dipole_above_p_is_libcints_int1e_r_cart(case) -> None:
     for C, want in ((d.origin, d.r), (ZERO, d.r0)):
         assert _rel(_build(basis, (), Target.DIPOLE, C=C), want) \
             <= LIBCINT_TOL, tuple(C)
+
+
+# ---------------------------------------------------------------------------
+# The quadrupole: the raw second moments, the operator on the ket
+# ---------------------------------------------------------------------------
+
+
+def test_the_quadrupole_is_a_drop_in_for_hquad() -> None:
+    for la, lb in CLASSES:
+        assert kr.build_rys_kernel((QUAD, la, lb)).params == \
+            kh.build_hgp_kernel((QUAD, la, lb)).params
+
+
+@pytest.mark.parametrize("cls", split_by_l(CLASSES, sum, ids=str))
+def test_the_quadrupole_has_no_node_no_atomic_and_reaches_two_up(cls) -> None:
+    k = kr.build_rys_kernel((QUAD, *cls))
+    stmts = list(walk(k.body))
+    assert not any(isinstance(s, (AtomicAdd, Boys, Rys)) for s in stmts)
+    # the boundary runs to |e| = la + lb + 2: the operator twice on the ket
+    accs = {s.name for s in stmts if isinstance(s, Decl)
+            and s.name.startswith("acc0_")}
+    assert max(sum(map(int, a[5:].split("_"))) for a in accs) == sum(cls) + 2
+
+
+@pytest.mark.parametrize("lmax", [by_l(2, 4, "spd"), by_l(3, 6, "spdf")])
+def test_the_quadrupole_is_the_mmd_hosts_and_hquads(lmax) -> None:
+    basis = _synthetic(lmax)
+    got = _build(basis, (), QUAD)
+    assert _rel(got, _host(basis, (), QUAD)) <= HOST_TOL
+    assert _rel(got, _build(basis, (), QUAD, engine=Engine.HGP)) <= HOST_TOL
+    assert np.array_equal(got, np.swapaxes(got, -1, -2))
+
+
+def test_the_quadrupoles_charge_is_an_exact_factor() -> None:
+    basis = _synthetic(2)
+    assert np.array_equal(_build(basis, (), QUAD, q=-1.0),
+                          -_build(basis, (), QUAD))
+
+
+def test_the_quadrupole_is_libcints_int1e_rr_cart() -> None:
+    # hf_ccpvtz_spd_quadrupole: the six upper-triangle components of
+    # int1e_rr_cart, xx xy xz yy yz zz, at the parent's origin and at 0
+    w = manifest.quadrupole_integrals()
+    basis = ob.from_fixture(w.parent.fixture)
+    assert max(s.l for s in basis.shells) <= kr.L_MAX
+    for origin, want in ((w.origin, w.rr), (ZERO, w.rr0)):
+        assert _rel(_build(basis, (), QUAD, C=origin), want) \
+            <= LIBCINT_TOL, tuple(origin)

@@ -1,0 +1,22 @@
+{
+  "cuda": {
+    "rquad_23": {
+      "bytes": 245905,
+      "sha256": "779fcbfb553d284a7e3d62859cda087874fb250b72ddcaf6c46bb629599e4973"
+    },
+    "rquad_33": {
+      "bytes": 434271,
+      "sha256": "d238985714afd3ca2dcfbe013e836312db60e628ebcba766b43bf2dc15e31c61"
+    }
+  },
+  "hip": {
+    "rquad_23": {
+      "bytes": 245935,
+      "sha256": "c84e6f03e7a7e3c74d82ca130b3cc6db15a6aad2050c9fb972c204cea1a4f150"
+    },
+    "rquad_33": {
+      "bytes": 434301,
+      "sha256": "d5956ac11c5f10ca98ff7011ac4aba4ef21ad836ed847467fb8dc4ff3ac46597"
+    }
+  }
+}

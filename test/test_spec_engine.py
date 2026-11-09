@@ -46,10 +46,11 @@ LEGAL_OFF_NATIVE = {(Target.J, Engine.HGP), (Target.K, Engine.HGP),
                     (Target.J, Engine.RYS),
                     # eri/hjk/kernel_rk.py: the split K on Rys quadrature
                     (Target.K, Engine.RYS),
-                    # one_electron/kernel_rys.py: S, T, V and the dipole by
-                    # Rys
+                    # one_electron/kernel_rys.py: S, T, V, the dipole and
+                    # the quadrupole by Rys
                     (Target.S, Engine.RYS), (Target.T, Engine.RYS),
                     (Target.V, Engine.RYS), (Target.DIPOLE, Engine.RYS),
+                    (Target.QUADRUPOLE, Engine.RYS),
                     # eri/density_fit/kernel_rmetric.py: (P|Q) by Rys
                     (Target.METRIC, Engine.RYS),
                     # eri/density_fit/kernel_reri3.py: (mn|P) by Rys
