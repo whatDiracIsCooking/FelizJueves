@@ -58,9 +58,9 @@ class's total angular momentum.
 | Schwarz `Q = sqrt((mn\|mn))` | **both cards**, through (pp) / (sd) | — | — |
 | DF metric `(P\|Q)` | **both cards**, through (i\|i) | s and p: **RTX 3080** | compiled, through (g\|h) |
 | Three-center `(mn\|P)` | **both cards**, through (ff\|i) | s and p: **RTX 3080** | compiled, `la + lb + lP ≤ 9` |
-| Overlap `S`, kinetic `T`, nuclear `V` | **both cards**, through (ff) | s and p: **both cards** | interpreted, through (ff) |
+| Overlap `S`, kinetic `T`, nuclear `V` | **both cards**, through (ff) | s and p: **both cards** | compiled, through (ff) |
 | Cross-basis overlap `S_{B1,B2}` | **both cards** | — | — |
-| Dipole `MU` | **both cards**, through (ff) | **both cards** at s and p; compiled through (ff) | — |
+| Dipole `MU` | **both cards**, through (ff) | **both cards** at s and p; compiled through (ff) | `rmu_`: compiled, through (ff) |
 | Quadrupole (raw second moments) | **both cards**, through (dd) | compiled, through (ff) | — |
 
 ### First derivatives (`derivative_order = 1`)

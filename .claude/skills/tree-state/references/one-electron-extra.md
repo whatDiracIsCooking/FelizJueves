@@ -118,6 +118,29 @@ bare, 0..3 only), never in the bare default nor `KERNEL_GEN_CMD`.
 Interpreted (`test_kernel_rys_one_e.py`) within 2.8e-15 of `max|M|` of the
 MMD host through (ff) and against libcint on H₂O/STO-3G, 6-31G, cc-pVDZ and
 `prim_spdf` (worst 7.5e-14, `V` on `prim_spdf`, the host's own distance);
-24 goldens per backend plus 6 digests (`test_emit_rys_one_e.py`). **Not
-compiled by nvcc or hipcc and not run on a card** (clang 18's CUDA front
-end passed all 30 units, a proxy); nothing measured.
+24 goldens per backend plus 6 digests (`test_emit_rys_one_e.py`).
+**Compiled by nvcc and hipcc, not run on a card**: clang 18's CUDA front
+end passed all 30 units when they were built (a proxy), and on 2026-11-09
+every unit (ss) through (ff) compiled warning-free under nvcc (sm_86) and
+hipcc (gfx1200), a device-less cloud container; nothing measured.
+**The dipole is built on the Rys engine too, through (ff): interpreted,
+and compiled by nvcc and hipcc, on no card** (`one_electron.md`, "The Rys
+route", 2026-11-09): `Target.DIPOLE` with `engine=Engine.RYS` (slot
+`dipole.rys`, refusing every lever; `QUADRUPOLE` and `SX` stay refused;
+d1/d2 refused), built by the same `kernel_rys` (`rmu_{la}{lb}`, `l <= 3`):
+the overlap's nodeless 1D tables, unweighted, to `la + lb + 1`, into
+`kernel_hgp`'s moment skeleton (`MU_d = q [(a|b+1_d) + (B - C)_d (a|b)]`,
+`MU[3, n_ao, n_ao]`, `C` and `q` runtime scalars), so an `rmu_` unit is a
+drop-in for the `hmu_` unit of its class (parameter blocks tested equal).
+On the `--rys-one-e-l` ladder beside `rs_` / `rt_` / `rv_` (now 40 units
+bare), every existing Rys and HGP text byte-identical. Interpreted
+(`test_kernel_rys_one_e.py`): the MMD host's `multipole_matrix(e = 1)` on
+the synthetic s–f basis (4.9e-16 of `max|M|`), the HGP `hmu_` kernels
+(6.3e-16 at f), libcint's `int1e_r_cart` on H₂O/STO-3G and 6-31G (fast),
+`hf_ccpvtz_spd_dipole` and `hf_ccpvtz_dipole` (`slow`, worst 2.1e-15),
+at the fixtures' origin and at 0, and the origin shift. 8 goldens per
+backend plus 2 digests. Every `rmu_` unit (ss) through (ff) compiled
+warning-free by nvcc (sm_86, CUDA 13.0) and hipcc (gfx1200, ROCm 7.2.4),
+20 of 20 (with `rs_` / `rt_` / `rv_`, 80 of 80), a device-less cloud
+container. No device driver, no card run,
+nothing measured; registry cases `rys`/`dipole` L 0..6, compile only.

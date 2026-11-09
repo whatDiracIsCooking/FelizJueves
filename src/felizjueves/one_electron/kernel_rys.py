@@ -1,16 +1,16 @@
-"""The one-electron kernels by the Rys route: `S`, `T` and `V`.
+"""The one-electron kernels by the Rys route: `S`, `T`, `V` and the dipole.
 
     build_rys_kernel(spec | (target, la, lb)) -> Kernel   one per class
     rys_name(spec | (target, la, lb))         -> str      its name, unbuilt
     rys_spec(target, la, lb)                  -> Spec     the class's key
 
-`Target.S`, `T` and `V` on `Engine.RYS` (`spec.py`, "A RYS ONE-ELECTRON
-CLASS"), every shell `l <= L_MAX = 3` (through (ff)), Cartesian. The MMD
-kernels (`kernel_s`, `kernel_t`, `kernel_v`) and the HGP ones
-(`kernel_hgp`) are untouched; this is the third engine's instance of the
-same three matrices, and a DROP-IN for `kernel_hgp`'s unit of the same
-class: the same parameters, staging (`OneEClass.hgp_arrays`), launch
-(`kernel_hgp.launch_shape`) and output.
+`Target.S`, `T`, `V` and `DIPOLE` on `Engine.RYS` (`spec.py`, "A RYS
+ONE-ELECTRON CLASS"), every shell `l <= L_MAX = 3` (through (ff)),
+Cartesian. The MMD kernels (`kernel_s`, `kernel_t`, `kernel_v`,
+`kernel_mu`) and the HGP ones (`kernel_hgp`) are untouched; this is the
+third engine's instance of the same four matrices, and a DROP-IN for
+`kernel_hgp`'s unit of the same class: the same parameters, staging
+(`OneEClass.hgp_arrays`), launch (`kernel_hgp.launch_shape`) and output.
 
 THE ROUTE: the Rys factorisation (#468, `experimental/rys/`; the fused F's
 `eri/fock/kernel_frys.py` is its two-electron instance). A one-electron
@@ -41,7 +41,12 @@ with no node at all: its 1D recurrence is the nodeless (`x = 0`) form of the
 same one, `C00 = PA`, `B10 = 1/(2 zeta)`. `T` is three overlap tables
 weighted by `beta^n` (`kernel_hgp`'s docstring), so it is the overlap's 1D
 tables too, one product per boundary element shared by the tables that
-read it.
+read it. The dipole `MU_d = q [(a|b+1_d) + (B - C)_d (a|b)]` is ONE overlap
+table read one step higher, to `la + lb + 1` (`kernel_hgp`'s operator on the
+ket): its 1D tables are the overlap's, unweighted, as `S`'s are, and the
+moment's combination, the origin `C` and the charge `q` are `kernel_hgp`'s
+skeleton's (`assemble`, `MU[3, n_ao, n_ao]`), not this module's. The
+operator's polynomial is exact in the nodeless recurrence: no Rys node.
 
 THE BOUNDARY AND THE HRR ARE `kernel_hgp`'s, NOT REWRITTEN. The 1D products
 form exactly the boundary `(e|0)`, `la <= |e| <= la + lb` (`T`: to
@@ -104,8 +109,9 @@ from felizjueves.spec import OPERATOR_OF, Engine, Spec, Target
 __all__ = ["L_MAX", "TARGETS", "build_rys_kernel", "rys_name", "rys_spec"]
 
 L_MAX = 3  # through (ff): the scope this instance is built and checked for
-TARGETS = (Target.S, Target.T, Target.V)
-_PREFIX = {Target.S: "rs", Target.T: "rt", Target.V: "rv"}
+TARGETS = (Target.S, Target.T, Target.V, Target.DIPOLE)
+_PREFIX = {Target.S: "rs", Target.T: "rt", Target.V: "rv",
+           Target.DIPOLE: "rmu"}
 _AXES = "xyz"
 _TWO_OVER_SQRT_PI = 2.0 / math.sqrt(math.pi)
 _REC = "kr"  # kernel_hgp.assemble's record loop variable
@@ -146,8 +152,8 @@ def _class(cls: Spec | tuple[Target, int, int]) -> tuple[Target, int, int]:
 
 def rys_name(cls: Spec | tuple[Target, int, int]) -> str:
     """The name `build_rys_kernel(cls)` gives its kernel, unbuilt:
-    `rs_{la}{lb}`, `rt_`, `rv_` (`kernel_hgp`'s `hs_` with the engine's
-    letter)."""
+    `rs_{la}{lb}`, `rt_`, `rv_`, `rmu_` (`kernel_hgp`'s `hs_` / `hmu_`
+    with the engine's letter)."""
     target, la, lb = _class(cls)
     return f"{_PREFIX[target]}_{la}{lb}"
 
@@ -238,8 +244,9 @@ def _record_scalars(es: tuple[Cart, ...]) -> list[Stmt]:
 
 def _overlap_record(target: Target,
                     bounds: dict[int, tuple[Cart, ...]]) -> list[Stmt]:
-    """`S` and `T`: the 1D tables once, then every boundary element's
-    product into its tables' accumulators (`T`'s weighted by `beta^n`)."""
+    """`S`, `T` and the dipole: the 1D tables once, then every boundary
+    element's product into its tables' accumulators (`T`'s weighted by
+    `beta^n`; `S`'s and the dipole's one table unweighted)."""
     es = boundary_union(bounds)
     record = _record_scalars(es)
     table_stmts, tables = _overlap_tables(es)
@@ -251,7 +258,7 @@ def _overlap_record(target: Target,
     record += [Note("the 1D overlap recurrence per axis, I(i + 1) = PA I(i) "
                     "+ i/(2 zeta) I(i - 1), the seed u in the z axis"),
                *table_stmts]
-    if target is Target.S:
+    if target in (Target.S, Target.DIPOLE):
         record.append(Note("the boundary: (e|0) += I_x I_y I_z"))
         for e in bounds[0]:
             a = Var(acc_name(0, e))
@@ -325,7 +332,8 @@ def build_rys_kernel(cls: Spec | tuple[Target, int, int], *,
                      name: str | None = None) -> Kernel:
     """The Rys one-electron kernel of one class.
 
-    `cls` is a Rys `Target.S` / `T` / `V` `Spec`, or `(target, la, lb)`.
+    `cls` is a Rys `Target.S` / `T` / `V` / `DIPOLE` `Spec`, or
+    `(target, la, lb)`.
     See the module docstring.
     """
     target, la, lb = _class(cls)
@@ -338,7 +346,8 @@ def build_rys_kernel(cls: Spec | tuple[Target, int, int], *,
         record = _overlap_record(target, bounds)
         how = "the nodeless 1D recurrence"
     what = {Target.S: "overlap S", Target.T: "kinetic T",
-            Target.V: "nuclear attraction V"}[target]
+            Target.V: "nuclear attraction V",
+            Target.DIPOLE: "dipole MU = <a| q (r - C) |b>"}[target]
     return assemble(
         target, la, lb, hrrs, bounds, tuple(record),
         name=name or rys_name((target, la, lb)),

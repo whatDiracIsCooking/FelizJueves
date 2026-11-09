@@ -1,14 +1,14 @@
 """The Rys one-electron kernels emitted for both vendors: golden texts for
-`S`, `T` and `V` through (ff), the `--rys-one-e-l` ladder, and a compile of
+`S`, `T`, `V` and the dipole through (ff), the `--rys-one-e-l` ladder, and a compile of
 each through nvcc (sm_86) and hipcc (gfx1200).
 
 THE LADDER. `python -m felizjueves.emit --rys-one-e-l [LMAX]` writes
-`rs_`, `rt_` and `rv_{la}{lb}` (`kernel_rys.build_rys_kernel`, each target
+`rs_`, `rt_`, `rv_` and `rmu_{la}{lb}` (`kernel_rys.build_rys_kernel`, each target
 on `Engine.RYS`) for every `la <= lb <= LMAX` -- 3 when the flag is bare. It
 accepts 0..3 ONLY (the kernels are built and checked through (ff)), exits 2
 above that, is NEVER in the bare default and is not in KERNEL_GEN_CMD.
 
-THE GOLDENS are `test/golden/{cuda,hip}/{rs,rt,rv}_{la}{lb}.{cu,hip}` for
+THE GOLDENS are `test/golden/{cuda,hip}/{rs,rt,rv,rmu}_{la}{lb}.{cu,hip}` for
 every ladder class with `la + lb <= FAST_L_MAX` (the fast tier's cut), and
 nothing else under those prefixes; the classes above it, (df) and (ff), are
 pinned by byte count and sha256 in `test/golden/rys_one_e_digests.json`
@@ -18,10 +18,7 @@ pinned by byte count and sha256 in `test/golden/rys_one_e_digests.json`
 
 THE COMPILE is test_emit_hgp_one_e.py's (`_compile`: the tier's flags, a
 warning in generated text fails, #92). Needs a compiler, never a card: the
-compile cases are `cuda` / `hip`, none is `gpu`. NOT YET RUN: the session
-that built the kernels had neither nvcc nor hipcc; every unit passed clang
-18's CUDA front end (device side, `-fsyntax-only -Wall -Wextra`, a runtime
-stub) with no diagnostic, a proxy.
+compile cases are `cuda` / `hip`, none is `gpu`.
 """
 
 from __future__ import annotations
@@ -55,7 +52,7 @@ BACKEND = {"cuda": (cuda.emit, SM_86, "cu"), "hip": (hip.emit, GFX1200, "hip")}
 CLASSES = [(la, lb) for la in range(L_MAX + 1) for lb in range(la, L_MAX + 1)]
 UNITS = [(t, la, lb) for la, lb in CLASSES for t in TARGETS]
 GOLDEN_UNITS = [u for u in UNITS if u[1] + u[2] <= FAST_L_MAX]
-PREFIXES = ("rs_", "rt_", "rv_")
+PREFIXES = ("rs_", "rt_", "rv_", "rmu_")
 
 
 def _id(unit) -> str:
@@ -192,8 +189,8 @@ def test_it_adds_its_units_beside_the_ladder_flags(tmp_path) -> None:
     assert _run(tmp_path, "cuda", "--L", "0", "--rys-one-e-l", "0",
                 "--hgp-one-e-l", "0") == 0
     assert _names(tmp_path) == {"pq_L0_p0_q0.cu", "rs_00.cu", "rt_00.cu",
-                                "rv_00.cu", "hs_00.cu", "ht_00.cu",
-                                "hv_00.cu", "hmu_00.cu"}
+                                "rv_00.cu", "rmu_00.cu", "hs_00.cu",
+                                "ht_00.cu", "hv_00.cu", "hmu_00.cu"}
 
 
 def test_the_bare_default_writes_none(tmp_path) -> None:

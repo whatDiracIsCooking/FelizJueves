@@ -210,15 +210,17 @@ moments (`kernel_hgp.MOMENT_L_MAX`), which put the operator on the ket
 (`(r - C)_d |b> = |b+1_d> + (B - C)_d |b>`); `SX` stays refused
 (`_NO_HGP_ONE_E`).
 
-A RYS ONE-ELECTRON CLASS. `Target.S`, `T` and `V` are legal on
+A RYS ONE-ELECTRON CLASS. `Target.S`, `T`, `V` and `DIPOLE` are legal on
 `Engine.RYS` too: `one_electron.kernel_rys` builds each on the Rys
 factorisation -- per primitive pair a product of three 1D integrals, for
 `V` summed over the nodes of the Rys rule at `T = zeta |P - C|^2` (the
 point-charge limit of the fused F's 2D VRR, `rys.recurrence`) -- into the
 same contracted boundary `kernel_hgp`'s HRR reads. Keyed
 ``overlap/d0/(1,0)/b1/s.rys/literal``, `am` the pair `(la, lb)`, unbatched
-as the HGP class is; shells through f (`kernel_rys.L_MAX`). `DIPOLE` and
-`SX` stay refused on Rys (`_NO_RYS`).
+as the HGP class is; shells through f (`kernel_rys.L_MAX`). The dipole is
+the overlap's nodeless 1D tables into `kernel_hgp`'s moment skeleton
+(``dipole/d0/(1,0)/b1/dipole.rys/literal``). `QUADRUPOLE` and `SX` stay
+refused on Rys (`_NO_RYS`).
 
 AN F CLASS IS UNBATCHED, FOR ITS OWN REASON (#272). It is not the pair rule:
 a pair target is unbatched because a pair has no Hermite targets to
@@ -532,7 +534,8 @@ NATIVE_ENGINE: dict[Target, Engine] = {
 # `V`, `DIPOLE` and `QUADRUPOLE` (`one_electron.kernel_hgp`), and HGP
 # `METRIC` and `ERI3`
 # (`eri/density_fit/kernel_hgp.py`); Rys `F` (`eri/fock/kernel_frys.py`) and
-# Rys `S`, `T` and `V` (`one_electron.kernel_rys`) and Rys `METRIC`
+# Rys `S`, `T`, `V` and `DIPOLE` (`one_electron.kernel_rys`) and Rys
+# `METRIC`
 # (`eri/density_fit/kernel_rmetric.py`).
 _NO_HGP_PAIR = (
     "the HGP engine is a quartet ERI recurrence (VRR/HRR, [Fock] §3.1); "
@@ -557,7 +560,8 @@ def _mmd_only(what: str) -> str:
 _NO_RYS = (
     "the Rys engine is built for the fused F (eri/fock/kernel_frys.py), "
     "the split J and K (eri/hjk/kernel_rj.py, kernel_rk.py), the "
-    "one-electron S, T and V (one_electron/kernel_rys.py), the DF metric "
+    "one-electron S, T, V and dipole (one_electron/kernel_rys.py), the DF "
+    "metric "
     "(eri/density_fit/kernel_rmetric.py) and the three-center (mn|P) "
     "(eri/density_fit/kernel_reri3.py) only: its VRR feeds the HGP HRR of "
     "kernel_f / kernel_hj / kernel_hk / kernel_hgp; "
@@ -565,7 +569,7 @@ _NO_RYS = (
     "follow-up nobody has declared"
 )
 _RYS_TARGETS = (Target.F, Target.J, Target.K, Target.S, Target.T, Target.V,
-                Target.METRIC, Target.ERI3)
+                Target.DIPOLE, Target.METRIC, Target.ERI3)
 
 
 _ENGINE_REFUSAL: dict[tuple[Target, Engine], str] = {

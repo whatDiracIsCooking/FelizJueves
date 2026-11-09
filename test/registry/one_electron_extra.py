@@ -21,8 +21,10 @@ CASES = [
     *ladder("hgp", "dipole", 0, compile=range(7), gpu=range(7),
             cards={"rtx3080": range(3)}),
     *ladder("hgp", "quadrupole", 0, compile=range(7), gpu=range(7)),
-    # Rys S, T, V: interpreted and emitted, never on a card.
-    *(case for q in "stv" for case in ladder("rys", q, 0, compile=range(7))),
+    # Rys S, T, V and the dipole: interpreted, compiled by nvcc and hipcc,
+    # never on a card.
+    *(case for q in ("s", "t", "v", "dipole")
+      for case in ladder("rys", q, 0, compile=range(7))),
 ]
 
 # HGP one-electron: s and p shells only (kernel_hgp.L_MAX = 1).

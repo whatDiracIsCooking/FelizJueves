@@ -728,7 +728,7 @@ or measured.
 `quadrupole/d0/(2,1)/b1/quadrupole/literal`. Every pre-existing key is
 unchanged. Its batching refusal is the dipole's structural one; HGP is
 legal (`quadrupole.hgp`, "The HGP route" below), and Rys is refused by the
-general `_NO_RYS`.
+general `_NO_RYS` (the dipole is legal there, "The Rys route" below).
 
 **The kernel is the dipole's builder at `e = 2`.** `kernel_mu.ORDER` maps
 each target to its order, and `build_quad_kernel(cls)` (`quad_{la}{lb}`) is
@@ -909,29 +909,34 @@ no `(1, 0)` ladder unit (a basis's driver builds it, as for the MMD
 ladder); no screening inside the kernel; no comparison of the two engines'
 cost.
 
-## The Rys route: `S`, `T` and `V` on engine #3
+## The Rys route: `S`, `T`, `V` and `MU` on engine #3
 
-**Status: built, interpreted and emitted through (ff); NOT compiled by
-nvcc or hipcc and NOT run on a card** (the session that built it had
-neither compiler nor card; all 30 units passed clang 18's CUDA front end,
-`-fsyntax-only -Wall -Wextra`, a proxy). `one_electron/kernel_rys.py` builds
-`S`, `T` and `V` on the Rys factorisation of #468's spike
+**Status: built, interpreted and emitted through (ff); compiled by nvcc
+and hipcc; NOT run on a card.** `S`, `T` and `V` were built in a session
+with neither compiler nor card (all 30 units passed clang 18's CUDA front
+end, `-fsyntax-only -Wall -Wextra`, a proxy); the dipole (`rmu_`) was added
+on 2026-11-09, and that session compiled every unit of all four, (ss)
+through (ff), warning-free under nvcc (sm_86, CUDA 13.0) and hipcc
+(gfx1200, ROCm 7.2.4): 80 of 80, a device-less cloud container.
+`one_electron/kernel_rys.py` builds
+`S`, `T`, `V` and the dipole on the Rys factorisation of #468's spike
 (`experimental/rys/`), whose two-electron instance is the fused F's
 `eri/fock/kernel_frys.py` (`docs/implementation/rys_fock.md`). The MMD and
 HGP kernels are untouched; every HGP golden is byte-identical.
 
 **Keys.** `Target.S`, `T` and `V` with `engine=Engine.RYS`
 (`kernel_rys.rys_spec`; `spec.py`, "A RYS ONE-ELECTRON CLASS"), keyed
-`overlap/d0/(1,0)/b1/s.rys/literal`; `s.rys`, `t.rys`, `v.rys` are engine
-slots that refuse every lever. `DIPOLE` and `SX` stay refused on Rys. Units
-are `rs_{la}{lb}`, `rt_`, `rv_`, every shell `l <= 3` (`kernel_rys.L_MAX`).
+`overlap/d0/(1,0)/b1/s.rys/literal`; `s.rys`, `t.rys`, `v.rys`,
+`dipole.rys` are engine slots that refuse every lever. `QUADRUPOLE` and `SX`
+stay refused on Rys. Units are `rs_{la}{lb}`, `rt_`, `rv_`, `rmu_`, every
+shell `l <= 3` (`kernel_rys.L_MAX`).
 
 **The route.** Per primitive pair, each boundary value is a product of
 three 1D integrals:
 
 | Matrix | Per primitive pair | 1D recurrence |
 |---|---|---|
-| `S`, `T` | `(e\|0) = u I_x(e_x) I_y(e_y) I_z(e_z)` | `I(i+1) = PA I(i) + i/(2ζ) I(i−1)` |
+| `S`, `T`, `MU` | `(e\|0) = u I_x(e_x) I_y(e_y) I_z(e_z)` | `I(i+1) = PA I(i) + i/(2ζ) I(i−1)` |
 | `V` | `(e\|0) −= Z w0 Σ_n w_n I_x I_y I_z`, per nucleus | `I(i+1) = C00 I(i) + i B10 I(i−1)`, `C00 = PA + x_n (C − P)`, `B10 = (1 − x_n)/(2ζ)` |
 
 `(x_n, w_n)` is the `N = (la + lb)//2 + 1` point Rys rule at `T = ζ|P − C|²`
@@ -940,7 +945,11 @@ is `rys.recurrence.root_loop`'s bra half unchanged, at the point-charge
 limit of the ket (`q → ∞`: `WP = C − P`, `q/(p+q) = 1`), the attractive sign
 in the weight scale `S = −Z w0`. The overlap needs no node: its 1D
 recurrence is the nodeless form of the same one. `T` is the overlap's 1D
-tables with the HGP route's three `β^n` tables.
+tables with the HGP route's three `β^n` tables. The dipole is the overlap's
+one table read to `la + lb + 1`: the HGP route's operator on the ket,
+`MU_d = q [(a|b+1_d) + (B − C)_d (a|b)]`, with the origin `C` and charge `q`
+runtime scalars and the combination `kernel_hgp`'s own (`assemble`), so an
+`rmu_` unit has `hmu_`'s parameter block and output `MU[3, n_ao, n_ao]`.
 
 **The skeleton is `kernel_hgp`'s.** The products form exactly the boundary
 `(e|0)` that `kernel_hgp`'s HRR reads, so `kernel_hgp` now exposes its pair
@@ -948,8 +957,8 @@ skeleton -- `contracted_tables`, `boundary_union`, `acc_name`, `assemble`
 (one thread per contracted shell pair, the record loop, the HRR on
 contracted values, the combination, plain mirrored stores) -- and both
 builders fill it, differing in the per-record body and two notes. An
-`rs_` / `rt_` / `rv_` unit has the parameter block of the `hs_` / `ht_` /
-`hv_` unit of its class (tested equal), so it takes the same staging
+`rs_` / `rt_` / `rv_` / `rmu_` unit has the parameter block of the `hs_` /
+`ht_` / `hv_` / `hmu_` unit of its class (tested equal), so it takes the same staging
 (`OneEClass.hgp_arrays`), launch (`kernel_hgp.launch_shape`) and output: a
 drop-in.
 
@@ -969,11 +978,21 @@ reference engine, `1e-12` of libcint), observed:
 
 `prim_spdf`'s `V` is the MMD host's distance from libcint too (7.48e-14);
 the Rys kernel is 8.5e-16 from the host there. A nucleus far enough that
-every `T` takes the rule's Laguerre branch is held to the host too. Goldens:
-`test/golden/{cuda,hip}/{rs,rt,rv}_{la}{lb}` for every class with
+every `T` takes the rule's Laguerre branch is held to the host too.
+
+The dipole, at the origin `(0.3, −0.7, 1.1)` (and libcint's at its
+fixtures' origin and at 0), observed: the MMD host's
+`multipole_matrix(e = 1)` on the synthetic s–f basis 4.9e-16; the HGP
+`hmu_` kernels on the synthetic s–d basis within `1e-13` (6.3e-16 on s–f);
+libcint's `int1e_r_cart` on H₂O/STO-3G 3.8e-16, H₂O/6-31G 4.7e-16,
+`hf_ccpvtz_spd_dipole` (d, `slow`) 1.1e-15 and `hf_ccpvtz_dipole` (f,
+`slow`) 2.1e-15; and its origin shift `MU(0)_d = MU(C)_d + C_d S`, every
+term a Rys kernel, and the charge a plain scale. Goldens:
+`test/golden/{cuda,hip}/{rs,rt,rv,rmu}_{la}{lb}` for every class with
 `la + lb <= 4`, (df) and (ff) pinned by sha256 in
-`test/golden/rys_one_e_digests.json` (`test_emit_rys_one_e.py`, whose
-nvcc / hipcc compile cases have not run).
+`test/golden/rys_one_e_digests.json` (`test_emit_rys_one_e.py`; every
+`rs_` / `rt_` / `rv_` text byte-identical with the dipole's addition, and
+every nvcc / hipcc compile case passed, 80 of 80, (ss) through (ff)).
 
 **The generator.** `python -m felizjueves.emit --rys-one-e-l [LMAX]` (3
 bare, **0..3 only**, exit 2 above) adds the units beside the J ladders;
@@ -981,8 +1000,8 @@ never in the bare default, not in `KERNEL_GEN_CMD`. The `cuda` and `hip`
 backends carry `fj_rys`; `emit/gpu.py` refuses a `Rys` statement, so `rv_`
 has no `gpu` spelling yet.
 
-**Not done.** No nvcc / hipcc compile and no card run (a device driver
-would be `test/hgp_one_e_driver.py` with the builder swapped); the dipole
+**Not done.** No card run of any Rys one-electron unit (a device driver would be
+`test/hgp_one_e_driver.py` with the builder swapped); the quadrupole
 and `SX` on Rys; g and above (the rule reaches `N = 5`, (gg), but the
 builder refuses `l > 3`); nothing measured, and no cost comparison with the
 MMD and HGP kernels.

@@ -1,5 +1,13 @@
 {
   "cuda": {
+    "rmu_23": {
+      "bytes": 113902,
+      "sha256": "73f19456dc5e2fdb076590602cb133f8c8e27bf089c2a6e7a8f2f21d1ff81cb7"
+    },
+    "rmu_33": {
+      "bytes": 200933,
+      "sha256": "fc47906efd9747617c7a72ccc0636baec9575965afd53dd41112a3434d30b8f2"
+    },
     "rs_23": {
       "bytes": 45106,
       "sha256": "06d3a37a179d5582706b9a62ddca7f6d42d7b38bd2278c38080db453af032d96"
@@ -26,6 +34,14 @@
     }
   },
   "hip": {
+    "rmu_23": {
+      "bytes": 113932,
+      "sha256": "54111b93dc5f64ce7bdb6f87b44d1ebdab1f644bbfb4ec0f1bcff6f246d7112e"
+    },
+    "rmu_33": {
+      "bytes": 200963,
+      "sha256": "9b0656c1c30606fbaefe8d0e1b7363db764195dcdfdd0a0482eaa4999573f1b2"
+    },
     "rs_23": {
       "bytes": 45136,
       "sha256": "7d42c2564debdfd8a66f0025ceeaf13827322b1508264269c0ef5c439208ed33"
