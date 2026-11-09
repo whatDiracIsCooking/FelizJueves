@@ -1,0 +1,14 @@
+{
+  "cuda": {
+    "hgd2eri3_111": {
+      "bytes": 539292,
+      "sha256": "8fe4f8b7044157467369e26d923cafd3feda8f51ef2e4a078b9e9d09948f58ff"
+    }
+  },
+  "hip": {
+    "hgd2eri3_111": {
+      "bytes": 539322,
+      "sha256": "cb0139f1d3bbf65718ac2f708717542bb47ff313112cc7c0289812d57928fb9c"
+    }
+  }
+}

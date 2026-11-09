@@ -1,13 +1,14 @@
 # Analytic nuclear Hessians by McMurchie–Davidson: `E_J`, `E_K`, `S`, `T`, `V`, the dipole and quadrupole, and the DF `(P|Q)` and `(mn|P)`
 
-The Coulomb energy's Hessian is this note's first part. Six later
+The Coulomb energy's Hessian is this note's first part. Eight later
 sections each have their own status line: the one-electron Hessians of
 `S`, `T` and `V` ("The one-electron Hessians"), the dipole's and
-quadrupole's ("The dipole and quadrupole Hessians"), the DF metric's ("The DF
+quadrupole's ("The dipole and quadrupole Hessians", and on HGP "The dipole
+and quadrupole Hessians on HGP"), the DF metric's ("The DF
 metric Hessian"), the three-center DF integral's ("The three-center DF
-Hessian"), and the CPHF right-hand side's exchange and Coulomb derivative
-matrices ("The exchange derivative matrix", "The Coulomb derivative
-matrix").
+Hessian"), the HGP twins of those two ("The DF Hessians on HGP"), and
+the CPHF right-hand side's exchange and Coulomb derivative matrices ("The
+exchange derivative matrix", "The Coulomb derivative matrix").
 
 **Status: implemented host-side and as generated kernels through (ff),
 compiled by nvcc and hipcc and run on both cards** (the RTX 3080 and the
@@ -1079,6 +1080,83 @@ keep their unrolled digests, unchanged, under `<name>.unrolled`.
   `W = -1/2 d d^T`, plus the response of `d`. The last is not a skeleton
   term.
 - No DF-K, no screen. Cartesian only.
+
+## The DF Hessians on HGP (`hgd2metric`, `hgd2eri3`)
+
+**Status: generated, interpreted through L = 4 against the host and the
+MMD kernels, and compiled by nvcc and hipcc for s and p shells; run on no
+card, not measured.** `spec.HESSIAN_OFF_NATIVE` admits d2 on the two
+off-native pairs `metric.hgp` and `eri3.hgp` (Rys stays refused), keys
+``coulomb/d2/(lP,lQ)/b1/metric.hgp/literal`` and
+``coulomb/d2/(la,lb|lP)/b1/eri3.hgp/literal``; every d0, d1 and MMD d2 key
+is byte-identical. They are the HGP twins of `d2metric_` and `d2eri3_`, as
+`hgmetric_` / `hgeri3_` are of the d1 kernels (`hgp_df.md`, `gradient.md`):
+the same parameters and `H` contract, so `test/df_grad_launch.run_d2metric`
+/ `run_d2eri3` take `engine=Engine.HGP` and change nothing else.
+
+### The rule: the Cartesian one, twice
+
+An HGP class has no Hermite tower to shift. With `D_k x = u [x + 1_k] -
+x_k [x - 1_k]` on a side whose PRIMITIVE exponent gives `u = 2 alpha`:
+
+    D_l D_k x = u^2 [x + 1_k + 1_l] - u (x + 1_k)_l [x + 1_k - 1_l]
+              - u x_k [x - 1_k + 1_l] + x_k (x - 1_k)_l [x - 1_k - 1_l]
+    D^s_k D^t_l = u_s u_t [s + 1_k, t + 1_l] - u_s t_l [s + 1_k, t - 1_l]
+                - u_t s_k [s - 1_k, t + 1_l] + s_k t_l [s - 1_k, t - 1_l]
+
+(the second for two different centres). Every weight belongs to a
+primitive, so it is applied inside the record loops, never on contracted
+values.
+
+### `hessian/kernel_hgd2metric.py` (`hgd2metric_{lP}{lQ}`)
+
+One thread per aux shell pair, `kernel_d2metric`'s staging and weights
+(`kernel_hgmetric.pair_weights`, made public with its text unchanged). Per
+primitive pair, ONE VRR whose targets are the bra two up, level and two
+down (`|e|` in `{lP + 2, lP, lP - 2}`, `hgd2metric_dag`), and the six
+symmetric `h_kl += u^2 S2 - u S1 + S0`; `(P|Q)` reads `A - B`, so `+h` on
+the two same-centre blocks and `-h` on the mixed ones, 36 atomics
+(`kernel_d2metric`'s).
+
+### `hessian/kernel_hgd2eri3.py` (`hgd2eri3_{la}{lb}{lP}`)
+
+One thread per cell (`kernel_hgeri3`'s mapping, NOT `kernel_d2eri3`'s warp
+per cell, #632). The rule on all three centres -- the aux one too, by its
+exponent-0 partner -- with nothing inferred, so `SUM_A H = 0` and `H = H^T`
+are checks. Each term is a TABLE: a class `(x + dx, y + dy | lP + dc)`
+weighted by a monomial of degree at most two in `2 xi`, `2 eta`, `2 gam`
+(`hessian_tables`; nine at (ss|s), more as lowered terms appear), its bra
+HRR run on boundary sums contracted with that weight, one accumulator per
+(weight, boundary value) as in `kernel_hgeri3`, one VRR per primitive
+quartet over the union of every boundary. 45 accumulators (`AA`, `BB`, `CC`
+with `k <= l`; `AB`, `AC`, `BC` all nine), 81 atomics per cell.
+
+### The generator
+
+`python -m felizjueves.emit --hgp-hess-metric-l [LMAX]` and
+`--hgp-hess-eri3-l [LMAX]`: `--hgp-metric-l`'s and `--hgp-eri3-l`'s classes
+and bound (0..`HGP_DF_L_MAX` = 1, bare 1: 3 and 6 units), refused and
+placed as they are, never in the bare default nor in `KERNEL_GEN_CMD`.
+Eight goldens per backend; `hgd2eri3_111` (539 KB, over the pre-commit
+hook's 512 KiB) is pinned by digest in `test/golden/hgd2_digests.json`
+(`test_emit_hgp_hess_df.py`).
+
+### Witnesses, and what ran where
+
+| What | Against | Where | Worst |
+|---|---|---|---|
+| `kernel_hgd2metric`, interpreted | `hessian.host_df.metric_hessian`, and `kernel_d2metric` (gate 32 eps) | every class `lP <= lQ`, `lP + lQ <= 4` on `test_kernel_d2metric.py`'s system (L + 2 > 4 `slow`); the whole s, p aux basis (`test_kernel_hgd2metric.py`) | 0.32 eps of the absolute twin ((p\|d)), gate 16 eps |
+| `kernel_hgd2eri3`, interpreted | `hessian.host_eri3.eri3_hessian`, and `kernel_d2eri3` (gate 32 eps); `SUM_A H = 0`, `H = H^T` | every class `la <= lb`, `la + lb + lP <= 4` on `test_kernel_geri3.py`'s bases (L + 2 > 4 `slow`); whole H₂O/STO-3G against JKFIT s, p `slow` (`test_kernel_hgd2eri3.py`) | 0.33 eps of the twin through L = 3, gate 16 eps |
+| nvcc 13.0, `sm_86` | #92's warning filter | the 9 s / p units (`test_emit_hgp_hess_df.py`), a device-less cloud container, 2026-11-09 | clean |
+| hipcc 7.2.4, `gfx1200` | #92's warning filter | the same 9 units, the same day | clean |
+
+### What is not done
+
+- **No card**, no device harness, no measurement (frames, clock).
+- **d and above in the CLI.** The builders accept them and are interpreted
+  through L = 4, but the ladders stop at p (`hgd2eri3_111` is already
+  539 KB of straight-line text; no low-stack form exists).
+- No assembled DF-J Hessian, as for the MMD kernels.
 
 ## The exchange derivative matrix (`kx1`, `kxc`)
 

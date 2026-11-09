@@ -26,7 +26,9 @@ test_kernel_d2metric.py, test_kernel_d2eri3.py and test/grad_df_driver.py
 metric kernel (`hessian.kernel_d2metric`) on `run_metric`'s arrays, and
 `run_d2eri3` the d2 three-center kernel (`hessian.kernel_d2eri3`) on
 `run_eri3`'s, `H` in place of `G`; their `lowstack=` is the d2
-builders' (#694), the same three-way choice. `run_xeri3` is the
+builders' (#694), the same three-way choice. Each takes `engine=Engine.HGP`
+too, launching the HGP twin (`hessian.kernel_hgd2metric`,
+`hessian.kernel_hgd2eri3`, one form each) on the same arrays. `run_xeri3` is the
 uncontracted d1 kernel (`gradient.kernel_xeri3`, #692) on `run_eri3`'s
 arrays less the atoms, over one aux block and, optionally, a subset of its
 cells.
@@ -54,6 +56,8 @@ from felizjueves.gradient.kernel_xeri3 import build_xeri3_kernel
 from felizjueves.hessian.kernel_d2eri3 import build_d2eri3_kernel
 from felizjueves.hessian.kernel_d2eri3 import launch_shape as d2eri3_shape
 from felizjueves.hessian.kernel_d2metric import build_d2metric_kernel
+from felizjueves.hessian.kernel_hgd2eri3 import build_hgd2eri3_kernel
+from felizjueves.hessian.kernel_hgd2metric import build_hgd2metric_kernel
 from felizjueves.ir.interp import Interpreter, Launch
 from felizjueves.spec import Engine
 
@@ -205,7 +209,9 @@ def run_xeri3(basis, aux, nuclei, *, boys, classes: Iterable | None = None,
 
 def run_d2metric(aux, nuclei, W, *, boys, classes: Iterable | None = None,
                 threads: int = 7, H: np.ndarray | None = None,
-                lowstack: bool | None = None):
+                lowstack: bool | None = None, engine: Engine = Engine.MMD):
+    if engine is Engine.HGP and lowstack is not None:
+        raise ValueError("the HGP d2metric twin has one form")
     want = None if classes is None else set(classes)
     n = len(nuclei)
     H = np.zeros((n, 3, n, 3)) if H is None else H
@@ -214,8 +220,10 @@ def run_d2metric(aux, nuclei, W, *, boys, classes: Iterable | None = None,
         if want is not None and (cls.lP, cls.lQ) not in want:
             continue
         grid, block = launch_shape(cls.n_pair, threads)
-        H = Interpreter(build_d2metric_kernel((cls.lP, cls.lQ),
-                                              lowstack=lowstack),
+        kernel = (build_hgd2metric_kernel((cls.lP, cls.lQ))
+                  if engine is Engine.HGP else
+                  build_d2metric_kernel((cls.lP, cls.lQ), lowstack=lowstack))
+        H = Interpreter(kernel,
                         launch=Launch(grid, block, 1), boys=boys).run(
             n_pair=cls.n_pair, n_rec=cls.n_rec, n_aux=aux.n_ao,
             n_atom=len(H), M=np.asarray(W, dtype=float), H=H,
@@ -226,10 +234,15 @@ def run_d2metric(aux, nuclei, W, *, boys, classes: Iterable | None = None,
 
 def run_d2eri3(basis, aux, nuclei, Gam, *, boys,
                classes: Iterable | None = None, lanes: int = 4,
-               H: np.ndarray | None = None, lowstack: bool | None = None):
+               H: np.ndarray | None = None, lowstack: bool | None = None,
+               engine: Engine = Engine.MMD, threads: int = 7):
     """The d2 `(mn|P)` kernels on `geri3`'s arrays, into `H[n_atom, 3,
     n_atom, 3]`, one warp of `lanes` per cell (`kernel_d2eri3.launch_shape`);
-    `lowstack` is `build_d2eri3_kernel`'s."""
+    `lowstack` is `build_d2eri3_kernel`'s. `engine=Engine.HGP` launches the
+    HGP twin (`hessian.kernel_hgd2eri3`, one form) on the same arrays, one
+    thread per cell (`kernel_hgeri3`'s mapping, `threads` a block)."""
+    if engine is Engine.HGP and lowstack is not None:
+        raise ValueError("the HGP d2eri3 twin has one form")
     want = None if classes is None else set(classes)
     n = len(nuclei)
     H = np.zeros((n, 3, n, 3)) if H is None else H
@@ -238,9 +251,15 @@ def run_d2eri3(basis, aux, nuclei, Gam, *, boys,
         c = (cls.la, cls.lb, cls.lP)
         if want is not None and c not in want:
             continue
-        grid, block = d2eri3_shape(cls.n_cell, lanes)
-        H = Interpreter(build_d2eri3_kernel(c, lowstack=lowstack),
-                        launch=Launch(grid, block, lanes), boys=boys).run(
+        if engine is Engine.HGP:
+            grid, block = launch_shape(cls.n_cell, threads)
+            launch = Launch(grid, block, 1)
+            kernel = build_hgd2eri3_kernel(c)
+        else:
+            grid, block = d2eri3_shape(cls.n_cell, lanes)
+            launch = Launch(grid, block, lanes)
+            kernel = build_d2eri3_kernel(c, lowstack=lowstack)
+        H = Interpreter(kernel, launch=launch, boys=boys).run(
             n_cell=cls.n_cell, n_bra_rec=cls.n_bra_rec,
             n_aux_rec=cls.n_aux_rec, n_ao=basis.n_ao, n_aux=aux.n_ao,
             n_atom=n, M=np.asarray(Gam, dtype=float), H=H,
