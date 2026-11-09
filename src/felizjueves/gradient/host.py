@@ -974,8 +974,8 @@ def pair_records(basis: Basis, nuclei: Sequence[Nucleus], la: int, lb: int,
     then one entry per shell pair -- `rec0` / `rec1` its record range
     (contiguous: `records` sweeps a pair's primitive pairs together),
     `off_a`, `off_b`, `atom_a`, `atom_b`, and `ab_*` = `A - B` from the
-    shells' centres; with `ket_centre`, `b_*` = `B` too (the dipole's
-    `B - C`, `gradient.kernel_hgmu`)."""
+    shells' centres; with `ket_centre`, `b_*` = `B` too (the dipole's and
+    the quadrupole's `B - C`, `gradient.kernel_hgmu`, `kernel_hgquad`)."""
     if pairs is None:
         pairs = class_pairs(basis, la, lb)
     rec = records(basis, nuclei, la, lb, pairs=pairs)

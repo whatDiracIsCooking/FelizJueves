@@ -426,7 +426,10 @@ for CUDA, `.hip` for HIP):
   tables, their HRRs, the Hellmann-Feynman row by translational invariance;
   and `kernel_hgmu.build_hgmu_kernel`, `Target.DIPOLE` there too
   (`hgmu_{la}{lb}`): `hmu_`'s operator moved onto the ket over `hgs_`'s
-  three tables, both centres, about a runtime origin.
+  three tables, both centres, about a runtime origin; and
+  `kernel_hgquad.build_hgquad_kernel`, `Target.QUADRUPOLE` there too
+  (`hgquad_{la}{lb}`): `hquad_`'s operator over the same tables,
+  `G[6, n_atom, 3]`.
   Accepted 0..`HGP_GRAD_L_MAX` = 3 ONLY (the builders are checked through
   (ff), interpreted; above it is a 2). It ADDS units beside the J ladders, as
   `--grad-l` does, and is NEVER in the no-flag default nor in
@@ -685,6 +688,7 @@ from felizjueves.gradient.kernel_gmu import GRADIENT_MOMENTS, build_gmu_kernel
 from felizjueves.gradient.kernel_hgeri3 import build_hgeri3_kernel
 from felizjueves.gradient.kernel_hgmetric import build_hgmetric_kernel
 from felizjueves.gradient.kernel_hgmu import build_hgmu_kernel
+from felizjueves.gradient.kernel_hgquad import build_hgquad_kernel
 from felizjueves.gradient.kernel_hgs import build_hgs_kernel
 from felizjueves.gradient.kernel_hgt import build_hgt_kernel
 from felizjueves.gradient.kernel_ipmetric import build_ipmetric_kernel
@@ -786,10 +790,10 @@ DEFAULT_RYS_ONE_E_L = 3  # `--rys-one-e-l` given bare: (ss) through (ff), 40
 RYS_ONE_E_L_MAX = 3  # kernel_rys.L_MAX: built and checked through (ff)
 DEFAULT_RYS_QUAD_L = 2  # `--rys-quad-l` given bare: (ss) through (dd), 6 units
 RYS_QUAD_L_MAX = 3  # kernel_rys.L_MAX: built and checked through (ff)
-# `--hgp-grad-l` given bare: hgt_, hgs_, ghv_, hgmu_ (ss) (sp) (pp)
+# `--hgp-grad-l` given bare: hgt_, hgs_, ghv_, hgmu_, hgquad_ (ss) (sp) (pp)
 DEFAULT_HGP_GRAD_L = 1
-# kernel_hgt.L_MAX = kernel_hgs.L_MAX = kernel_ghv.L_MAX = kernel_hgmu.L_MAX:
-# interpreted through (ff)
+# kernel_hgt.L_MAX = kernel_hgs.L_MAX = kernel_ghv.L_MAX = kernel_hgmu.L_MAX
+# = kernel_hgquad.L_MAX: interpreted through (ff)
 HGP_GRAD_L_MAX = 3
 FOCK_L_MAX = 2  # milestone 12's ladder tops out at (dd|dd) (pin 3)
 _FOCK_PAIRS = tuple((a, b) for a in range(FOCK_L_MAX + 1)
@@ -1577,17 +1581,18 @@ def hgp_grad_classes(lmax: int) -> list[tuple[int, int]]:
 
 
 def hgp_grad_kernels(lmax: int) -> list[Kernel]:
-    """`hgt_{la}{lb}`, `hgs_{la}{lb}`, `ghv_{la}{lb}` and `hgmu_{la}{lb}`
-    for every class through `lmax`, class-major."""
+    """`hgt_{la}{lb}`, `hgs_{la}{lb}`, `ghv_{la}{lb}`, `hgmu_{la}{lb}` and
+    `hgquad_{la}{lb}` for every class through `lmax`, class-major."""
     return [build((la, lb)) for la, lb in hgp_grad_classes(lmax)
             for build in (build_hgt_kernel, build_hgs_kernel,
-                          build_ghv_kernel, build_hgmu_kernel)]
+                          build_ghv_kernel, build_hgmu_kernel,
+                          build_hgquad_kernel)]
 
 
 def generate_hgp_grad(backend: str, arch: Arch, out: Path,
                       lmax: int) -> list[Path]:
-    """Emit the HGP kinetic, overlap, nuclear-attraction and dipole
-    gradient units of every pair class through `lmax` into `out`; return
+    """Emit the HGP kinetic, overlap, nuclear-attraction, dipole and
+    quadrupole gradient units of every pair class through `lmax` into `out`; return
     the paths."""
     kernels = hgp_grad_kernels(lmax)
     out.mkdir(parents=True, exist_ok=True)

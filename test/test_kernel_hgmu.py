@@ -180,10 +180,11 @@ def test_the_spec_admits_the_dipole_on_hgp_at_order_one_only() -> None:
     assert Spec(Operator.DIPOLE, 1, (1, 0), Target.DIPOLE,
                 engine=Engine.HGP).key() == \
         "dipole/d1/(1,0)/b1/dipole.hgp/literal"
-    with pytest.raises(ValueError,
-                       match="derivative order 1 on target quadrupole.hgp"):
-        Spec(Operator.QUADRUPOLE, 1, (1, 0), Target.QUADRUPOLE,
-             engine=Engine.HGP)
+    # the quadrupole's HGP d1 key is kernel_hgquad's, not this builder's
+    quad = Spec(Operator.QUADRUPOLE, 1, (1, 0), Target.QUADRUPOLE,
+                engine=Engine.HGP)
+    with pytest.raises(ValueError):
+        build_hgmu_kernel(quad)
     with pytest.raises(ValueError,
                        match="derivative order 2 on target dipole.hgp"):
         Spec(Operator.DIPOLE, 2, (1, 0), Target.DIPOLE, engine=Engine.HGP)
