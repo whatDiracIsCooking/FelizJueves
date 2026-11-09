@@ -194,3 +194,8 @@ and hipcc (`gfx1200`) with no warning in generated text
   (`gradient/kernel_hgeri3.py`, `hgeri3_*`, `--hgp-grad-eri3-l`;
   `gradient.md`, "The three-center gradient on HGP"), interpreted and
   compiled, not on a card; the metric's is not.
+- **The Hessians** of both are built on this engine too
+  (`hessian/kernel_hgd2metric.py`, `hessian/kernel_hgd2eri3.py`,
+  `hgd2metric_*` / `hgd2eri3_*`, `--hgp-hess-metric-l` /
+  `--hgp-hess-eri3-l`; `hessian.md`, "The DF Hessians on HGP"),
+  interpreted and compiled, not on a card.

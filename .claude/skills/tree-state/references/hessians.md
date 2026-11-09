@@ -364,6 +364,33 @@ classes through (ff|i) on the aux-i system, default forms (the over-14-KB
 low-stack frames included), within 1.2e-17 of the twin (bound 1e-14). No
 assembled DF-J Hessian (with `d2metric_` and `d`'s response), no clock
 measured.
+**Both DF Hessians have HGP twins, interpreted through L = 4 and
+compiled by nvcc and hipcc for s and p, on no card** (`hessian.md`, "The
+DF Hessians on HGP"): `spec.HESSIAN_OFF_NATIVE` = `{metric.hgp, eri3.hgp}`
+admits d2 there (Rys still refuses), keys
+``coulomb/d2/(lP,lQ)/b1/metric.hgp/literal`` and
+``coulomb/d2/(la,lb|lP)/b1/eri3.hgp/literal``.
+`hessian/kernel_hgd2metric.py` (`hgd2metric_{lP}{lQ}`) and
+`hessian/kernel_hgd2eri3.py` (`hgd2eri3_{la}{lb}{lP}`) have `d2metric_`'s
+and `d2eri3_`'s parameters and `H` contract (36 / 81 atomics), the
+Cartesian rule applied twice by the HGP VRR -- the metric's bra two up,
+level and two down in one VRR; the `(mn|P)`'s on all three centres, one
+VRR over the boundary of every `(class, primitive weight)` table and a bra
+HRR per table (`hessian_tables`), `kernel_hgeri3`'s staging and weights --
+and one thread per pair / cell (not `d2eri3_`'s warp per cell). One form
+each, no low-stack. Interpreted (`test_kernel_hgd2metric.py`,
+`test_kernel_hgd2eri3.py`, L + 2 > 4 `slow`): every class through L = 4
+against `host_df` / `host_eri3` within 16 eps of the absolute twin (worst
+0.32 eps, (p|d) metric; 0.33 eps through L = 3 `(mn|P)`) and against the
+MMD kernels within 32, `SUM_A H = 0` and `H = H^T`; the whole s, p aux
+metric and H₂O/STO-3G against JKFIT s, p. Ladders `--hgp-hess-metric-l` /
+`--hgp-hess-eri3-l [LMAX]` (0..1, bare 1: 3 and 6 units), never in the bare
+default nor in `KERNEL_GEN_CMD`; eight goldens per backend and
+`hgd2eri3_111` (539 KB, over the 512 KiB hook) by digest in
+`test/golden/hgd2_digests.json`; all nine units compiled warning-free by
+nvcc 13.0 (`sm_86`) and hipcc 7.2.4 (`gfx1200`) in a device-less cloud
+container, 2026-11-09 (`test_emit_hgp_hess_df.py`). **No card, no device
+harness**, not measured.
 **The one-electron derivative MATRICES, `S^x`, `T^x`, `V^x` (#687),
 interpreted through (ff), held to libcint, compiled by nvcc and hipcc
 through (dd), not on a card** (`hessian.md`, "The one-electron

@@ -415,16 +415,23 @@ def test_k_takes_order_two_in_its_hermite_pairing() -> None:
         Spec(Operator.COULOMB, 2, (1, 0, 0, 0), Target.K, engine=Engine.HGP)
 
 
-def test_the_metric_takes_order_two_on_mmd_only() -> None:
+def test_the_metric_takes_order_two_on_mmd_and_hgp() -> None:
     # hessian.kernel_d2metric: the integral's pair at d2, the key differing
-    # in the `d` segment alone; the HGP metric (metric.hgp) refuses.
+    # in the `d` segment alone; the HGP metric (metric.hgp) too
+    # (hessian.kernel_hgd2metric, HESSIAN_OFF_NATIVE); Rys refuses.
     d0 = Spec(Operator.COULOMB, 0, (1, 2), Target.METRIC)
     d2 = Spec(Operator.COULOMB, 2, (1, 2), Target.METRIC)
     assert d2.key() == d0.key().replace("/d0/", "/d2/")
     assert d2.key() == "coulomb/d2/(1,2)/b1/metric/literal"
+    h2 = Spec(Operator.COULOMB, 2, (1, 2), Target.METRIC, engine=Engine.HGP)
+    assert h2.key() == "coulomb/d2/(1,2)/b1/metric.hgp/literal"
+    assert HESSIAN_OFF_NATIVE == {(Target.DIPOLE, Engine.HGP),
+                                  (Target.QUADRUPOLE, Engine.HGP),
+                                  (Target.METRIC, Engine.HGP),
+                                  (Target.ERI3, Engine.HGP)}
     with pytest.raises(ValueError, match="derivative order 2 on target "
-                                         "metric.hgp"):
-        Spec(Operator.COULOMB, 2, (1, 2), Target.METRIC, engine=Engine.HGP)
+                                         "metric.rys"):
+        Spec(Operator.COULOMB, 2, (1, 2), Target.METRIC, engine=Engine.RYS)
 
 
 def test_the_df_targets_take_order_one_and_both_on_hgp_too() -> None:
@@ -447,15 +454,20 @@ def test_the_df_targets_take_order_one_and_both_on_hgp_too() -> None:
     assert (Target.METRIC, Engine.HGP) in GRADIENT_OFF_NATIVE
 
 
-def test_eri3_takes_order_two_on_mmd_only() -> None:
+def test_eri3_takes_order_two_on_mmd_and_hgp() -> None:
     # hessian.kernel_d2eri3: the triple at d2, the key differing from the
-    # integral's in the `d` segment alone; the HGP eri3 (eri3.hgp) refuses.
+    # integral's in the `d` segment alone; the HGP eri3 (eri3.hgp) too
+    # (hessian.kernel_hgd2eri3); Rys refuses.
     d0 = Spec(Operator.COULOMB, 0, (0, 1, 2), Target.ERI3)
     d2 = Spec(Operator.COULOMB, 2, (0, 1, 2), Target.ERI3)
     assert d2.key() == d0.key().replace("/d0/", "/d2/")
+    h0 = Spec(Operator.COULOMB, 0, (0, 1, 2), Target.ERI3, engine=Engine.HGP)
+    h2 = Spec(Operator.COULOMB, 2, (0, 1, 2), Target.ERI3, engine=Engine.HGP)
+    assert h2.key() == h0.key().replace("/d0/", "/d2/") == \
+        "coulomb/d2/(0,1|2)/b1/eri3.hgp/literal"
     with pytest.raises(ValueError, match="derivative order 2 on target "
-                                         "eri3.hgp"):
-        Spec(Operator.COULOMB, 2, (0, 1, 2), Target.ERI3, engine=Engine.HGP)
+                                         "eri3.rys"):
+        Spec(Operator.COULOMB, 2, (0, 1, 2), Target.ERI3, engine=Engine.RYS)
 
 
 def test_a_one_electron_key_has_the_shape_every_key_has() -> None:
@@ -807,7 +819,9 @@ def test_the_dipole_takes_its_own_operator_and_a_pair() -> None:
     assert Spec(Operator.QUADRUPOLE, 2, (1, 2), Target.QUADRUPOLE).key() == (
         "quadrupole/d2/(1,2)/b1/quadrupole/literal")
     assert HESSIAN_OFF_NATIVE == {(Target.DIPOLE, Engine.HGP),
-                                  (Target.QUADRUPOLE, Engine.HGP)}
+                                  (Target.QUADRUPOLE, Engine.HGP),
+                                  (Target.METRIC, Engine.HGP),
+                                  (Target.ERI3, Engine.HGP)}
     for target in (Target.DIPOLE, Target.QUADRUPOLE):
         assert Spec(OPERATOR_OF[target], 2, (2, 1), target,
                     engine=Engine.HGP).key() == (

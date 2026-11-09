@@ -13,11 +13,11 @@
  },
  "counts": {
   "compile/cuda/measured": 119,
-  "compile/cuda/modelled": 402,
+  "compile/cuda/modelled": 412,
   "compile/hip/measured": 119,
-  "compile/hip/modelled": 402,
-  "gpu/cuda/modelled": 521,
-  "gpu/hip/modelled": 521
+  "compile/hip/modelled": 412,
+  "gpu/cuda/modelled": 531,
+  "gpu/hip/modelled": 531
  },
  "held_out": {
   "compile/cuda": {
@@ -2406,6 +2406,161 @@
   },
   {
    "engine": "hgp",
+   "quantity": "eri3",
+   "deriv": 2,
+   "L": 0,
+   "family": "hessians",
+   "compile": {
+    "cuda": {
+     "s": 1.243,
+     "basis": "modelled",
+     "source": "fit:hessians"
+    },
+    "hip": {
+     "s": 2.138,
+     "basis": "modelled",
+     "source": "fit:hessians"
+    }
+   },
+   "gpu": {
+    "cuda": {
+     "s": 1.243,
+     "basis": "modelled",
+     "source": "compile"
+    },
+    "hip": {
+     "s": 2.138,
+     "basis": "modelled",
+     "source": "compile"
+    }
+   }
+  },
+  {
+   "engine": "hgp",
+   "quantity": "eri3",
+   "deriv": 2,
+   "L": 1,
+   "family": "hessians",
+   "compile": {
+    "cuda": {
+     "s": 1.671,
+     "basis": "modelled",
+     "source": "fit:hessians"
+    },
+    "hip": {
+     "s": 2.854,
+     "basis": "modelled",
+     "source": "fit:hessians"
+    }
+   },
+   "gpu": {
+    "cuda": {
+     "s": 1.671,
+     "basis": "modelled",
+     "source": "compile"
+    },
+    "hip": {
+     "s": 2.854,
+     "basis": "modelled",
+     "source": "compile"
+    }
+   }
+  },
+  {
+   "engine": "hgp",
+   "quantity": "eri3",
+   "deriv": 2,
+   "L": 2,
+   "family": "hessians",
+   "compile": {
+    "cuda": {
+     "s": 2.246,
+     "basis": "modelled",
+     "source": "fit:hessians"
+    },
+    "hip": {
+     "s": 3.809,
+     "basis": "modelled",
+     "source": "fit:hessians"
+    }
+   },
+   "gpu": {
+    "cuda": {
+     "s": 2.246,
+     "basis": "modelled",
+     "source": "compile"
+    },
+    "hip": {
+     "s": 3.809,
+     "basis": "modelled",
+     "source": "compile"
+    }
+   }
+  },
+  {
+   "engine": "hgp",
+   "quantity": "eri3",
+   "deriv": 2,
+   "L": 3,
+   "family": "hessians",
+   "compile": {
+    "cuda": {
+     "s": 3.02,
+     "basis": "modelled",
+     "source": "fit:hessians"
+    },
+    "hip": {
+     "s": 5.083,
+     "basis": "modelled",
+     "source": "fit:hessians"
+    }
+   },
+   "gpu": {
+    "cuda": {
+     "s": 3.02,
+     "basis": "modelled",
+     "source": "compile"
+    },
+    "hip": {
+     "s": 5.083,
+     "basis": "modelled",
+     "source": "compile"
+    }
+   }
+  },
+  {
+   "engine": "hgp",
+   "quantity": "eri3",
+   "deriv": 2,
+   "L": 4,
+   "family": "hessians",
+   "compile": {
+    "cuda": {
+     "s": 4.059,
+     "basis": "modelled",
+     "source": "fit:hessians"
+    },
+    "hip": {
+     "s": 6.784,
+     "basis": "modelled",
+     "source": "fit:hessians"
+    }
+   },
+   "gpu": {
+    "cuda": {
+     "s": 4.059,
+     "basis": "modelled",
+     "source": "compile"
+    },
+    "hip": {
+     "s": 6.784,
+     "basis": "modelled",
+     "source": "compile"
+    }
+   }
+  },
+  {
+   "engine": "hgp",
    "quantity": "f",
    "deriv": 0,
    "L": 0,
@@ -3794,6 +3949,161 @@
     },
     "hip": {
      "s": 9.899,
+     "basis": "modelled",
+     "source": "compile"
+    }
+   }
+  },
+  {
+   "engine": "hgp",
+   "quantity": "metric",
+   "deriv": 2,
+   "L": 0,
+   "family": "hessians",
+   "compile": {
+    "cuda": {
+     "s": 1.243,
+     "basis": "modelled",
+     "source": "fit:hessians"
+    },
+    "hip": {
+     "s": 2.138,
+     "basis": "modelled",
+     "source": "fit:hessians"
+    }
+   },
+   "gpu": {
+    "cuda": {
+     "s": 1.243,
+     "basis": "modelled",
+     "source": "compile"
+    },
+    "hip": {
+     "s": 2.138,
+     "basis": "modelled",
+     "source": "compile"
+    }
+   }
+  },
+  {
+   "engine": "hgp",
+   "quantity": "metric",
+   "deriv": 2,
+   "L": 1,
+   "family": "hessians",
+   "compile": {
+    "cuda": {
+     "s": 1.671,
+     "basis": "modelled",
+     "source": "fit:hessians"
+    },
+    "hip": {
+     "s": 2.854,
+     "basis": "modelled",
+     "source": "fit:hessians"
+    }
+   },
+   "gpu": {
+    "cuda": {
+     "s": 1.671,
+     "basis": "modelled",
+     "source": "compile"
+    },
+    "hip": {
+     "s": 2.854,
+     "basis": "modelled",
+     "source": "compile"
+    }
+   }
+  },
+  {
+   "engine": "hgp",
+   "quantity": "metric",
+   "deriv": 2,
+   "L": 2,
+   "family": "hessians",
+   "compile": {
+    "cuda": {
+     "s": 2.246,
+     "basis": "modelled",
+     "source": "fit:hessians"
+    },
+    "hip": {
+     "s": 3.809,
+     "basis": "modelled",
+     "source": "fit:hessians"
+    }
+   },
+   "gpu": {
+    "cuda": {
+     "s": 2.246,
+     "basis": "modelled",
+     "source": "compile"
+    },
+    "hip": {
+     "s": 3.809,
+     "basis": "modelled",
+     "source": "compile"
+    }
+   }
+  },
+  {
+   "engine": "hgp",
+   "quantity": "metric",
+   "deriv": 2,
+   "L": 3,
+   "family": "hessians",
+   "compile": {
+    "cuda": {
+     "s": 3.02,
+     "basis": "modelled",
+     "source": "fit:hessians"
+    },
+    "hip": {
+     "s": 5.083,
+     "basis": "modelled",
+     "source": "fit:hessians"
+    }
+   },
+   "gpu": {
+    "cuda": {
+     "s": 3.02,
+     "basis": "modelled",
+     "source": "compile"
+    },
+    "hip": {
+     "s": 5.083,
+     "basis": "modelled",
+     "source": "compile"
+    }
+   }
+  },
+  {
+   "engine": "hgp",
+   "quantity": "metric",
+   "deriv": 2,
+   "L": 4,
+   "family": "hessians",
+   "compile": {
+    "cuda": {
+     "s": 4.059,
+     "basis": "modelled",
+     "source": "fit:hessians"
+    },
+    "hip": {
+     "s": 6.784,
+     "basis": "modelled",
+     "source": "fit:hessians"
+    }
+   },
+   "gpu": {
+    "cuda": {
+     "s": 4.059,
+     "basis": "modelled",
+     "source": "compile"
+    },
+    "hip": {
+     "s": 6.784,
      "basis": "modelled",
      "source": "compile"
     }

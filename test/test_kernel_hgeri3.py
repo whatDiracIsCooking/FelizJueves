@@ -134,14 +134,16 @@ def test_another_key_is_refused() -> None:
 
 
 def test_hgp_is_legal_at_d1_on_the_df_targets_alone() -> None:
-    # ERI3 here, METRIC with gradient.kernel_hgmetric; Rys and d2 refuse.
+    # ERI3 here, METRIC with gradient.kernel_hgmetric; Rys refuses (d2 on
+    # HGP is hessian.kernel_hgd2eri3's, Rys at d2 refuses too).
     Spec(Operator.COULOMB, 1, (1, 0), Target.METRIC, engine=HGP)
     with pytest.raises(ValueError, match="derivative order 1 on target "
                                          "eri3.rys"):
         Spec(Operator.COULOMB, 1, (1, 0, 0), Target.ERI3, engine=Engine.RYS)
+    Spec(Operator.COULOMB, 2, (1, 0, 0), Target.ERI3, engine=HGP)
     with pytest.raises(ValueError, match="derivative order 2 on target "
-                                         "eri3.hgp"):
-        Spec(Operator.COULOMB, 2, (1, 0, 0), Target.ERI3, engine=HGP)
+                                         "eri3.rys"):
+        Spec(Operator.COULOMB, 2, (1, 0, 0), Target.ERI3, engine=Engine.RYS)
 
 
 def test_the_derivative_tables() -> None:
