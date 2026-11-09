@@ -177,6 +177,7 @@
    "hessian.kernel_hdq",
    "hessian.kernel_hgd2eri3",
    "hessian.kernel_hgd2metric",
+   "hessian.kernel_hgp2",
    "hessian.kernel_hjab",
    "hessian.kernel_hkx",
    "hessian.kernel_ip1e",
@@ -2149,6 +2150,19 @@
    "mmd.hermite",
    "one_electron.potential"
   ],
+  "hessian.interpreted": [
+   "ao.shell",
+   "gradient.interpreted",
+   "gradient.kernel_gf",
+   "hessian.kernel_hgp2",
+   "ir",
+   "ir.interp",
+   "ir.lever_ladder",
+   "ir.lower",
+   "ir.passes",
+   "one_electron.potential",
+   "spec"
+  ],
   "hessian.kernel_d2eri3": [
    "eri.density_fit.kernel_metric",
    "gradient.kernel_g1e",
@@ -2279,6 +2293,14 @@
    "hgp.etr",
    "hgp.hrr",
    "hgp.orbits",
+   "hgp.recurrence",
+   "hgp.vrr",
+   "ir",
+   "spec"
+  ],
+  "hessian.kernel_hgp2": [
+   "gradient.kernel_gf",
+   "hgp.hrr",
    "hgp.recurrence",
    "hgp.vrr",
    "ir",
@@ -2899,6 +2921,7 @@
    "hessian.kernel_hdq",
    "hessian.kernel_hgd2eri3",
    "hessian.kernel_hgd2metric",
+   "hessian.kernel_hgp2",
    "hessian.kernel_hjab",
    "hessian.kernel_hkx",
    "hessian.kernel_ip1e",

@@ -389,11 +389,12 @@ def test_jab_takes_order_two_and_dq_order_one_for_the_hessian() -> None:
     # K at d2 the exchange energy's, hessian.kernel_hkx; METRIC at d2 the DF
     # metric's, hessian.kernel_d2metric; ERI3 at d2 the three-center DF
     # integral's, hessian.kernel_d2eri3; DIPOLE and QUADRUPOLE at d2 the
-    # moments', hessian.kernel_d2mu.)
+    # moments', hessian.kernel_d2mu; F at d2 the fused two-electron
+    # energy's on its native HGP, hessian.kernel_hgp2.)
     assert HESSIAN_TARGETS == frozenset({Target.JAB, Target.S, Target.T,
                                          Target.V, Target.K, Target.METRIC,
                                          Target.ERI3, Target.DIPOLE,
-                                         Target.QUADRUPOLE})
+                                         Target.QUADRUPOLE, Target.F})
     assert Target.DQ in GRADIENT_TARGETS
     d2 = Spec(Operator.COULOMB, 2, (2, 1), Target.JAB)
     assert d2.key() == "coulomb/d2/(2,1)/b1/jab/literal"
@@ -407,12 +408,34 @@ def test_jab_takes_order_two_and_dq_order_one_for_the_hessian() -> None:
 
 def test_k_takes_order_two_in_its_hermite_pairing() -> None:
     # The exchange Hessian (hessian.kernel_hkx): K's am, bra first, the key
-    # differing from the integral's in the `d` segment alone; MMD only.
+    # differing from the integral's in the `d` segment alone; on HGP too
+    # (hessian.kernel_hgp2, HESSIAN_OFF_NATIVE), but not on Rys.
     d2 = Spec(Operator.COULOMB, 2, (2, 1, 1, 0), Target.K)
     d0 = Spec(Operator.COULOMB, 0, (2, 1, 1, 0), Target.K)
     assert d2.key() == d0.key().replace("/d0/", "/d2/")
-    with pytest.raises(ValueError, match="derivative order 2 on target k.hgp"):
-        Spec(Operator.COULOMB, 2, (1, 0, 0, 0), Target.K, engine=Engine.HGP)
+    h2 = Spec(Operator.COULOMB, 2, (1, 0, 0, 0), Target.K, engine=Engine.HGP)
+    assert h2.key() == "coulomb/d2/(1,0|0,0)/b1/k.hgp/literal"
+    with pytest.raises(ValueError, match="derivative order 2 on target k.rys"):
+        Spec(Operator.COULOMB, 2, (1, 0, 0, 0), Target.K, engine=Engine.RYS)
+
+
+def test_f_and_hgp_j_take_order_two() -> None:
+    # hessian.kernel_hgp2: F at d2 on its native HGP, J at d2 on HGP only
+    # (MMD J's Hessian is JAB's); F on Rys at d2 refused.
+    f2 = Spec(Operator.COULOMB, 2, (1, 0, 1, 1), Target.F)
+    assert f2.key() == "coulomb/d2/(1,0|1,1)/b1/f/literal"
+    j2 = Spec(Operator.COULOMB, 2, (1, 0, 1, 1), Target.J, engine=Engine.HGP)
+    assert j2.key() == "coulomb/d2/(1,0|1,1)/b1/j.hgp/literal"
+    assert HESSIAN_OFF_NATIVE == {(Target.DIPOLE, Engine.HGP),
+                                  (Target.QUADRUPOLE, Engine.HGP),
+                                  (Target.METRIC, Engine.HGP),
+                                  (Target.ERI3, Engine.HGP),
+                                  (Target.J, Engine.HGP),
+                                  (Target.K, Engine.HGP)}
+    with pytest.raises(ValueError, match="derivative order 2 on target j"):
+        Spec(Operator.COULOMB, 2, (1, 0, 1, 1), Target.J)
+    with pytest.raises(ValueError, match="derivative order 2 on target f.rys"):
+        Spec(Operator.COULOMB, 2, (1, 0, 1, 1), Target.F, engine=Engine.RYS)
 
 
 def test_the_metric_takes_order_two_on_mmd_and_hgp() -> None:
@@ -428,7 +451,9 @@ def test_the_metric_takes_order_two_on_mmd_and_hgp() -> None:
     assert HESSIAN_OFF_NATIVE == {(Target.DIPOLE, Engine.HGP),
                                   (Target.QUADRUPOLE, Engine.HGP),
                                   (Target.METRIC, Engine.HGP),
-                                  (Target.ERI3, Engine.HGP)}
+                                  (Target.ERI3, Engine.HGP),
+                                  (Target.J, Engine.HGP),
+                                  (Target.K, Engine.HGP)}
     with pytest.raises(ValueError, match="derivative order 2 on target "
                                          "metric.rys"):
         Spec(Operator.COULOMB, 2, (1, 2), Target.METRIC, engine=Engine.RYS)
@@ -821,7 +846,9 @@ def test_the_dipole_takes_its_own_operator_and_a_pair() -> None:
     assert HESSIAN_OFF_NATIVE == {(Target.DIPOLE, Engine.HGP),
                                   (Target.QUADRUPOLE, Engine.HGP),
                                   (Target.METRIC, Engine.HGP),
-                                  (Target.ERI3, Engine.HGP)}
+                                  (Target.ERI3, Engine.HGP),
+                                  (Target.J, Engine.HGP),
+                                  (Target.K, Engine.HGP)}
     for target in (Target.DIPOLE, Target.QUADRUPOLE):
         assert Spec(OPERATOR_OF[target], 2, (2, 1), target,
                     engine=Engine.HGP).key() == (
