@@ -127,7 +127,9 @@ def test_the_hgp_hess_df_golden_is_unchanged(unit, backend: str) -> None:
 def test_the_golden_set_is_exactly_the_nine_units() -> None:
     pinned = json.loads(DIGESTS.read_text())
     for backend, (_, _, ext) in BACKEND.items():
-        files = {p.stem for p in (GOLDEN / backend).glob(f"hgd2*_*.{ext}")}
+        # its own prefixes only: hgd2s_ / hgd2t_ / hgd2v_ are kernel_hgd2's
+        files = {p.stem for prefix in ("hgd2metric_", "hgd2eri3_")
+                 for p in (GOLDEN / backend).glob(f"{prefix}*.{ext}")}
         assert files | set(pinned[backend]) == {_name(u) for u in UNITS}
         assert not files & set(pinned[backend])
         assert set(pinned[backend]) == {"hgd2eri3_111"}

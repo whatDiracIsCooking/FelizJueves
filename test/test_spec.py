@@ -326,7 +326,9 @@ def test_order_two_is_refused_on_a_non_native_engine() -> None:
                                   (Target.QUADRUPOLE, Engine.HGP),
                                   (Target.S, Engine.HGP),
                                   (Target.T, Engine.HGP),
-                                  (Target.V, Engine.HGP)}
+                                  (Target.V, Engine.HGP),
+                                  (Target.METRIC, Engine.HGP),
+                                  (Target.ERI3, Engine.HGP)}
     assert Spec(Operator.NUCLEAR, 2, (1, 0), Target.V,
                 engine=Engine.HGP).key() == "nuclear/d2/(1,0)/b1/v.hgp/literal"
 
@@ -440,6 +442,9 @@ def test_the_metric_takes_order_two_on_mmd_and_hgp() -> None:
     assert h2.key() == "coulomb/d2/(1,2)/b1/metric.hgp/literal"
     assert HESSIAN_OFF_NATIVE == {(Target.DIPOLE, Engine.HGP),
                                   (Target.QUADRUPOLE, Engine.HGP),
+                                  (Target.S, Engine.HGP),
+                                  (Target.T, Engine.HGP),
+                                  (Target.V, Engine.HGP),
                                   (Target.METRIC, Engine.HGP),
                                   (Target.ERI3, Engine.HGP)}
     with pytest.raises(ValueError, match="derivative order 2 on target "
