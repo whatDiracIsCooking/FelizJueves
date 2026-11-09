@@ -275,7 +275,7 @@ beside the lever `rinv`, `V`'s per-nucleus operator term as a matrix
 (``nuclear/d1/(2,1)/b1/v/rinv``). `DQ` at d1 is the ket
 pre-contraction differentiated on each of the ket's two centres
 (`hessian.kernel_hdq`), which only the Hessian reads. Unbatched, for each
-target's d0 reason. SIX OFF-NATIVE PAIRS ARE LEGAL AT d1
+target's d0 reason. NINE OFF-NATIVE PAIRS ARE LEGAL AT d1
 (`GRADIENT_OFF_NATIVE`): `J` on `Engine.HGP`, the Coulomb energy's bra
 derivative over every ordered quartet of the class on the Head-Gordon-Pople
 recurrence (`gradient.kernel_ghj`), `am` the d0 HGP J class `(la, lb | lc,
@@ -299,8 +299,9 @@ origin (`gradient.kernel_gmu`, `gmu_` / `gquad_`), `am` the pair:
 ``dipole/d1/(2,1)/b1/dipole/literal``. The dipole is built on
 `Engine.HGP` too (`GRADIENT_OFF_NATIVE`: `gradient.kernel_hgmu`, `hgmu_`,
 `hmu_`'s route over `hgs_`'s three tables),
-``dipole/d1/(2,1)/b1/dipole.hgp/literal``; an HGP d1 quadrupole stays
-refused.
+``dipole/d1/(2,1)/b1/dipole.hgp/literal``, and so is the quadrupole
+(`gradient.kernel_hgquad`, `hgquad_`, `hquad_`'s route over the same three
+tables), ``quadrupole/d1/(2,1)/b1/quadrupole.hgp/literal``.
 `F` at d1 is the fused Fock build's two-electron energy
 gradient, `dE_J - 1/2 dE_K`, its `am` the AO order as at d0, on F's
 native HGP engine (`gradient.kernel_gf`):
@@ -688,7 +689,8 @@ DERIVATIVE_ORDERS = (0, 1, 2)
 # and `QUADRUPOLE`, `SUM_mn M_mn dMU^c_mn/dR` per component about a fixed
 # origin (`gradient.kernel_gmu`). Each on its
 # native engine (MMD; HGP for `F`),
-# and `J`, `K`, `T`, `S`, `V`, `ERI3`, `METRIC` and `DIPOLE` on HGP too
+# and `J`, `K`, `T`, `S`, `V`, `ERI3`, `METRIC`, `DIPOLE` and `QUADRUPOLE`
+# on HGP too
 # (`GRADIENT_OFF_NATIVE`).
 GRADIENT_TARGETS = frozenset((Target.S, Target.T, Target.V, Target.JAB,
                               Target.K, Target.METRIC, Target.ERI3,
@@ -719,7 +721,8 @@ _D1_ONLY_REFUSAL = (
 # `ERI3` on HGP, the three-center DF gradient (`gradient.kernel_hgeri3`),
 # `METRIC` on HGP, the DF metric's (`gradient.kernel_hgmetric`), and
 # `DIPOLE` on HGP, the dipole's about a fixed origin on `hmu_`'s route
-# (`gradient.kernel_hgmu`).
+# (`gradient.kernel_hgmu`), and `QUADRUPOLE` on HGP, the raw second
+# moments' on `hquad_`'s (`gradient.kernel_hgquad`).
 # MMD `J` at d1 stays refused: its gradient is `JAB`'s, through the J chain.
 GRADIENT_OFF_NATIVE = frozenset(((Target.J, Engine.HGP),
                                  (Target.K, Engine.HGP),
@@ -728,13 +731,14 @@ GRADIENT_OFF_NATIVE = frozenset(((Target.J, Engine.HGP),
                                  (Target.V, Engine.HGP),
                                  (Target.ERI3, Engine.HGP),
                                  (Target.METRIC, Engine.HGP),
-                                 (Target.DIPOLE, Engine.HGP)))
+                                 (Target.DIPOLE, Engine.HGP),
+                                 (Target.QUADRUPOLE, Engine.HGP)))
 
 _GRADIENT_REFUSAL = (
     "a first derivative is built for S, T, V, DIPOLE, QUADRUPOLE, JAB, JX, "
     "K, KX1, KXC, METRIC, ERI3 and DQ on "
-    "the MMD engine, and for F, J, K, T, S, V, ERI3, METRIC and DIPOLE on "
-    "the HGP engine "
+    "the MMD engine, and for F, J, K, T, S, V, ERI3, METRIC, DIPOLE and "
+    "QUADRUPOLE on the HGP engine "
     "(felizjueves.gradient, "
     "felizjueves.hessian); this target's gradient is a follow-up"
 )

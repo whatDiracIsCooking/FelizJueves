@@ -73,7 +73,7 @@ class's total angular momentum.
 | Fused Fock (`gf_`) | — | interpreted through (dd\|dd), held to PySCF; compiled through (pp\|pp) | — |
 | DF metric | **both cards**; uncontracted `ipmetric_`: **both cards**, through (i\|i) | `hgmetric`: compiled | — |
 | `(mn\|P)` | **both cards**; uncontracted `xeri3_`: compiled, through (ff\|i) | `hgeri3`: compiled | — |
-| Dipole, quadrupole (`gmu_`, `gquad_`) | compiled, through (ff) | dipole `hgmu_`: compiled, through (ff) | — |
+| Dipole, quadrupole (`gmu_`, `gquad_`) | compiled, through (ff) | `hgmu_`, `hgquad_`: compiled, through (ff) | — |
 | Derivative matrices `S^x`, `T^x`, `V^x` (`ips_`, `ipt_`, `ipv_`) | compiled, through (ff) | — | — |
 | CPHF Coulomb derivative `J^X` (`jx`) | compiled, through (ff) | — | — |
 | `F^x`'s exchange part (`kx1`, `kxc`) | **RX 9060 XT**, through (ff\|ff) | — | — |

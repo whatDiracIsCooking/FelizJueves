@@ -111,8 +111,8 @@ whose unrolled unit compiled within half the budget, 9.2e-17 / 1.2e-16;
 **The dipole and quadrupole gradients are generated, interpreted and
 compiled by nvcc and hipcc, on no card** (`gradient.md`, "The
 dipole and quadrupole gradients"): `Target.DIPOLE` and `QUADRUPOLE` at d1
-(MMD; `spec.GRADIENT_TARGETS`; the dipole on HGP is `hgmu_`, below; an
-HGP quadrupole at d1 refused),
+(MMD; `spec.GRADIENT_TARGETS`; the dipole and quadrupole on HGP are
+`hgmu_` and `hgquad_`, below),
 `gradient/kernel_gmu.py` (`gmu_`, `gquad_{la}{lb}`): `G[c, A, k] +=
 SUM_mn M_mn dMU^c_mn/dR_{A,k}` per component (3, or the quadrupole's six
 raw second moments in `kernel_mu`'s order) about a FIXED origin `C` (no
@@ -153,6 +153,31 @@ scale at (dp) (gate 16 eps); whole H₂O/STO-3G and CO/cc-pVTZ (`slow`),
 nvcc and hipcc (2026-11-09, a device-less cloud container). No device
 harness, no card, nothing measured; registry `hgp/dipole/d1` L 0..6,
 compile tier only, its cost modelled.
+**The quadrupole gradient is also built on HGP, through (ff), interpreted
+and compiled, not run on a card** (`gradient.md`, "The quadrupole gradient
+on HGP"): `(QUADRUPOLE, HGP)` in `spec.GRADIENT_OFF_NATIVE`
+(`quadrupole/d1/(la,lb)/b1/quadrupole.hgp/literal`),
+`gradient/kernel_hgquad.py`'s `hgquad_{la}{lb}`, `gquad_`'s `G[6, n_atom,
+3]` on `hquad_`'s route, `hgmu_`'s shape: `Q_de` rewritten onto the ket as
+overlaps with `BC = B - C`, the derivative rule on the Gaussian first so
+`BC` is never differentiated, `hgs_`'s three contracted tables (1, `2
+alpha`, `2 beta`) each with its HRR, one overlap VRR to `la + lb + 3` per
+primitive pair, each `Q` a pooled local, 36 `AtomicAdd`s per shell pair,
+both centres; one thread per contracted shell pair, staged by
+`host.pair_records(..., ket_centre=True)`. Interpreted
+(`test_kernel_hgquad.py`): every ordered class (ss)–(ff) on HF/cc-pVTZ
+against `host.multipole_gradient` and against `gquad_` within 64 eps of the
+split-centre scale (`hgs_`'s gate, not `hgmu_`'s 16: worst 24.1 at (fd));
+whole H₂O/STO-3G and CO/cc-pVTZ (`slow`) 1.5 / 10.3 eps (CO 1.7e-14 of
+`max|G|`), and the origin shift through the witnessed `MU`. On
+`--hgp-grad-l` beside `hgt_`, `hgs_`, `ghv_`, `hgmu_`; 3 goldens per
+backend (`test_emit_hgquad.py`); every unit through (ff) compiled
+warning-free by nvcc (sm_86) and hipcc (gfx1200) (2026-11-09, a
+device-less cloud container, slowest ~22 s). One ptxas reading by hand,
+not a stored row: `hgquad_22` 11,440 B, `hgquad_33` 36,464 B of `sm_86`
+stack, so the f units are over #613's 14,000 B and no low-stack form
+exists. No device harness, no card, nothing measured; registry
+`hgp/quadrupole/d1` L 0..6, compile tier only, its cost modelled.
 **The whole RHF gradient is assembled and interpreted** (#565,
 `gradient.md`, "The RHF gradient, assembled"): `gradient/rhf.py`'s
 `rhf_gradient(basis, nuclei, D, W, runners)` signs and sums `-W dS`, `D dT`,
