@@ -25,7 +25,10 @@ held to libcint, and run on both cards through (i|i).
 The dipole and quadrupole gradients `gmu_` / `gquad_` ("The dipole and
 quadrupole gradients") are generated and interpreted through (ff), bitwise
 the host, the host held to libcint's `int1e_irp` / `int1e_irrp`; compiled by
-nvcc and hipcc through (ff), on no card.
+nvcc and hipcc through (ff), on no card. The dipole's gradient on HGP,
+`hgmu_` ("The dipole gradient on HGP"), is interpreted through (ff)
+against the same host and `gmu_`, and compiled by nvcc and hipcc through
+(ff), on no card.
 **The fused Fock gradient `gf_` (HGP, `Target.F` at d1) is generated,
 interpreted and compiled, not run**: held to `eri.eri`'s derivative
 integrals per class through `(dd|dd)`, to the host's `dE_J - 1/2 dE_K`
@@ -1077,7 +1080,8 @@ run on a card, not measured.**
 `Target.DIPOLE` and `Target.QUADRUPOLE` at `derivative_order = 1`, MMD
 only: `dipole/d1/(la,lb)/b1/dipole/literal` and
 `quadrupole/d1/(la,lb)/b1/quadrupole/literal`, the d0 keys with `d1` in
-place of `d0` (an HGP moment at d1 stays refused, `_GRADIENT_REFUSAL`).
+place of `d0` (the HGP dipole at d1 is `kernel_hgmu`'s, below; an HGP
+quadrupole at d1 stays refused, `_GRADIENT_REFUSAL`).
 The kernel writes, per component `c` of `<a| q (r - C)^(ex,ey,ez) |b>`
 (x, y, z; or the raw second moments xx, xy, xz, yy, yz, zz, `kernel_mu`'s
 order),
@@ -1123,6 +1127,54 @@ device-less cloud container; slowest `gquad_33`, 7.4 s on nvcc). There
 is no device harness: nothing has run on a card, and nothing is
 measured (the largest unit, `gquad_33`, folds 3,600 products; whether it
 fits #613's 14,000 B stack budget unrolled is unmeasured).
+
+## The dipole gradient on HGP (`gradient/kernel_hgmu.py`)
+
+**Status: generated, interpreted against the MMD host and `gmu_` through
+(ff); every unit through (ff) compiled warning-free by nvcc (sm_86) and
+hipcc (gfx1200); no device harness, not run on a card, not measured.**
+
+`Target.DIPOLE` at d1 is also legal on `Engine.HGP`
+(`spec.GRADIENT_OFF_NATIVE`), keyed
+`dipole/d1/(la,lb)/b1/dipole.hgp/literal` and built by
+`kernel_hgmu.build_hgmu_kernel` (`hgmu_{la}{lb}`, shells through f): the
+same `G[c, A, k] += SUM_mn M_mn dMU^c_mn/dR_{A,k}` as `gmu_`, about a
+fixed runtime origin `C` with the charge `q`, on the HGP one-electron
+`hmu_`'s route rather than McMurchie & Davidson's `E` and Hermite moments.
+The quadrupole stays MMD-only at d1.
+
+`hmu_` moves the operator onto the ket, `(r - C)_c |b> = |b+1_c> + BC_c
+|b>` with `BC = B - C`, so `MU^c(a, b) = q [(a|b+1_c) + BC_c (a|b)]` over
+contracted overlaps. The Cartesian rule acts on the basis function, and
+the moved operator keeps the ket's centre `B` whatever `b` is, so
+
+    dA_k MU^c(a, b) = 2 alpha MU^c(a+1_k, b) - a_k MU^c(a-1_k, b)
+    dB_k MU^c(a, b) = 2 beta  MU^c(a, b+1_k) - b_k MU^c(a, b-1_k)
+
+each `MU^c` that same two-term combination. `hgs_`'s three contracted
+tables (unweighted, `2 alpha`, `2 beta`, folded per primitive before the
+contraction) each gain the `b'+1_c` targets, so one overlap VRR runs to
+`la + lb + 2` (one higher than `hgs_`) and each table its own HRR on
+contracted values. Per block row `gs_`'s weight from `M`; each
+`m_n(a', b', c)` is declared once, before its first read; `3 x 6`
+`AtomicAdd`s per SHELL PAIR, both centres computed: the origin is not a
+nucleus, so there is no operator term, and the atoms' sum is the origin
+shift `q delta_ck SUM M S`, a check. One thread per contracted shell pair;
+staged by `host.pair_records(..., ket_centre=True)`, which adds the ket
+centre `b_*` per pair (`BC`, as `hmu_` reads it) to `hgs_`'s arrays.
+
+| What | Against | Where | Worst |
+|---|---|---|---|
+| `hgmu` interpreted (`test_kernel_hgmu.py`) | `host.multipole_gradient` at `e = 1`, per class, `M` non-symmetric, `test_kernel_gmu.py`'s split-centre scale per component | every ordered class (ss)–(ff) on HF/cc-pVTZ (L + 1 > 4 `slow`) | 6.3 eps of the scale at (dp), the rest <= 6.0 (gate 16 eps, `gmu_`'s) |
+| `hgmu` interpreted | `gmu_` interpreted, the same classes | as above | within the same gate |
+| `hgmu` interpreted, whole | the host, and the origin shift | H₂O/STO-3G, CO/cc-pVTZ (`slow`) | 5.4e-16 / 2.4e-14 of `max\|G\|`; the shift within `1e-13` of `max\|G\|` |
+| compile (`test_emit_hgmu.py`) | #92's filter | nvcc `sm_86`, hipcc `gfx1200`: every ladder class through (ff), each unit alone | passed, no warning in generated text (2026-11-09, a device-less cloud container); none over 20 s, 8 compiles at a time |
+
+Ladder: `--hgp-grad-l [LMAX]` writes `hgmu_` beside `hgt_`, `hgs_` and
+`ghv_` per class (class-major); goldens
+`test/golden/{cuda,hip}/hgmu_{00,01,11}`. No device harness and no card
+case: nothing has run on a card and nothing is measured (stack and
+scratch of `hgmu_33` unread).
 
 ## The fused Fock gradient on HGP (`gradient/kernel_gf.py`)
 
@@ -1208,9 +1260,10 @@ ladder).
 
 ## What is not done
 
-- The dipole and quadrupole gradients (`gmu_`, `gquad_`, above) are
-  interpreted and compiled by nvcc and hipcc only: no device harness, no
-  card, not measured.
+- The dipole and quadrupole gradients (`gmu_`, `gquad_`, above), and the
+  dipole's on HGP (`hgmu_`), are interpreted and compiled by nvcc and
+  hipcc only: no device harness, no card, not measured. The quadrupole has
+  no HGP gradient.
 - The HGP Coulomb gradient (`ghj_`, above) is interpreted only: not
   emitted, not compiled, not on a card.
 - `ghk`, the exchange gradient on HGP, is interpreted through `(dd|dd)`

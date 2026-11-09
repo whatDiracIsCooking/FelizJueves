@@ -48,6 +48,9 @@ CASES = [
     # compiled by nvcc and hipcc through (ff); no device test.
     *(case for q in ("dipole", "quadrupole") for case in ladder(
         "mmd", q, 1, compile=range(7))),
+    # The dipole gradient on HGP (kernel_hgmu): interpreted and compiled by
+    # nvcc and hipcc through (ff); no device test.
+    *ladder("hgp", "dipole", 1, compile=range(7)),
 ]
 
 # The uncontracted (mn|P) kernel's card ladder (#692): one program per aux l,
@@ -108,6 +111,8 @@ TESTS = {
     "test/test_emit_grad_mu.py::test_X_compiles_the_unit":
         Classes("mmd", "dipole", 1),
     "test/test_emit_hgs.py::test_X_compiles_the_unit": Classes("hgp", "s", 1),
+    "test/test_emit_hgmu.py::test_X_compiles_the_unit":
+        Classes("hgp", "dipole", 1),
     "test/test_emit_grad_df.py::test_X_compiles_the_df_gradient_unit":
         Classes("mmd", "metric", 1),
     "test/test_emit_ipmetric.py::test_X_compiles_the_ipmetric_unit":

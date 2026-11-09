@@ -269,9 +269,14 @@ def test_a_d0_key_another_target_an_hgp_key_or_a_lever_is_refused() -> None:
         build_gmu_kernel(Spec(Operator.DIPOLE, 0, (1, 0), Target.DIPOLE))
     with pytest.raises(ValueError, match="not a d1 dipole or quadrupole"):
         build_gmu_kernel(Spec(Operator.OVERLAP, 1, (1, 0), Target.S))
-    # the HGP moment has no gradient: the key itself is refused
+    # the HGP dipole's gradient is kernel_hgmu's, not this builder's; the
+    # HGP quadrupole has none: the key itself is refused
+    with pytest.raises(ValueError, match="not an MMD key.*kernel_hgmu"):
+        build_gmu_kernel(Spec(Operator.DIPOLE, 1, (1, 0), Target.DIPOLE,
+                              engine=Engine.HGP))
     with pytest.raises(ValueError, match="first derivative"):
-        Spec(Operator.DIPOLE, 1, (1, 0), Target.DIPOLE, engine=Engine.HGP)
+        Spec(Operator.QUADRUPOLE, 1, (1, 0), Target.QUADRUPOLE,
+             engine=Engine.HGP)
     with pytest.raises(ValueError, match="take no levers"):
         build_gmu_kernel(Spec(Operator.DIPOLE, 1, (1, 0), Target.DIPOLE,
                               levers=("tuned",)))

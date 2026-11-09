@@ -966,15 +966,16 @@ def records(basis: Basis, nuclei: Sequence[Nucleus], la: int, lb: int,
 
 
 def pair_records(basis: Basis, nuclei: Sequence[Nucleus], la: int, lb: int,
-                 *, pairs: Sequence[tuple[int, int]] | None = None
-                 ) -> dict[str, list]:
+                 *, pairs: Sequence[tuple[int, int]] | None = None,
+                 ket_centre: bool = False) -> dict[str, list]:
     """The HGP d1 kernels' arrays of class `(la, lb)`
     (`gradient.kernel_hgt`, one thread per contracted shell pair):
     `records`' per-record arrays less its per-record offsets and atoms,
     then one entry per shell pair -- `rec0` / `rec1` its record range
     (contiguous: `records` sweeps a pair's primitive pairs together),
     `off_a`, `off_b`, `atom_a`, `atom_b`, and `ab_*` = `A - B` from the
-    shells' centres."""
+    shells' centres; with `ket_centre`, `b_*` = `B` too (the dipole's
+    `B - C`, `gradient.kernel_hgmu`)."""
     if pairs is None:
         pairs = class_pairs(basis, la, lb)
     rec = records(basis, nuclei, la, lb, pairs=pairs)
@@ -985,6 +986,8 @@ def pair_records(basis: Basis, nuclei: Sequence[Nucleus], la: int, lb: int,
     per_pair: dict[str, list] = {k: [] for k in (
         "rec0", "rec1", "off_a", "off_b", "atom_a", "atom_b",
         "ab_x", "ab_y", "ab_z")}
+    if ket_centre:
+        per_pair |= {f"b_{a}": [] for a in "xyz"}
     start = 0
     for i, j in pairs:
         stop = start + len(primitive_pairs(sh[i], sh[j]))
@@ -996,6 +999,8 @@ def pair_records(basis: Basis, nuclei: Sequence[Nucleus], la: int, lb: int,
         per_pair["atom_b"].append(atoms[j])
         for d, a in enumerate("xyz"):
             per_pair[f"ab_{a}"].append(sh[i].centre[d] - sh[j].centre[d])
+            if ket_centre:
+                per_pair[f"b_{a}"].append(sh[j].centre[d])
         start = stop
     assert start == len(rec["s_ab"]), "the pair ranges tile the records"
     return out | per_pair

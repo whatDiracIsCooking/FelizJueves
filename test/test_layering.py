@@ -4698,6 +4698,37 @@ EDGES["emit.__main__"] = EDGES["emit.__main__"] | frozenset(
     ("gradient.kernel_hgs",))
 
 
+# ---------------------------------------------------------------------------
+# The dipole gradient on HGP (`gradient.kernel_hgmu`): `kernel_hgs`'s three
+# tables with `hmu_`'s operator moved onto the ket -- `kernel_hgp`'s VRR /
+# HRR machinery and `kernel_g1e`'s weights, checked against `gradient.host`
+# (and `gmu_`) in the interpreter. The generator CLI writes its ladder
+# (`--hgp-grad-l`).
+# ---------------------------------------------------------------------------
+
+RULES |= {
+    "hgmu_builder": _rule(
+        "kernel_hgmu.py: the HGP dipole-gradient kernel -- key -> IR, "
+        "`kernel_hgp`'s overlap VRR and contracted HRR over three tables, "
+        "the operator moved onto the ket, `kernel_g1e`'s weights from M",
+        ("spec", "=ir", "hgp.hrr", "hgp.recurrence", "hgp.vrr",
+         "=one_electron.kernel_hgp", "gradient.kernel_g1e"),
+        ao=_GRAD_WITNESS, **{"gradient.host": _GRAD_WITNESS},
+        reference=_GROUND_TRUTH, **_NO_MACHINE),
+}
+RULE_OF["gradient.kernel_hgmu"] = "hgmu_builder"
+EDGES["gradient.kernel_hgmu"] = frozenset(
+    ("gradient.kernel_g1e", "hgp.hrr", "hgp.recurrence", "hgp.vrr", "ir",
+     "one_electron.kernel_hgp", "spec"))
+RULES["driver"] = Rule(RULES["driver"].why + ", and the HGP dipole-"
+                       "gradient ladder through `kernel_hgmu`",
+                       RULES["driver"].may
+                       | frozenset(("gradient.kernel_hgmu",)),
+                       RULES["driver"].must_not)
+EDGES["emit.__main__"] = EDGES["emit.__main__"] | frozenset(
+    ("gradient.kernel_hgmu",))
+
+
 def test_the_rys1e_builder_reaches_neither_its_witnesses_nor_mmd() -> None:
     graph = _graph()
     seen: set[str] = set()
