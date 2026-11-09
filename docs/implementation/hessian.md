@@ -40,8 +40,9 @@ or floor was added. The spike is not imported anywhere.
 `spec.DERIVATIVE_ORDERS` is `(0, 1, 2)`. Order 2 is legal on
 `spec.HESSIAN_TARGETS` only — `JAB`, and since the one-electron Hessians
 `S`, `T` and `V`, the exchange Hessian `K`, the DF `METRIC` and `ERI3`,
-and the moments `DIPOLE` and `QUADRUPOLE`, on MMD — and refused elsewhere with
-`_HESSIAN_REFUSAL`. Order 1 gained `DQ` (`GRADIENT_TARGETS`), the ket
+and the moments `DIPOLE` and `QUADRUPOLE`, on MMD, and the two moments on
+HGP too (`spec.HESSIAN_OFF_NATIVE`, "The dipole and quadrupole Hessians on
+HGP" below) — and refused elsewhere with `_HESSIAN_REFUSAL`. Order 1 gained `DQ` (`GRADIENT_TARGETS`), the ket
 pre-contraction differentiated on each ket centre, which only the Hessian
 reads. Every d0 and d1 key is byte-identical:
 
@@ -575,8 +576,8 @@ not run on a card, not measured.**
 
 `Target.DIPOLE` and `Target.QUADRUPOLE` at `derivative_order = 2`, MMD
 only: `dipole/d2/(la,lb)/b1/dipole/literal` and
-`quadrupole/d2/(la,lb)/b1/quadrupole/literal` (an HGP moment at d2 is
-refused, `_HESSIAN_REFUSAL`). The kernel writes, per component `c` of
+`quadrupole/d2/(la,lb)/b1/quadrupole/literal` (the HGP moment at d2 is
+`kernel_hd2mu`'s, the next section). The kernel writes, per component `c` of
 `<a| q (r - C)^(ex,ey,ez) |b>` (x, y, z; or the raw second moments xx,
 xy, xz, yy, yz, zz, `kernel_mu`'s order),
 
@@ -625,6 +626,70 @@ Emit ladder `python -m felizjueves.emit --hess-mu-l [LMAX]` (2 bare,
 - The traceless (Buckingham) quadrupole is the caller's linear map of the
   raw moments; the nuclear contribution and the response are the caller's.
 
+## The dipole and quadrupole Hessians on HGP (`hessian/kernel_hd2mu.py`)
+
+**Status: generated, interpreted through (ff) against the host and
+against `d2mu_` / `d2quad_`; every unit through (ff) compiled by nvcc 13.0
+(sm_86) and hipcc / ROCm 7.2.4 (gfx1200), 2026-11-09, a device-less cloud
+container; not run on a card, not measured.**
+
+The first `derivative_order = 2` key off its target's native engine:
+`(DIPOLE, HGP)` and `(QUADRUPOLE, HGP)` are `spec.HESSIAN_OFF_NATIVE`,
+keyed `dipole/d2/(la,lb)/b1/dipole.hgp/literal` and
+`quadrupole/d2/(la,lb)/b1/quadrupole.hgp/literal` (on Rys a moment at d2
+is still refused). The contraction is the previous section's, `H[c, A, k,
+B, l] += SUM_mn M_mn d2MU^c_mn / dR_{A,k} dR_{B,l}`, `H[n_comp, n_atom, 3,
+n_atom, 3]` zeroed by the caller, `C` and `q` runtime scalars; the route
+is the HGP d1 kernels' (`gradient.kernel_hgmu`, `kernel_hgquad`):
+
+- **The operator on the ket.** Each `(r - C)_d = (r - B)_d + BC_d`, `BC =
+  B - C`, so `MU_d(a, b) = (a|b+1_d) + BC_d (a|b)` and `Q_de(a, b) =
+  (a|b+1_d+1_e) + BC_e (a|b+1_d) + BC_d (a|b+1_e) + BC_d BC_e (a|b)`,
+  every `(.|.)` an overlap.
+- **The derivative rule twice, on the Gaussian.** `dA_k X(a, b) = 2 alpha
+  X(a+1_k, b) - a_k X(a-1_k, b)` (`dB_k` likewise) applied twice, before
+  the rewriting above, so `BC` is never differentiated and, `C` being fixed,
+  there is no operator term: centre-centre blocks only (`AA`, `BB`, `AB`,
+  `kernel_h1e.COMPONENTS`' 21), as `d2mu_`'s. Each block is a sum of terms
+  `coef (2 alpha)^p (2 beta)^n X(a', b')`, `p + n <= 2`, like terms merged
+  (`kernel_hd2mu.second`).
+- **Six contracted tables.** `alpha` and `beta` are per primitive, so each
+  weight -- `1`, `2 alpha`, `2 beta`, `4 alpha^2`, `4 beta^2`, `4 alpha
+  beta` -- is folded into the boundary `(e|0)` before the contraction, as
+  `kernel_hgs` folds two at d1; each table has its own HRR on contracted
+  values (a table no term reads is left out: table 0 at (ss)). One overlap
+  VRR per primitive pair to `la + lb + e + 2` feeds them all.
+- One thread per contracted shell pair, both centres computed (no
+  translational invariance), `36 n_comp` `AtomicAdd`s per shell pair.
+  Staged by `gradient.host.pair_records(..., ket_centre=True)`, `hgquad_`'s
+  parameter block with `H` for `G`.
+
+One form (unrolled): `hd2mu_33` is ~2.0 MB of CUDA source and `hd2quad_33`
+~4.3 MB, neither tracked -- four to five times `d2mu_33` / `d2quad_33`,
+since every Cartesian pair's block reads its own HRR outputs where MMD
+reads per-axis factors. A low-stack or rolled form is a follow-up.
+
+| What | Against | Where | Worst |
+|---|---|---|---|
+| `kernel_hd2mu`, interpreted | `host_1e.multipole_hessian` per class, `M` non-symmetric, `C` off every nucleus | every ordered class (ss)–(ff) on HF/cc-pVTZ (above L + 2 = 4 `slow`) | 6.0 eps of the absolute twin (`hd2quad_32`), dipole 3.3 (`hd2mu_20`); gate 16 eps (`test_kernel_hd2mu.py`) |
+| the same | `d2mu_` / `d2quad_` interpreted, per class | the same classes | the same gate |
+| the same | the host, the symmetry `H[c,A,k,B,l] = H[c,B,l,A,k]`, and the origin shift through the d1 hosts | whole H₂O/STO-3G; CO/cc-pVTZ (`slow`) | the same gate; 1e-13 / 1e-12 of `max\|H\|` |
+| the goldens | text | (ss) (sp) (pp), 6 per backend (`test_emit_hd2mu.py`) | -- |
+| nvcc / hipcc compile | #92's warning filter | `test_emit_hd2mu.py`'s 40 `cuda` / `hip` cases through (ff) | passed, no warning in generated text (2026-11-09; 6m21s for the 40 at `-n 4`, `hd2quad_33` the longest) |
+| on a card | -- | -- | **not run**: no device harness, no card in that session |
+
+Emit ladder `python -m felizjueves.emit --hgp-hess-mu-l [LMAX]` (2 bare,
+0..3), never in the bare default nor `KERNEL_GEN_CMD`; names `hd2mu_` and
+`hd2quad_`, so none collides with another ladder's.
+
+### What is not done
+
+- No device harness and no card; nothing measured, no stack reading.
+- No HGP Hessian of any other target: `S`, `T`, `V`, `J`, `K` at d2 on HGP
+  stay refused.
+- Everything the MMD section lists as not done (no direct libcint d2
+  witness; the traceless form, the nuclear term and the response are the
+  caller's).
 ## The one-electron Hessians on HGP (`hessian/kernel_hgd2.py`)
 
 **Status: generated, interpreted through (ff) against the host and the MMD
@@ -696,8 +761,9 @@ Emit ladder `python -m felizjueves.emit --hgp-hess-l [LMAX]` (1 bare,
 - No device harness and no card; nothing measured.
 - No low-stack form: the (ff) frames above #613's 14,000 B are a reading,
   not a decision.
-- No HGP Hessian of any other target (the moments, the two-electron
-  energies, the DF integrals): each is refused with its reason.
+- No HGP Hessian of any other target but the moments (`hd2mu_`, its own
+  section): the two-electron energies and the DF integrals are refused
+  with their reason.
 
 ## The one-electron derivative matrices (`S^x`, `T^x`, `V^x`, #687)
 

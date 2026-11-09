@@ -314,14 +314,17 @@ def test_a_one_electron_target_takes_orders_one_and_two_and_no_higher(
 
 
 def test_order_two_is_refused_on_a_non_native_engine() -> None:
-    # S, T and V on HGP are the exception (HESSIAN_OFF_NATIVE,
-    # hessian.kernel_hgd2); every other non-native d2 is refused.
+    # S, T, V (hessian.kernel_hgd2) and the moments (kernel_hd2mu) on HGP
+    # are the exception (HESSIAN_OFF_NATIVE); every other non-native d2 is
+    # refused.
     with pytest.raises(ValueError, match="derivative order 2 on target v.rys"):
         Spec(Operator.NUCLEAR, 2, (1, 0), Target.V, engine=Engine.RYS)
     with pytest.raises(ValueError,
-                       match="derivative order 2 on target dipole.hgp"):
-        Spec(Operator.DIPOLE, 2, (1, 0), Target.DIPOLE, engine=Engine.HGP)
-    assert HESSIAN_OFF_NATIVE == {(Target.S, Engine.HGP),
+                       match="derivative order 2 on target eri3.hgp"):
+        Spec(Operator.COULOMB, 2, (1, 0, 0), Target.ERI3, engine=Engine.HGP)
+    assert HESSIAN_OFF_NATIVE == {(Target.DIPOLE, Engine.HGP),
+                                  (Target.QUADRUPOLE, Engine.HGP),
+                                  (Target.S, Engine.HGP),
                                   (Target.T, Engine.HGP),
                                   (Target.V, Engine.HGP)}
     assert Spec(Operator.NUCLEAR, 2, (1, 0), Target.V,
@@ -808,16 +811,26 @@ def test_the_dipole_takes_its_own_operator_and_a_pair() -> None:
         with pytest.raises(ValueError):
             _dipole(am)
     # d1 is the moment's nuclear gradient (gradient.kernel_gmu), d2 its
-    # Hessian (hessian.kernel_d2mu), both on MMD only
+    # Hessian (hessian.kernel_d2mu), both on MMD, and on HGP too
+    # (hessian.kernel_hd2mu: HESSIAN_OFF_NATIVE); on Rys neither
     assert Spec(Operator.DIPOLE, 1, (2, 1), Target.DIPOLE).key() == (
         "dipole/d1/(2,1)/b1/dipole/literal")
     assert Spec(Operator.DIPOLE, 2, (2, 1), Target.DIPOLE).key() == (
         "dipole/d2/(2,1)/b1/dipole/literal")
     assert Spec(Operator.QUADRUPOLE, 2, (1, 2), Target.QUADRUPOLE).key() == (
         "quadrupole/d2/(1,2)/b1/quadrupole/literal")
+    assert HESSIAN_OFF_NATIVE == {(Target.DIPOLE, Engine.HGP),
+                                  (Target.QUADRUPOLE, Engine.HGP),
+                                  (Target.S, Engine.HGP),
+                                  (Target.T, Engine.HGP),
+                                  (Target.V, Engine.HGP)}
     for target in (Target.DIPOLE, Target.QUADRUPOLE):
-        with pytest.raises(ValueError, match="derivative order"):
-            Spec(OPERATOR_OF[target], 2, (2, 1), target, engine=Engine.HGP)
+        assert Spec(OPERATOR_OF[target], 2, (2, 1), target,
+                    engine=Engine.HGP).key() == (
+            f"{target.value}/d2/(2,1)/b1/{target.value}.hgp/literal")
+    with pytest.raises(ValueError, match="derivative order 2 on target "
+                                         "dipole.rys"):
+        Spec(Operator.DIPOLE, 2, (2, 1), Target.DIPOLE, engine=Engine.RYS)
 
 
 @pytest.mark.parametrize("n", [3, 6, 9, 12])

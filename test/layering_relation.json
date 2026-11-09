@@ -173,6 +173,7 @@
    "hessian.kernel_d2metric",
    "hessian.kernel_d2mu",
    "hessian.kernel_h1e",
+   "hessian.kernel_hd2mu",
    "hessian.kernel_hdq",
    "hessian.kernel_hgd2",
    "hessian.kernel_hjab",
@@ -2225,6 +2226,16 @@
    "plan.targets",
    "spec"
   ],
+  "hessian.kernel_hd2mu": [
+   "gradient.kernel_g1e",
+   "hessian.kernel_h1e",
+   "hgp.hrr",
+   "hgp.recurrence",
+   "hgp.vrr",
+   "ir",
+   "one_electron.kernel_hgp",
+   "spec"
+  ],
   "hessian.kernel_hdq": [
    "gradient.kernel_g1e",
    "hessian.kernel_h1e",
@@ -2867,6 +2878,7 @@
    "hessian.kernel_d2metric",
    "hessian.kernel_d2mu",
    "hessian.kernel_h1e",
+   "hessian.kernel_hd2mu",
    "hessian.kernel_hdq",
    "hessian.kernel_hgd2",
    "hessian.kernel_hjab",

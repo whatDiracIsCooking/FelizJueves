@@ -1,7 +1,8 @@
 """Analytic nuclear Hessians by McMurchie-Davidson: the Coulomb energy's,
-the exchange energy's, the one-electron `S`, `T`, `V` (on HGP too), the
-dipole and quadrupole moments about a fixed origin, and the
-density-fitting metric `(P|Q)` and three-center integral `(mn|P)`, as host
+the exchange energy's, the one-electron `S`, `T`, `V` (on HGP too:
+`kernel_hgd2`), the dipole and quadrupole moments about a fixed origin (on
+HGP too: `kernel_hd2mu`), and the density-fitting metric `(P|Q)` and
+three-center integral `(mn|P)`, as host
 references and as generated kernels (`Spec.derivative_order = 2`).
 
     host.py          the Coulomb reference, pure Python, on the AO layer
@@ -40,6 +41,12 @@ references and as generated kernels (`Spec.derivative_order = 2`).
                      H[c, A, k, B, l] += SUM_mn M_mn d2MU^c_mn / dR dR per
                      component about a fixed origin (d2s with kernel_gmu's
                      moment factor; host_1e.multipole_hessian its witness)
+    kernel_hd2mu.py  the same two moments at d2 on Engine.HGP (an
+                     off-native Hessian, beside kernel_hgd2): hd2mu_ /
+                     hd2quad_{la}{lb}, the operator moved onto the ket,
+                     the derivative rule twice over six contracted tables
+                     (kernel_hgquad's route; host_1e.multipole_hessian and
+                     d2mu_ its witnesses)
     host_jx.py       the Coulomb derivative matrix J^X (#688) and its ip1
                      bra half J1, pure Python: the CPHF right-hand side's
                      two-electron Coulomb part, an AO matrix per (atom, axis)

@@ -179,8 +179,8 @@ def test_the_spec_admits_s_t_v_on_hgp_at_order_two() -> None:
     with pytest.raises(ValueError, match="derivative order 2 on target v.rys"):
         Spec(Operator.NUCLEAR, 2, (1, 0), Target.V, engine=Engine.RYS)
     with pytest.raises(ValueError,
-                       match="derivative order 2 on target dipole.hgp"):
-        Spec(Operator.DIPOLE, 2, (1, 0), Target.DIPOLE, engine=Engine.HGP)
+                       match="derivative order 2 on target eri3.hgp"):
+        Spec(Operator.COULOMB, 2, (1, 0, 0), Target.ERI3, engine=Engine.HGP)
 
 
 @pytest.mark.parametrize("target", TARGETS, ids=str)

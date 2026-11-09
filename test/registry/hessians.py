@@ -47,6 +47,10 @@ CASES = [
     # test.
     *(case for q in ("dipole", "quadrupole") for case in ladder(
         "mmd", q, 2, compile=range(7))),
+    # hd2mu / hd2quad, the same Hessians on HGP (kernel_hd2mu): interpreted
+    # and compiled by nvcc and hipcc through (ff); no device test.
+    *(case for q in ("dipole", "quadrupole") for case in ladder(
+        "hgp", q, 2, compile=range(7))),
     # hgd2s / hgd2t / hgd2v, S, T and V at d2 on HGP (kernel_hgd2):
     # interpreted and compiled by nvcc and hipcc through (ff); no device
     # test.
@@ -113,6 +117,8 @@ TESTS = {
         Classes("mmd", "v", 2),
     "test/test_emit_hess_mu.py::test_X_compiles_the_unit":
         Classes("mmd", "dipole", 2),
+    "test/test_emit_hd2mu.py::test_X_compiles_the_unit":
+        Classes("hgp", "dipole", 2),
     "test/test_emit_hgp_hess.py::test_X_compiles_the_unit":
         Classes("hgp", "s", 2),
     "test/test_emit_hess_k.py::test_X_compiles_the_exchange_hessian_unit":

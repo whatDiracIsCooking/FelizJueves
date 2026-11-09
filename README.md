@@ -87,6 +87,7 @@ class's total angular momentum.
 | Exchange (`hkx`) | **both cards**, through (ff\|ff); H₂O/cc-pVDZ against libcint | — | — |
 | `S`, `T`, `V` (`d2s`, `d2t`, `d2v`) | **both cards**, through (dd) | `hgd2s_`, `hgd2t_`, `hgd2v_`: compiled, through (ff) | — |
 | DF metric, `(mn\|P)` (`d2metric`, `d2eri3`) | **both cards**, through (i\|i) / (ff\|i) | — | — |
+| Dipole, quadrupole (`d2mu_`, `d2quad_`) | compiled, through (ff) | `hd2mu_`, `hd2quad_`: compiled, through (ff) | — |
 
 Underneath them all is the device Boys function, one template
 `fj_boys<M>` shared by every unit with a fundamental: witnessed on the RTX

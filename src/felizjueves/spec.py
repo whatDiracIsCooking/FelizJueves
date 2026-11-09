@@ -322,10 +322,12 @@ the dipole and quadrupole share one; ``coulomb/d1/(1,0|0,0)/b1/kx1/literal``
 is a key. Unbatched by its builder (`gk`'s reason).
 
 A HESSIAN CLASS IS ITS INTEGRAL'S CLASS AT `derivative_order = 2`, legal on
-`HESSIAN_TARGETS` alone -- `JAB`, `S`, `T`, `V`, `K`, `METRIC` and `ERI3`,
-on MMD, and `S`, `T`, `V` on HGP too (`HESSIAN_OFF_NATIVE`,
-`hessian.kernel_hgd2`, ``overlap/d2/(2,1)/b1/s.hgp/literal``) -- every other
-target refusing it (`_HESSIAN_REFUSAL`). Like a d1
+`HESSIAN_TARGETS` alone -- `JAB`, `S`, `T`, `V`, `K`, `METRIC`, `ERI3`,
+`DIPOLE` and `QUADRUPOLE`, on MMD, and the two moments and `S`, `T`, `V` on
+`Engine.HGP` too (`HESSIAN_OFF_NATIVE`: `hessian.kernel_hd2mu`, `hd2mu_` /
+`hd2quad_`, ``dipole/d2/(2,1)/b1/dipole.hgp/literal``; `hessian.kernel_hgd2`,
+``overlap/d2/(2,1)/b1/s.hgp/literal``) -- every other target refusing
+it (`_HESSIAN_REFUSAL`). Like a d1
 kernel it writes a contraction, not the derivative integrals: `JAB` at d2
 is the Coulomb energy's Hessian,
 `H[A, k, B, l] += d2 E_J / dR_{A,k} dR_{B,l}`, from `J_p` of the bra
@@ -754,17 +756,23 @@ _GRADIENT_REFUSAL = (
 # (`hessian.kernel_d2metric`), and `ERI3`, `SUM_mnP M_mnP d2(mn|P)/dR dR`
 # (`hessian.kernel_d2eri3`), and `DIPOLE` and `QUADRUPOLE`, `SUM_mn M_mn
 # d2MU^c_mn/dR dR` per component about a fixed origin
-# (`hessian.kernel_d2mu`). MMD, and `S`, `T`, `V` on HGP too
+# (`hessian.kernel_d2mu`). Each on MMD; the two moments and `S`, `T`, `V`
+# on HGP too
 # (`HESSIAN_OFF_NATIVE`).
 HESSIAN_TARGETS = frozenset((Target.JAB, Target.S, Target.T, Target.V,
                              Target.K, Target.METRIC, Target.ERI3,
                              Target.DIPOLE, Target.QUADRUPOLE))
 
 # The (target, engine) pairs off the native engine whose second derivative
-# is built: the one-electron `S`, `T` and `V` on HGP
-# (`hessian.kernel_hgd2`: the rule applied twice on the HGP one-electron
-# route of `gradient.kernel_hgs` / `kernel_hgt` / `kernel_ghv`).
-HESSIAN_OFF_NATIVE = frozenset(((Target.S, Engine.HGP),
+# is built: `DIPOLE` and `QUADRUPOLE` on HGP, the moments' Hessians about a
+# fixed origin on `hgmu_` / `hgquad_`'s route, the derivative rule applied
+# twice over six contracted tables (`hessian.kernel_hd2mu`); and the
+# one-electron `S`, `T` and `V` on HGP (`hessian.kernel_hgd2`: the rule
+# applied twice on the HGP one-electron route of `gradient.kernel_hgs` /
+# `kernel_hgt` / `kernel_ghv`).
+HESSIAN_OFF_NATIVE = frozenset(((Target.DIPOLE, Engine.HGP),
+                                (Target.QUADRUPOLE, Engine.HGP),
+                                (Target.S, Engine.HGP),
                                 (Target.T, Engine.HGP),
                                 (Target.V, Engine.HGP)))
 
@@ -773,7 +781,8 @@ _HESSIAN_REFUSAL = (
     "S, T, V (the one-electron Hessians), K (the exchange energy's), "
     "METRIC (the DF metric's), ERI3 (the three-center DF integral's) and "
     "DIPOLE, QUADRUPOLE (the moments' about a fixed origin) on "
-    "the MMD engine, and for S, T and V on the HGP engine "
+    "the MMD engine, and for DIPOLE, QUADRUPOLE, S, T and V on the HGP "
+    "engine "
     "(felizjueves.hessian); this target's Hessian is a follow-up"
 )
 
