@@ -21,7 +21,7 @@ THE GENERATOR'S ENTRY POINT, and the command `devtools/config.sh` names as
     PYTHONPATH=src uv run python -m felizjueves.emit --backend hip --hgp-hess-mu-l
     PYTHONPATH=src uv run python -m felizjueves.emit --backend hip \\
             --hgp-metric-l --hgp-eri3-l --hgp-grad-eri3-l
-            --hgp-grad-metric-l
+            --hgp-grad-metric-l --hgp-hess-eri3-l --hgp-hess-metric-l
     PYTHONPATH=src uv run python -m felizjueves.emit --backend cuda \\
             --rys-metric-l 4
     PYTHONPATH=src uv run python -m felizjueves.emit --backend cuda --rys-eri3-l 4
@@ -109,6 +109,12 @@ for CUDA, `.hip` for HIP):
   (`hgmetric_{lP}{lQ}`, `SUM_PQ W_PQ d(P|Q)/dR`, the HGP twin of
   `gmetric_`) for every `lP <= lQ <= LMAX`, the same bound (0..1, bare 1:
   3 units), the same rules, and every name starts `hgmetric_`.
+  `--hgp-hess-eri3-l [LMAX]` and `--hgp-hess-metric-l [LMAX]` are their d2
+  siblings: `kernel_hgd2eri3.build_hgd2eri3_kernel` (`hgd2eri3_{la}{lb}{lP}`,
+  `SUM_mnP Gam_mnP d2(mn|P)/dR dR`, the HGP twin of `d2eri3_`) and
+  `kernel_hgd2metric.build_hgd2metric_kernel` (`hgd2metric_{lP}{lQ}`, the
+  HGP twin of `d2metric_`), the same classes, bound (0..1, bare 1: 6 and 3
+  units) and rules, every name starting `hgd2eri3_` or `hgd2metric_`.
 
 - the DF metric ladder on Rys quadrature, `--rys-metric-l [LMAX]`:
   `kernel_rmetric.build_rmetric_kernel` for every aux class `lP <= lQ`,
@@ -574,7 +580,7 @@ are a 2.
 It is a SEPARATE path, like the F path: never combined with `--L`,
 `--pair-l`, `--one-e-l`, `--schwarz-l`, `--sx-l`, `--metric-l`, `--eri3-l`,
 `--hgp-metric-l`, `--hgp-eri3-l`, `--hgp-grad-eri3-l`,
-`--hgp-grad-metric-l`,
+`--hgp-grad-metric-l`, `--hgp-hess-eri3-l`, `--hgp-hess-metric-l`,
 `--rys-eri3-l`,
 `--mu-l`, `--class`, `--shell-ls`, `--fock-l`, `--fock-class`, a lever flag,
 `--n-batches` or `--admitted-only` (each a 2), NEVER in the no-flag default
@@ -725,6 +731,8 @@ from felizjueves.hessian.kernel_hd2mu import build_hd2mu_kernel
 from felizjueves.hessian.kernel_hdq import build_hdq_kernel
 from felizjueves.hessian.kernel_hgd2 import TARGETS as HGD2_TARGETS
 from felizjueves.hessian.kernel_hgd2 import build_hgd2_kernel
+from felizjueves.hessian.kernel_hgd2eri3 import build_hgd2eri3_kernel
+from felizjueves.hessian.kernel_hgd2metric import build_hgd2metric_kernel
 from felizjueves.hessian.kernel_hjab import build_hjab_kernel
 from felizjueves.hessian.kernel_hkx import build_hkx_kernel
 from felizjueves.hessian.kernel_ip1e import IP1E, build_ip1e_kernel
@@ -1022,6 +1030,8 @@ def _hgp_df(args: argparse.Namespace) -> bool:
     return (args.hgp_metric_l is not None or args.hgp_eri3_l is not None
             or args.hgp_grad_eri3_l is not None
             or args.hgp_grad_metric_l is not None
+            or args.hgp_hess_eri3_l is not None
+            or args.hgp_hess_metric_l is not None
             or args.rys_metric_l is not None
             or args.rys_eri3_l is not None)
 
@@ -1059,13 +1069,28 @@ def hgp_grad_metric_classes(lmax: int) -> list[tuple[int, int]]:
     return hgp_metric_classes(lmax)
 
 
+def hgp_hess_eri3_classes(lmax: int) -> list[tuple[int, int, int]]:
+    """`hgp_eri3_classes`' classes, for the d2 sibling `hgd2eri3_`."""
+    _hgp_df_check("--hgp-hess-eri3-l", lmax)
+    return hgp_eri3_classes(lmax)
+
+
+def hgp_hess_metric_classes(lmax: int) -> list[tuple[int, int]]:
+    """`hgp_metric_classes`' classes, for the d2 sibling `hgd2metric_`."""
+    _hgp_df_check("--hgp-hess-metric-l", lmax)
+    return hgp_metric_classes(lmax)
+
+
 def generate_hgp_df(backend: str, arch: Arch, out: Path,
                     metric_l: int | None, eri3_l: int | None,
                     grad_eri3_l: int | None = None,
-                    grad_metric_l: int | None = None) -> list[Path]:
+                    grad_metric_l: int | None = None,
+                    hess_eri3_l: int | None = None,
+                    hess_metric_l: int | None = None) -> list[Path]:
     """Emit the HGP metric units through `metric_l`, the HGP
-    three-center units through `eri3_l` and their d1 siblings through
-    `grad_eri3_l` and `grad_metric_l` (each None: none) into `out`."""
+    three-center units through `eri3_l`, their d1 siblings through
+    `grad_eri3_l` and `grad_metric_l` and their d2 siblings through
+    `hess_eri3_l` and `hess_metric_l` (each None: none) into `out`."""
     kernels = [*(build_hmetric_kernel(c) for c in (
         hgp_metric_classes(metric_l) if metric_l is not None else ())),
                *(build_heri3_kernel(c) for c in (
@@ -1075,6 +1100,12 @@ def generate_hgp_df(backend: str, arch: Arch, out: Path,
         else ())),
                *(build_hgmetric_kernel(c) for c in (
         hgp_grad_metric_classes(grad_metric_l) if grad_metric_l is not None
+        else ())),
+               *(build_hgd2eri3_kernel(c) for c in (
+        hgp_hess_eri3_classes(hess_eri3_l) if hess_eri3_l is not None
+        else ())),
+               *(build_hgd2metric_kernel(c) for c in (
+        hgp_hess_metric_classes(hess_metric_l) if hess_metric_l is not None
         else ()))]
     out.mkdir(parents=True, exist_ok=True)
     return [_write(backend, arch, out, k) for k in kernels]
@@ -2045,6 +2076,7 @@ def _main_hgp(args: argparse.Namespace, other_path: bool) -> int:
               "separate path from --L / --pair-l / --one-e-l / --schwarz-l / "
               "--sx-l / --metric-l / --eri3-l / --hgp-metric-l / "
               "--hgp-eri3-l / --hgp-grad-eri3-l / --hgp-grad-metric-l / "
+              "--hgp-hess-eri3-l / --hgp-hess-metric-l / "
               "--rys-metric-l / --rys-eri3-l / "
               "--mu-l / --quad-l / --grad-l / --grad-mu-l / --grad-k-l / "
               "--grad-hk-l / "
@@ -2127,6 +2159,12 @@ def main(argv: Sequence[str] | None = None) -> int:
                     nargs="?", const=DEFAULT_HGP_DF_L, default=None,
                     metavar="LMAX")
     ap.add_argument("--hgp-grad-metric-l", dest="hgp_grad_metric_l",
+                    type=int, nargs="?", const=DEFAULT_HGP_DF_L, default=None,
+                    metavar="LMAX")
+    ap.add_argument("--hgp-hess-eri3-l", dest="hgp_hess_eri3_l", type=int,
+                    nargs="?", const=DEFAULT_HGP_DF_L, default=None,
+                    metavar="LMAX")
+    ap.add_argument("--hgp-hess-metric-l", dest="hgp_hess_metric_l",
                     type=int, nargs="?", const=DEFAULT_HGP_DF_L, default=None,
                     metavar="LMAX")
     ap.add_argument("--rys-metric-l", dest="rys_metric_l", type=int,
@@ -2285,6 +2323,7 @@ def main(argv: Sequence[str] | None = None) -> int:
               "separate path from --L / --pair-l / --one-e-l / --schwarz-l / "
               "--sx-l / --metric-l / --eri3-l / --hgp-metric-l / "
               "--hgp-eri3-l / --hgp-grad-eri3-l / --hgp-grad-metric-l / "
+              "--hgp-hess-eri3-l / --hgp-hess-metric-l / "
               "--rys-metric-l / --rys-eri3-l / "
               "--mu-l / --quad-l / --grad-l / --grad-mu-l / --grad-k-l / "
               "--grad-hk-l / "
@@ -2391,7 +2430,9 @@ def main(argv: Sequence[str] | None = None) -> int:
     for flag, v in (("--hgp-metric-l", args.hgp_metric_l),
                     ("--hgp-eri3-l", args.hgp_eri3_l),
                     ("--hgp-grad-eri3-l", args.hgp_grad_eri3_l),
-                    ("--hgp-grad-metric-l", args.hgp_grad_metric_l)):
+                    ("--hgp-grad-metric-l", args.hgp_grad_metric_l),
+                    ("--hgp-hess-eri3-l", args.hgp_hess_eri3_l),
+                    ("--hgp-hess-metric-l", args.hgp_hess_metric_l)):
         if v is not None and not 0 <= v <= HGP_DF_L_MAX:
             print(f"emit: {flag} {v} is outside 0..{HGP_DF_L_MAX}: the HGP "
                   "DF kernels are tested for s and p shells only",
@@ -2625,11 +2666,15 @@ def main(argv: Sequence[str] | None = None) -> int:
         written += generate_eri3(args.backend, arch, args.out, args.eri3_l)
     if (args.hgp_metric_l is not None or args.hgp_eri3_l is not None
             or args.hgp_grad_eri3_l is not None
-            or args.hgp_grad_metric_l is not None):
+            or args.hgp_grad_metric_l is not None
+            or args.hgp_hess_eri3_l is not None
+            or args.hgp_hess_metric_l is not None):
         written += generate_hgp_df(args.backend, arch, args.out,
                                    args.hgp_metric_l, args.hgp_eri3_l,
                                    args.hgp_grad_eri3_l,
-                                   args.hgp_grad_metric_l)
+                                   args.hgp_grad_metric_l,
+                                   args.hgp_hess_eri3_l,
+                                   args.hgp_hess_metric_l)
     if args.rys_metric_l is not None:  # beside the J chain, never by default
         written += generate_rys_metric(args.backend, arch, args.out,
                                        args.rys_metric_l)

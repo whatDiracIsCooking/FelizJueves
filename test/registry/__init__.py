@@ -187,6 +187,7 @@ UNITS: dict[str, tuple[str, str, int]] = {
     "hmetric": ("hgp", "metric", 0), "heri3": ("hgp", "eri3", 0),
     "hgeri3": ("hgp", "eri3", 1),
     "hgmetric": ("hgp", "metric", 1),
+    "hgd2metric": ("hgp", "metric", 2), "hgd2eri3": ("hgp", "eri3", 2),
     "fr": ("rys", "f", 0), "rj": ("rys", "j", 0), "rk": ("rys", "k", 0),
     "rs": ("rys", "s", 0), "rt": ("rys", "t", 0), "rv": ("rys", "v", 0),
     "rmu": ("rys", "dipole", 0),

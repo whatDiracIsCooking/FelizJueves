@@ -59,11 +59,20 @@ references and as generated kernels (`Spec.derivative_order = 2`).
                      H[X, k, Y, l] += SUM_mnP Gam_mnP d2(mn|P) / dR dR
                      over the AO pair's two centres (the rule twice, per
                      axis) and the aux centre (the Hermite shift twice)
+    kernel_hgd2metric.py  Target.METRIC at d2 on the HGP engine:
+                     hgd2metric_{lP}{lQ}, d2metric's contract by the
+                     Cartesian rule twice on one HGP VRR (the bra two up,
+                     level and two down)
+    kernel_hgd2eri3.py Target.ERI3 at d2 on the HGP engine:
+                     hgd2eri3_{la}{lb}{lP}, d2eri3's contract by the
+                     Cartesian rule twice on all three centres, one VRR and
+                     a bra HRR per (class, primitive weight) table
 
 The sections below are the Coulomb kernels'; the one-electron ones apply
 the same rule twice on ONE pair (no split), and `kernel_h1e`'s docstring
 is their account; `kernel_d2metric`'s and `kernel_d2eri3`'s docstrings
-are the DF metric's and the three-center integral's.
+are the DF metric's and the three-center integral's, and
+`kernel_hgd2metric`'s and `kernel_hgd2eri3`'s their HGP twins'.
 
 WHAT A HESSIAN KERNEL WRITES. As a gradient kernel writes a contraction and
 not the derivative integrals (`felizjueves.gradient`), a Hessian kernel

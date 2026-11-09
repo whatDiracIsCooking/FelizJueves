@@ -55,6 +55,11 @@ CASES = [
     # interpreted and compiled by nvcc and hipcc through (ff); no device
     # test.
     *(case for q in "stv" for case in ladder("hgp", q, 2, compile=range(7))),
+    # hgd2metric / hgd2eri3, the DF metric's and (mn|P)'s Hessians on HGP:
+    # interpreted through L = 4, the s / p ladders compiled by nvcc and
+    # hipcc; no device test.
+    *ladder("hgp", "metric", 2, compile=range(3), interpreted=range(5)),
+    *ladder("hgp", "eri3", 2, compile=range(4), interpreted=range(5)),
 ]
 
 # #694's ladder: one program per aux l of the d1 DF ladder's aux-i system
@@ -129,6 +134,8 @@ TESTS = {
         Classes("mmd", "metric", 2),
     "test/test_emit_d2eri3.py::test_X_compiles_the_df_hessian_unit":
         Classes("mmd", "eri3", 2),
+    "test/test_emit_hgp_hess_df.py::test_X_compiles_the_hgp_hessian_unit":
+        Classes("hgp", "metric", 2),
     "test/test_emit_ip1e.py::test_X_compiles_the_ip1_unit":
         Classes("mmd", "s", 1),
     "test/test_ip1e_device.py::test_X_ip1e_matches_the_host": ById(_IP1E),

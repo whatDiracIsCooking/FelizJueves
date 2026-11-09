@@ -102,6 +102,7 @@ __all__ = [
     "hgmetric_dag",
     "hgmetric_name",
     "hgmetric_spec",
+    "pair_weights",
 ]
 
 HGMETRIC_L_MAX = 1  # the highest shell l the CLI ladder and goldens take
@@ -180,8 +181,9 @@ def _step(a: Cart, k: int, by: int) -> Cart:
     return tuple(c + by * (d == k) for d, c in enumerate(a))  # type: ignore[return-value]
 
 
-def _weights(lP: int, lQ: int) -> list[Stmt]:
-    """`w{a * nQ + b}` from `M` (`kernel_g1e.weights`' rule, restated)."""
+def pair_weights(lP: int, lQ: int) -> list[Stmt]:
+    """`w{a * nQ + b}` from `M` (`kernel_g1e.weights`' rule, restated);
+    public for `hessian.kernel_hgd2metric`, its d2 twin."""
     nP, nQ = len(vrr.cartesians(lP)), len(vrr.cartesians(lQ))
 
     def m(row: Expr, col: Expr) -> Index:
@@ -291,7 +293,7 @@ def build_hgmetric_kernel(cls: Spec | tuple[int, int], *,
           for n, arr in (("p0", "p_rec0"), ("p1", "p_rec1"), ("q0", "q_rec0"),
                          ("q1", "q_rec1"), ("oa", "off_p"), ("ob", "off_q"),
                          ("aa", "atom_p"), ("ab", "atom_q"))),
-        *_weights(lP, lQ),
+        *pair_weights(lP, lQ),
         *(Decl(f"g{k}", Scalar.F64, init=Lit(0.0)) for k in range(3)),
         Note("the P records of the pair, serially"),
         For(BRA, Var("p0"), Var("p1"), Lit(1), bra_body),

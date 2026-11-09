@@ -5379,6 +5379,101 @@ def test_the_hd2mu_builder_reaches_neither_its_witnesses_nor_a_machine(
         hit = sorted(e for e in seen if _under(e, banned))
         assert not hit, f"kernel_hd2mu reaches {hit}"
 
+# ---------------------------------------------------------------------------
+# The DF Hessians on the HGP engine (`hessian.kernel_hgd2metric`,
+# `hessian.kernel_hgd2eri3`): the Cartesian rule applied twice by the HGP
+# VRR (and bra HRR), the d1 HGP twins' VRR pieces, weights and tables, the
+# MMD siblings' parameters and notes restated -- so, like `kernel_hgp`, they
+# reach neither the plan nor the MMD engine, nor their witnesses.
+# ---------------------------------------------------------------------------
+
+_HGP_HESS_WITNESS = ("`hessian.host_df` / `hessian.host_eri3` are the "
+                     "witnesses the kernels are interpreted against and `ao` "
+                     "the layer they read: importing either shares ancestry "
+                     "with them (#20)")
+RULES |= {
+    "hgd2metric_builder": _rule(
+        "kernel_hgd2metric.py: the DF metric Hessian kernel on the HGP engine "
+        "-- key -> IR, `kernel_hgp`'s VRR ket body on `hgp.vrr`'s DAG of the "
+        "bra two up, level and two down, `kernel_hgmetric`'s weights, "
+        "`kernel_d2metric`'s parameters and scatter restated",
+        ("spec", "=ir", "hgp", "eri.density_fit.kernel_hgp",
+         "gradient.kernel_hgmetric"),
+        plan=RULES["hgp"].must_not["plan"],
+        mmd="the other engine: the MMD Hessian kernel is this builder's "
+            "cross-engine witness, not its ancestor",
+        ao=_HGP_HESS_WITNESS,
+        **{"hessian.host_df": _HGP_HESS_WITNESS,
+           "hessian.kernel_d2metric":
+            "the MMD metric Hessian builder reaches `plan/`; its parameters "
+            "are restated"},
+        reference=_GROUND_TRUTH, **_NO_MACHINE),
+    "hgd2eri3_builder": _rule(
+        "kernel_hgd2eri3.py: the three-center DF Hessian kernel on the HGP "
+        "engine -- key -> IR, one VRR over every second-derivative class's "
+        "boundary and their bra HRRs, `kernel_hgeri3`'s tables and weights, "
+        "`kernel_d2eri3`'s parameters restated",
+        ("spec", "=ir", "hgp", "eri.density_fit.kernel_hgp",
+         "gradient.kernel_hgeri3"),
+        plan=RULES["hgp"].must_not["plan"],
+        mmd="the other engine: the MMD kernels are this builder's "
+            "cross-engine witnesses, not its ancestors",
+        ao=_HGP_HESS_WITNESS,
+        **{"hessian.host_eri3": _HGP_HESS_WITNESS,
+           "hessian.kernel_d2eri3":
+            "the MMD sibling reaches `plan/`; its parameters are restated",
+           "hessian.kernel_h1e":
+            "reaches the MMD engine; its notes are restated"},
+        reference=_GROUND_TRUTH, **_NO_MACHINE),
+}
+RULE_OF |= {
+    "hessian.kernel_hgd2metric": "hgd2metric_builder",
+    "hessian.kernel_hgd2eri3": "hgd2eri3_builder",
+}
+EDGES |= {k: frozenset(v) for k, v in {
+    "hessian.kernel_hgd2metric": ("eri.density_fit.kernel_hgp",
+                                  "gradient.kernel_hgmetric",
+                                  "hgp.recurrence", "hgp.vrr", "ir", "spec"),
+    "hessian.kernel_hgd2eri3": ("eri.density_fit.kernel_hgp",
+                                "gradient.kernel_hgeri3", "hgp.hrr",
+                                "hgp.recurrence", "hgp.vrr", "ir", "spec"),
+}.items()}
+# The generator CLI writes their ladders (`--hgp-hess-metric-l`,
+# `--hgp-hess-eri3-l`).
+RULES["driver"] = Rule(RULES["driver"].why + ", and the HGP DF Hessian "
+                       "ladders through `kernel_hgd2metric`, "
+                       "`kernel_hgd2eri3`",
+                       RULES["driver"].may
+                       | frozenset(("hessian.kernel_hgd2metric",
+                                    "hessian.kernel_hgd2eri3")),
+                       RULES["driver"].must_not)
+EDGES["emit.__main__"] = EDGES["emit.__main__"] | frozenset(
+    ("hessian.kernel_hgd2metric", "hessian.kernel_hgd2eri3"))
+
+
+def test_the_hgp_hessian_builders_reach_neither_the_plan_nor_mmd() -> None:
+    graph = _graph()
+    for mod in ("hessian.kernel_hgd2metric", "hessian.kernel_hgd2eri3"):
+        _reaches_neither(graph, mod)
+
+
+def _reaches_neither(graph, mod: str) -> None:
+    seen: set[str] = set()
+    todo = [mod]
+    while todo:
+        for e in graph.get(todo.pop(), set()):
+            if e not in seen:
+                seen.add(e)
+                todo.append(e)
+    assert {"hgp.vrr", "eri.density_fit.kernel_hgp"} <= seen
+    for banned in (_REF, "plan", "mmd", "ao", *_LEFT_AO, "ir.interp", "emit",
+                   "performance.device", "hessian.host_df",
+                   "hessian.host_eri3", "hessian.kernel_d2metric",
+                   "hessian.kernel_d2eri3", "hessian.kernel_h1e",
+                   "gradient.kernel_g1e"):
+        hit = sorted(e for e in seen if _under(e, banned))
+        assert not hit, f"{mod} reaches {hit}"
+
 
 if __name__ == "__main__":
     import sys
