@@ -132,7 +132,7 @@ worst 1.57e-16 (RTX 3080) and 2.30e-16 (RX 9060 XT) of the absolute twin,
 **The dipole and quadrupole Hessians are generated, interpreted and
 compiled by nvcc and hipcc, on no card** (`hessian.md`, "The dipole and
 quadrupole Hessians"): `Target.DIPOLE` and `QUADRUPOLE` join
-`spec.HESSIAN_TARGETS` (MMD only; an HGP moment at d2 refused).
+`spec.HESSIAN_TARGETS` (MMD; the HGP twins below).
 `hessian/kernel_d2mu.py` (`d2mu_`, `d2quad_{la}{lb}`): `H[c, A, k, B, l]
 += SUM_mn M_mn d2MU^c_mn/dR_{A,k} dR_{B,l}` per component (3, or the six
 raw second moments in `kernel_mu`'s order) about a FIXED origin `C` (no
@@ -152,6 +152,25 @@ default nor `KERNEL_GEN_CMD`; 12 goldens per backend (ss)-(dd)
 compiled warning-free by nvcc (sm_86) and hipcc (gfx1200) (the 40 `cuda` /
 `hip` cases, 2026-11-08, a device-less cloud container). No device
 harness, no card, nothing measured; no libcint d2 witness directly.
+**Their HGP twins are generated, interpreted and compiled by nvcc and
+hipcc, on no card** (`hessian.md`, "The dipole and quadrupole Hessians on
+HGP"): `(DIPOLE, HGP)` and `(QUADRUPOLE, HGP)` are
+`spec.HESSIAN_OFF_NATIVE`, the first d2 key off its native engine
+(`dipole/d2/(la,lb)/b1/dipole.hgp/literal`). `hessian/kernel_hd2mu.py`
+(`hd2mu_`, `hd2quad_{la}{lb}`): the same contraction on `hgquad_`'s route
+-- the operator moved onto the ket as overlaps with `BC = B - C`, the
+derivative rule applied twice to the Gaussian first, six contracted tables
+(1, 2 alpha, 2 beta, 4 alpha^2, 4 beta^2, 4 alpha beta) each with its own
+HRR, one overlap VRR to `la + lb + e + 2` per primitive pair, one thread
+per shell pair, `36 n_comp` atomics per shell pair. Interpreted, every
+ordered class (ss)-(ff) on HF/cc-pVTZ against the host and against
+`d2mu_` / `d2quad_` within 16 eps of the absolute twin (measured <= 6.0,
+`hd2quad_32`), the whole H₂O/STO-3G and CO/cc-pVTZ (`slow`) Hessians,
+their symmetry and the origin shift (`test_kernel_hd2mu.py`). Ladder
+`--hgp-hess-mu-l [LMAX]` (2 bare, 0..3), never in the bare default nor
+`KERNEL_GEN_CMD`; 6 goldens per backend (ss) (sp) (pp)
+(`test_emit_hd2mu.py`). Every unit through (ff) compiled warning-free by nvcc (sm_86) and hipcc (gfx1200) (the 40 `cuda` / `hip` cases, 2026-11-09, a device-less cloud container). Unrolled only: `hd2quad_33` is ~4.3 MB
+of CUDA source. No device harness, no card, nothing measured.
 **The exchange
 energy's Hessian too, through (ff|ff), on both cards (#691)** (`hessian.md`, "The
 exchange Hessian"): `Target.K` joins `spec.HESSIAN_TARGETS`, a d2 K key in

@@ -185,9 +185,10 @@ def test_the_spec_admits_the_dipole_on_hgp_at_order_one_only() -> None:
                 engine=Engine.HGP)
     with pytest.raises(ValueError):
         build_hgmu_kernel(quad)
-    with pytest.raises(ValueError,
-                       match="derivative order 2 on target dipole.hgp"):
-        Spec(Operator.DIPOLE, 2, (1, 0), Target.DIPOLE, engine=Engine.HGP)
+    # the dipole's HGP d2 key is kernel_hd2mu's, not this builder's
+    with pytest.raises(ValueError, match="not a d1 HGP DIPOLE key"):
+        build_hgmu_kernel(Spec(Operator.DIPOLE, 2, (1, 0), Target.DIPOLE,
+                               engine=Engine.HGP))
 
 
 def test_the_parameters_are_the_staging() -> None:

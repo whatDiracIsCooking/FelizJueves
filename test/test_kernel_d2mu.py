@@ -246,9 +246,10 @@ def test_a_d0_or_d1_key_another_target_an_hgp_key_or_a_lever_is_refused(
                                    Target.DIPOLE))
     with pytest.raises(ValueError, match="not a d2 dipole or quadrupole"):
         build_d2mu_kernel(Spec(Operator.OVERLAP, 2, (1, 0), Target.S))
-    # the HGP moment has no Hessian: the key itself is refused
-    with pytest.raises(ValueError, match="second derivative"):
-        Spec(Operator.DIPOLE, 2, (1, 0), Target.DIPOLE, engine=Engine.HGP)
+    # the HGP moment's Hessian is kernel_hd2mu's, not this builder's
+    with pytest.raises(ValueError, match="not an MMD key"):
+        build_d2mu_kernel(Spec(Operator.DIPOLE, 2, (1, 0), Target.DIPOLE,
+                               engine=Engine.HGP))
     with pytest.raises(ValueError, match="take no levers"):
         build_d2mu_kernel(Spec(Operator.DIPOLE, 2, (1, 0), Target.DIPOLE,
                                levers=("tuned",)))
