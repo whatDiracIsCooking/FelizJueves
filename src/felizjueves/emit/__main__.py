@@ -411,7 +411,10 @@ for CUDA, `.hip` for HIP):
   (`hgs_{la}{lb}`), the same route over three tables (unweighted, `2 alpha`,
   `2 beta`); and `kernel_ghv.build_ghv_kernel`, `Target.V` there too
   (`ghv_{la}{lb}`): per nucleus the point-charge VRR into the same three
-  tables, their HRRs, the Hellmann-Feynman row by translational invariance.
+  tables, their HRRs, the Hellmann-Feynman row by translational invariance;
+  and `kernel_hgmu.build_hgmu_kernel`, `Target.DIPOLE` there too
+  (`hgmu_{la}{lb}`): `hmu_`'s operator moved onto the ket over `hgs_`'s
+  three tables, both centres, about a runtime origin.
   Accepted 0..`HGP_GRAD_L_MAX` = 3 ONLY (the builders are checked through
   (ff), interpreted; above it is a 2). It ADDS units beside the J ladders, as
   `--grad-l` does, and is NEVER in the no-flag default nor in
@@ -669,6 +672,7 @@ from felizjueves.gradient.kernel_gmetric import build_gmetric_kernel
 from felizjueves.gradient.kernel_gmu import GRADIENT_MOMENTS, build_gmu_kernel
 from felizjueves.gradient.kernel_hgeri3 import build_hgeri3_kernel
 from felizjueves.gradient.kernel_hgmetric import build_hgmetric_kernel
+from felizjueves.gradient.kernel_hgmu import build_hgmu_kernel
 from felizjueves.gradient.kernel_hgs import build_hgs_kernel
 from felizjueves.gradient.kernel_hgt import build_hgt_kernel
 from felizjueves.gradient.kernel_ipmetric import build_ipmetric_kernel
@@ -768,8 +772,10 @@ HGP_ONE_E_TARGETS = (Target.S, Target.T, Target.V, Target.DIPOLE)
 DEFAULT_HGP_MU_L = 2  # `--hgp-mu-l` given bare: (ss) through (dd), 12 units
 DEFAULT_RYS_ONE_E_L = 3  # `--rys-one-e-l` given bare: (ss) through (ff), 30
 RYS_ONE_E_L_MAX = 3  # kernel_rys.L_MAX: built and checked through (ff)
-DEFAULT_HGP_GRAD_L = 1  # `--hgp-grad-l` given bare: hgt_, hgs_, ghv_ (ss) (sp) (pp)
-# kernel_hgt.L_MAX = kernel_hgs.L_MAX = kernel_ghv.L_MAX: interpreted through (ff)
+# `--hgp-grad-l` given bare: hgt_, hgs_, ghv_, hgmu_ (ss) (sp) (pp)
+DEFAULT_HGP_GRAD_L = 1
+# kernel_hgt.L_MAX = kernel_hgs.L_MAX = kernel_ghv.L_MAX = kernel_hgmu.L_MAX:
+# interpreted through (ff)
 HGP_GRAD_L_MAX = 3
 FOCK_L_MAX = 2  # milestone 12's ladder tops out at (dd|dd) (pin 3)
 _FOCK_PAIRS = tuple((a, b) for a in range(FOCK_L_MAX + 1)
@@ -1557,16 +1563,18 @@ def hgp_grad_classes(lmax: int) -> list[tuple[int, int]]:
 
 
 def hgp_grad_kernels(lmax: int) -> list[Kernel]:
-    """`hgt_{la}{lb}`, `hgs_{la}{lb}` and `ghv_{la}{lb}` for every class through `lmax`,
-    class-major."""
+    """`hgt_{la}{lb}`, `hgs_{la}{lb}`, `ghv_{la}{lb}` and `hgmu_{la}{lb}`
+    for every class through `lmax`, class-major."""
     return [build((la, lb)) for la, lb in hgp_grad_classes(lmax)
-            for build in (build_hgt_kernel, build_hgs_kernel, build_ghv_kernel)]
+            for build in (build_hgt_kernel, build_hgs_kernel,
+                          build_ghv_kernel, build_hgmu_kernel)]
 
 
 def generate_hgp_grad(backend: str, arch: Arch, out: Path,
                       lmax: int) -> list[Path]:
-    """Emit the HGP kinetic and overlap gradient units of every pair class through
-    `lmax` into `out`; return the paths."""
+    """Emit the HGP kinetic, overlap, nuclear-attraction and dipole
+    gradient units of every pair class through `lmax` into `out`; return
+    the paths."""
     kernels = hgp_grad_kernels(lmax)
     out.mkdir(parents=True, exist_ok=True)
     return [_write(backend, arch, out, k) for k in kernels]

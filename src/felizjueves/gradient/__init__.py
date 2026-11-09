@@ -1,5 +1,5 @@
 """Analytic nuclear gradients by McMurchie-Davidson (and, for `J`, `K`, `S`,
-`T`, `V` and the fused `F`, by Head-Gordon-Pople too): host references and
+`T`, `V`, the dipole and the fused `F`, by Head-Gordon-Pople too): host references and
 the generated kernels
 (`Spec.derivative_order = 1`).
 
@@ -13,6 +13,9 @@ the generated kernels
                      energy's bra derivative, K's plan one bra order up
     kernel_gmu.py    Target.DIPOLE / QUADRUPOLE at d1: gmu_ / gquad_{la}{lb},
                      SUM M dMU^c/dR per moment component, fixed origin
+    kernel_hgmu.py   Target.DIPOLE on Engine.HGP at d1: hgmu_{la}{lb}, the
+                     dipole's gradient on kernel_hgp's route (hmu_'s
+                     moved operator over hgs_'s three tables)
     kernel_ghj.py    Target.J on Engine.HGP at d1: ghj_{la}{lb}{lc}{ld},
                      the Coulomb energy's bra derivative per ordered
                      class on the Head-Gordon-Pople recurrence

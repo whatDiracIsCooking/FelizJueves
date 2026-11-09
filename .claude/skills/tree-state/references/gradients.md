@@ -111,7 +111,8 @@ whose unrolled unit compiled within half the budget, 9.2e-17 / 1.2e-16;
 **The dipole and quadrupole gradients are generated, interpreted and
 compiled by nvcc and hipcc, on no card** (`gradient.md`, "The
 dipole and quadrupole gradients"): `Target.DIPOLE` and `QUADRUPOLE` at d1
-(MMD only; `spec.GRADIENT_TARGETS`; an HGP moment at d1 refused),
+(MMD; `spec.GRADIENT_TARGETS`; the dipole on HGP is `hgmu_`, below; an
+HGP quadrupole at d1 refused),
 `gradient/kernel_gmu.py` (`gmu_`, `gquad_{la}{lb}`): `G[c, A, k] +=
 SUM_mn M_mn dMU^c_mn/dR_{A,k}` per component (3, or the quadrupole's six
 raw second moments in `kernel_mu`'s order) about a FIXED origin `C` (no
@@ -131,6 +132,27 @@ split-centre scale). Ladder `python -m felizjueves.emit --grad-mu-l
 through (ff) compiled warning-free by nvcc (sm_86) and hipcc (gfx1200)
 (the 40 `cuda` / `hip` cases, 2026-10-31, a device-less cloud
 container). No device harness, no card, nothing measured.
+**The dipole gradient is also built on HGP, through (ff), interpreted and
+compiled, not run on a card** (`gradient.md`, "The dipole gradient on
+HGP"): `DIPOLE` at d1 on `Engine.HGP` (`spec.GRADIENT_OFF_NATIVE`;
+`dipole/d1/(la,lb)/b1/dipole.hgp/literal`), `gradient/kernel_hgmu.py`'s
+`hgmu_{la}{lb}`, `gmu_`'s `G[c, A, k]` on `hmu_`'s route: the operator
+moved onto the ket, `MU^c(a, b) = q [(a|b+1_c) + BC_c (a|b)]`, over
+`hgs_`'s three contracted tables (unweighted, `2 alpha`, `2 beta`) each
+with its `b'+1_c` targets, one overlap VRR to `la + lb + 2` per primitive
+pair, each table its own HRR on contracted values; `gs_`'s weights, 18
+`AtomicAdd`s per shell pair, both centres computed; `C`, `q` runtime;
+one thread per contracted shell pair, staged by
+`host.pair_records(..., ket_centre=True)` (adds `b_*`). Interpreted
+(`test_kernel_hgmu.py`): every ordered class (ss)–(ff) on HF/cc-pVTZ
+against the host and against `gmu_`, worst 6.3 eps of the split-centre
+scale at (dp) (gate 16 eps); whole H₂O/STO-3G and CO/cc-pVTZ (`slow`),
+5.4e-16 / 2.4e-14 of `max|G|`, and the origin shift. `hgt_`'s ladder
+`--hgp-grad-l` writes it too (per class); 6 goldens
+(`test_emit_hgmu.py`), every unit through (ff) compiled warning-free by
+nvcc and hipcc (2026-11-09, a device-less cloud container). No device
+harness, no card, nothing measured; registry `hgp/dipole/d1` L 0..6,
+compile tier only, its cost modelled.
 **The whole RHF gradient is assembled and interpreted** (#565,
 `gradient.md`, "The RHF gradient, assembled"): `gradient/rhf.py`'s
 `rhf_gradient(basis, nuclei, D, W, runners)` signs and sums `-W dS`, `D dT`,

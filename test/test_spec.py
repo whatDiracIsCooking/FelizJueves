@@ -340,15 +340,17 @@ def test_k_takes_order_one_in_its_hermite_pairing() -> None:
                                    (Target.K, Engine.HGP), (Target.T, Engine.HGP),
                                    (Target.S, Engine.HGP), (Target.V, Engine.HGP),
                                    (Target.ERI3, Engine.HGP),
-                                   (Target.METRIC, Engine.HGP)}
+                                   (Target.METRIC, Engine.HGP),
+                                   (Target.DIPOLE, Engine.HGP)}
     with pytest.raises(ValueError, match="derivative order 1 on target k.rys"):
         Spec(Operator.COULOMB, 1, (1, 0, 0, 0), Target.K, engine=Engine.RYS)
 
 
 def test_order_one_is_refused_on_a_non_native_engine() -> None:
-    # S and V on HGP are off-native gradients (gradient.kernel_hgs,
-    # gradient.kernel_ghv), each keyed as its HGP integral's class in the `d`
-    # segment alone; on Rys, and the dipole on HGP, they are not
+    # S, V and the dipole on HGP are off-native gradients
+    # (gradient.kernel_hgs, kernel_ghv, kernel_hgmu), each keyed as its HGP
+    # integral's class in the `d` segment alone; on Rys, and the quadrupole
+    # on HGP, they are not
     assert Spec(Operator.OVERLAP, 1, (1, 0), Target.S,
                 engine=Engine.HGP).key() == "overlap/d1/(1,0)/b1/s.hgp/literal"
     d0 = Spec(Operator.NUCLEAR, 0, (1, 0), Target.V, engine=Engine.HGP)
@@ -359,9 +361,12 @@ def test_order_one_is_refused_on_a_non_native_engine() -> None:
         Spec(Operator.OVERLAP, 1, (1, 0), Target.S, engine=Engine.RYS)
     with pytest.raises(ValueError, match="derivative order 1 on target v.rys"):
         Spec(Operator.NUCLEAR, 1, (1, 0), Target.V, engine=Engine.RYS)
+    mu = Spec(Operator.DIPOLE, 1, (1, 0), Target.DIPOLE, engine=Engine.HGP)
+    assert mu.key() == "dipole/d1/(1,0)/b1/dipole.hgp/literal"
     with pytest.raises(ValueError, match="derivative order 1 on target "
-                                         "dipole.hgp"):
-        Spec(Operator.DIPOLE, 1, (1, 0), Target.DIPOLE, engine=Engine.HGP)
+                                         "quadrupole.hgp"):
+        Spec(Operator.QUADRUPOLE, 1, (1, 0), Target.QUADRUPOLE,
+             engine=Engine.HGP)
     assert Spec(Operator.COULOMB, 1, (1, 0), Target.JAB).key() == \
         "coulomb/d1/(1,0)/b1/jab/literal"
 

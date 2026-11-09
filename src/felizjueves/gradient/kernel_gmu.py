@@ -135,7 +135,8 @@ def _class(cls: Spec | tuple[Target, int, int]) -> tuple[Target, int, int]:
     if spec.target not in ORDER or spec.derivative_order != 1:
         raise ValueError(f"{spec.key()} is not a d1 dipole or quadrupole key")
     if spec.engine is not Engine.MMD:
-        raise ValueError(f"{spec.key()} is not an MMD key")
+        raise ValueError(f"{spec.key()} is not an MMD key; the HGP dipole "
+                         "gradient is kernel_hgmu's hgmu_")
     if spec.levers:
         raise ValueError(f"{spec.key()}: the gradient kernels take no levers")
     la, lb = spec.am
