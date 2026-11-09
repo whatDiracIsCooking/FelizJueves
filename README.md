@@ -18,7 +18,7 @@ integral engines (`spec.Engine`) and lowered through one IR
 
 - **MMD**, McMurchie–Davidson in the Hermite basis, with the sub-batching
   of Palethorpe & Barca (`[JEngine]`). The workhorse: every family, and
-  the only engine with Hessians.
+  the only engine with two-electron Hessians.
 - **HGP**, Head-Gordon–Pople (vertical then horizontal recurrence), the
   engine of the fused Fock kernel of `[Fock]` §3.
 - **Rys**, Rys quadrature with a 2D vertical recurrence feeding the same
@@ -85,7 +85,7 @@ class's total angular momentum.
 |---|---|---|---|
 | Coulomb (`hdq` → `[p\|q]` to L = 14 → `hjab`) | **both cards**, through (ff); H₂O/cc-pVDZ against libcint | — | — |
 | Exchange (`hkx`) | **both cards**, through (ff\|ff); H₂O/cc-pVDZ against libcint | — | — |
-| `S`, `T`, `V` (`d2s`, `d2t`, `d2v`) | **both cards**, through (dd) | — | — |
+| `S`, `T`, `V` (`d2s`, `d2t`, `d2v`) | **both cards**, through (dd) | `hgd2s_`, `hgd2t_`, `hgd2v_`: compiled, through (ff) | — |
 | DF metric, `(mn\|P)` (`d2metric`, `d2eri3`) | **both cards**, through (i\|i) / (ff\|i) | — | — |
 
 Underneath them all is the device Boys function, one template

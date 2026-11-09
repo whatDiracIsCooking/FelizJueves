@@ -15,6 +15,7 @@ from felizjueves.spec import (
     D1_ONLY_TARGETS,
     GRADIENT_OFF_NATIVE,
     GRADIENT_TARGETS,
+    HESSIAN_OFF_NATIVE,
     HESSIAN_TARGETS,
     OPERATOR_OF,
     Engine,
@@ -313,8 +314,18 @@ def test_a_one_electron_target_takes_orders_one_and_two_and_no_higher(
 
 
 def test_order_two_is_refused_on_a_non_native_engine() -> None:
-    with pytest.raises(ValueError, match="derivative order 2 on target v.hgp"):
-        Spec(Operator.NUCLEAR, 2, (1, 0), Target.V, engine=Engine.HGP)
+    # S, T and V on HGP are the exception (HESSIAN_OFF_NATIVE,
+    # hessian.kernel_hgd2); every other non-native d2 is refused.
+    with pytest.raises(ValueError, match="derivative order 2 on target v.rys"):
+        Spec(Operator.NUCLEAR, 2, (1, 0), Target.V, engine=Engine.RYS)
+    with pytest.raises(ValueError,
+                       match="derivative order 2 on target dipole.hgp"):
+        Spec(Operator.DIPOLE, 2, (1, 0), Target.DIPOLE, engine=Engine.HGP)
+    assert HESSIAN_OFF_NATIVE == {(Target.S, Engine.HGP),
+                                  (Target.T, Engine.HGP),
+                                  (Target.V, Engine.HGP)}
+    assert Spec(Operator.NUCLEAR, 2, (1, 0), Target.V,
+                engine=Engine.HGP).key() == "nuclear/d2/(1,0)/b1/v.hgp/literal"
 
 
 @pytest.mark.parametrize("target", [t for t in Target
