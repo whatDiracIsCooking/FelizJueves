@@ -5276,6 +5276,62 @@ def test_the_jx_builder_reaches_neither_its_witness_nor_a_machine() -> None:
         assert not hit, f"kernel_jx reaches {hit}"
 
 
+# The dipole and quadrupole Hessians on HGP: `hessian.kernel_hd2mu`
+# (DIPOLE / QUADRUPOLE at d2 on `Engine.HGP`), `kernel_hgquad`'s route --
+# `kernel_hgp`'s VRR / HRR machinery over six contracted tables and
+# `kernel_g1e`'s weights and locals pool -- with `kernel_h1e`'s block
+# components, checked against `hessian.host_1e.multipole_hessian` (and
+# `d2mu_`) in the interpreter. The generator CLI writes its ladder
+# (`--hgp-hess-mu-l`).
+_HD2MU_MMD = ("the MMD moment Hessian is the twin the kernel is "
+              "interpreted against, not a part of it")
+RULES |= {
+    "hd2mu_builder": _rule(
+        "kernel_hd2mu.py: the HGP dipole and quadrupole Hessian kernels -- "
+        "key -> IR, `kernel_hgp`'s overlap VRR and contracted HRR over six "
+        "tables, the operator moved onto the ket, `kernel_g1e`'s weights "
+        "from M and `kernel_h1e`'s block components",
+        ("spec", "=ir", "hgp.hrr", "hgp.recurrence", "hgp.vrr",
+         "=one_electron.kernel_hgp", "gradient.kernel_g1e",
+         "hessian.kernel_h1e"),
+        ao=_HESS_1E_WITNESS, **{"hessian.host_1e": _HESS_1E_WITNESS,
+                                "gradient.host": _HESS_1E_WITNESS,
+                                "hessian.kernel_d2mu": _HD2MU_MMD},
+        reference=_GROUND_TRUTH, **_NO_MACHINE),
+}
+RULE_OF["hessian.kernel_hd2mu"] = "hd2mu_builder"
+EDGES["hessian.kernel_hd2mu"] = frozenset(
+    ("gradient.kernel_g1e", "hessian.kernel_h1e", "hgp.hrr",
+     "hgp.recurrence", "hgp.vrr", "ir", "one_electron.kernel_hgp", "spec"))
+RULES["hessian_host_1e"].must_not["hessian.kernel_hd2mu"] = (
+    "the kernel is what this module checks")
+RULES["driver"] = Rule(RULES["driver"].why + ", and the HGP moment-Hessian "
+                       "ladder through `kernel_hd2mu`",
+                       RULES["driver"].may
+                       | frozenset(("hessian.kernel_hd2mu",)),
+                       RULES["driver"].must_not)
+EDGES["emit.__main__"] = EDGES["emit.__main__"] | frozenset(
+    ("hessian.kernel_hd2mu",))
+
+
+def test_the_hd2mu_builder_reaches_neither_its_witnesses_nor_a_machine(
+        ) -> None:
+    graph = _graph()
+    seen: set[str] = set()
+    todo = ["hessian.kernel_hd2mu"]
+    while todo:
+        for e in graph.get(todo.pop(), set()):
+            if e not in seen:
+                seen.add(e)
+                todo.append(e)
+    assert {"one_electron.kernel_hgp", "hessian.kernel_h1e"} <= seen
+    for banned in (_REF, "ao", *_LEFT_AO, "ir.interp", "emit",
+                   "performance.device", "gradient.host", "hessian.host_1e",
+                   "hessian.kernel_d2mu"):
+        hit = sorted(e for e in seen if _under(e, banned))
+        assert not hit, f"kernel_hd2mu reaches {hit}"
+
+
 if __name__ == "__main__":
     import sys
 

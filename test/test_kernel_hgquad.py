@@ -191,11 +191,10 @@ def test_the_spec_admits_the_quadrupole_on_hgp_at_order_one_only() -> None:
     d0 = Spec(Operator.QUADRUPOLE, 0, (1, 0), Target.QUADRUPOLE,
               engine=Engine.HGP)
     assert hgquad_spec(1, 0).key() == d0.key().replace("/d0/", "/d1/")
-    # the quadrupole on HGP at d2 stays refused
-    with pytest.raises(ValueError, match="derivative order 2 on target "
-                                         "quadrupole.hgp"):
-        Spec(Operator.QUADRUPOLE, 2, (1, 0), Target.QUADRUPOLE,
-             engine=Engine.HGP)
+    # the quadrupole's HGP d2 key is kernel_hd2mu's, not this builder's
+    with pytest.raises(ValueError, match="not a d1 HGP quadrupole key"):
+        build_hgquad_kernel(Spec(Operator.QUADRUPOLE, 2, (1, 0),
+                                 Target.QUADRUPOLE, engine=Engine.HGP))
 
 
 def test_the_parameters_are_the_staging() -> None:

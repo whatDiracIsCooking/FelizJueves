@@ -47,6 +47,10 @@ CASES = [
     # test.
     *(case for q in ("dipole", "quadrupole") for case in ladder(
         "mmd", q, 2, compile=range(7))),
+    # hd2mu / hd2quad, the same Hessians on HGP (kernel_hd2mu): interpreted
+    # and compiled by nvcc and hipcc through (ff); no device test.
+    *(case for q in ("dipole", "quadrupole") for case in ladder(
+        "hgp", q, 2, compile=range(7))),
 ]
 
 # #694's ladder: one program per aux l of the d1 DF ladder's aux-i system
@@ -109,6 +113,8 @@ TESTS = {
         Classes("mmd", "v", 2),
     "test/test_emit_hess_mu.py::test_X_compiles_the_unit":
         Classes("mmd", "dipole", 2),
+    "test/test_emit_hd2mu.py::test_X_compiles_the_unit":
+        Classes("hgp", "dipole", 2),
     "test/test_emit_hess_k.py::test_X_compiles_the_exchange_hessian_unit":
         Classes("mmd", "k", 2),
     "test/test_emit_hess_kx.py::test_X_compiles_the_derivative_matrix_unit":
