@@ -45,6 +45,7 @@ from felizjueves.hessian.kernel_h1e import (
     ATOMIC_REASON,
     COMPONENTS,
     LOWSTACK_NOTE,
+    ST_LOWSTACK_NOTE,
     ZEROED_H,
     axis_ops,
     build_h1e_kernel,
@@ -150,9 +151,31 @@ def test_the_other_d2v_form_is_the_host_hessian_too(cls) -> None:
            f"d2v {cls} lowstack={other}")
 
 
+@pytest.mark.parametrize("target", (Target.S, Target.T), ids=str)
+@pytest.mark.parametrize("cls", [by_l(c, sum(c) + 2, id=f"{c[0]}{c[1]}")
+                                 for c in CLASSES])
+def test_the_low_stack_d2s_d2t_is_the_unrolled_form_bitwise(cls,
+                                                           target) -> None:
+    """THE LOW-STACK `d2s` / `d2t` (#1263): each row's terms are the
+    unrolled text's, added in the same order, so the two forms agree
+    BITWISE; and the low-stack one is held to the host by the same
+    bound."""
+    basis, nuclei = _fixture("hf_ccpvtz")
+    pairs = grad.class_pairs(basis, *cls)
+    M = _m(basis.n_ao)
+    lo = _launch(target, basis, nuclei, M, *cls, _zeros(nuclei),
+                 lowstack=True)
+    un = _launch(target, basis, nuclei, M, *cls, _zeros(nuclei),
+                 lowstack=False)
+    assert np.array_equal(lo, un), f"{target} {cls}"
+    scale = _host(target, basis, nuclei, M, pairs, absolute=True).max()
+    _close(lo, _host(target, basis, nuclei, M, pairs), scale,
+           f"{target} {cls} lowstack")
+
+
 @pytest.mark.parametrize(("target", "lowstack"), [
-    *((t, None) for t in TARGETS), (Target.V, True)],
-    ids=[*map(str, TARGETS), "v-lowstack"])
+    *((t, None) for t in TARGETS), *((t, True) for t in TARGETS)],
+    ids=[*map(str, TARGETS), "s-lowstack", "t-lowstack", "v-lowstack"])
 def test_the_whole_hessian_of_h2o_is_the_host_hessian(target,
                                                      lowstack) -> None:
     basis, nuclei = _fixture("h2o_sto3g_j")
@@ -244,17 +267,45 @@ def test_the_low_stack_d2v_keeps_the_contract() -> None:
         assert not any(isinstance(s, Raw) for s in nodes)
 
 
-def test_the_selection_rule_and_its_refusals() -> None:
+def test_the_selection_rule() -> None:
+    """`V` is low-stack from `la + lb = 4`; `S` and `T` never by default
+    (their low-stack form is opt-in, #1263), so their default text is the
+    unrolled one."""
     assert h1e_lowstack(h1e_spec(Target.V, 2, 2))
     assert h1e_lowstack((Target.V, 3, 1)) and h1e_lowstack((Target.V, 0, 4))
     assert not h1e_lowstack((Target.V, 1, 2))
     assert not h1e_lowstack((Target.S, 3, 3))
     assert not h1e_lowstack((Target.T, 3, 3))
     for t in (Target.S, Target.T):
-        with pytest.raises(ValueError, match="only d2v has a low-stack form"):
-            build_h1e_kernel((t, 0, 0), lowstack=True)
         assert build_h1e_kernel((t, 0, 0), lowstack=False) == \
             build_h1e_kernel((t, 0, 0))
+        assert build_h1e_kernel((t, 3, 3), lowstack=True) != \
+            build_h1e_kernel((t, 3, 3))
+
+
+@pytest.mark.parametrize("target", (Target.S, Target.T), ids=str)
+def test_the_low_stack_d2s_d2t_keeps_the_contract(target) -> None:
+    """Same name, parameters and atomics as the unrolled form; the tables
+    hold `t = 0` alone, and the rows are loops, not straight-line text."""
+    for cls in [(1, 2), (3, 3)]:
+        lo = build_h1e_kernel((target, *cls), lowstack=True)
+        un = build_h1e_kernel((target, *cls), lowstack=False)
+        assert lo.name == un.name and lo.params == un.params
+        nodes = list(walk(lo.body))
+        adds = [s for s in nodes if isinstance(s, AtomicAdd)]
+        assert len(adds) == 36 and all(a.dst.array == "H" for a in adds)
+        lb_t = cls[1] + (4 if target is Target.T else 2)
+        tables = {s.name: s.shape for s in nodes if isinstance(s, Decl)
+                  and s.name in ("Ex", "Ey", "Ez")}
+        assert set(tables) == {"Ex", "Ey", "Ez"}
+        assert all(sh[0].value == (cls[0] + 3) * (lb_t + 1)
+                   for sh in tables.values())
+        names = {s.name for s in nodes if isinstance(s, Decl)}
+        assert "W" in names and not any(n.startswith("w") and n[1:].isdigit()
+                                        for n in names)
+        assert ST_LOWSTACK_NOTE in {s.prov for s in nodes
+                                    if isinstance(s, Note)}
+        assert not any(isinstance(s, Raw) for s in nodes)
 
 
 def test_the_components_and_their_axis_operators() -> None:

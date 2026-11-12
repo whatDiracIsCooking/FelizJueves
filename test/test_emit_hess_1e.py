@@ -329,6 +329,27 @@ def test_hipcc_compiles_the_unrolled_unit(unit, hipcc, tmp_path) -> None:
     compile_kernel(hipcc, "hip", _kernel(*unit, lowstack=False), tmp_path)
 
 
+# THE LOW-STACK `d2s` / `d2t` (#1263): opt-in, so off the goldens; each
+# form compiled alone by both vendors, at (dd) and at (ff).
+LOWSTACK_ST = [(f, c) for f in ("d2s", "d2t") for c in ((2, 2), (3, 3))]
+
+
+def _lowstack(u):
+    return by_l(u, 2 + sum(u[1]), id=_id(u) + "-lowstack")
+
+
+@pytest.mark.cuda
+@pytest.mark.parametrize("unit", [_lowstack(u) for u in LOWSTACK_ST])
+def test_nvcc_compiles_the_low_stack_st_unit(unit, nvcc, tmp_path) -> None:
+    compile_kernel(nvcc, "cuda", _kernel(*unit, lowstack=True), tmp_path)
+
+
+@pytest.mark.hip
+@pytest.mark.parametrize("unit", [_lowstack(u) for u in LOWSTACK_ST])
+def test_hipcc_compiles_the_low_stack_st_unit(unit, hipcc, tmp_path) -> None:
+    compile_kernel(hipcc, "hip", _kernel(*unit, lowstack=True), tmp_path)
+
+
 if __name__ == "__main__":
     if sys.argv[1:] != ["--write"]:
         sys.exit("usage: PYTHONPATH=src python test/test_emit_hess_1e.py --write")

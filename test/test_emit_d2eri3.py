@@ -308,6 +308,25 @@ def test_hipcc_compiles_the_df_hessian_unit(cls, hipcc,
     compile_kernel(hipcc, "hip", build_d2eri3_kernel(cls), tmp_path)
 
 
+# The compact low-stack form (#1263): opt-in, so off the goldens; compiled
+# alone by both vendors at (dd|f) and at the top of the ladder, (ff|i).
+COMPACT = [(2, 2, 3), (3, 3, 6)]
+
+
+@pytest.mark.cuda
+@pytest.mark.parametrize("cls", [_cparam(c) for c in COMPACT])
+def test_nvcc_compiles_the_compact_unit(cls, nvcc, tmp_path: Path) -> None:
+    compile_kernel(nvcc, "cuda", build_d2eri3_kernel(cls, compact=True),
+                   tmp_path)
+
+
+@pytest.mark.hip
+@pytest.mark.parametrize("cls", [_cparam(c) for c in COMPACT])
+def test_hipcc_compiles_the_compact_unit(cls, hipcc, tmp_path: Path) -> None:
+    compile_kernel(hipcc, "hip", build_d2eri3_kernel(cls, compact=True),
+                   tmp_path)
+
+
 if __name__ == "__main__":
     if sys.argv[1:] != ["--write"]:
         sys.exit("usage: PYTHONPATH=src python test/test_emit_d2eri3.py "

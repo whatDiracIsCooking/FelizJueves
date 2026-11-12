@@ -113,6 +113,42 @@ def test_the_low_stack_arrays_at_the_top_of_each_ladder():
         680 + 165 + 6 * i6 + 15) == 1154
 
 
+def test_the_compact_tables_and_their_refusal():
+    """`compact=True` (#1263) stores the low-stack form's bra tables
+    compact, `t <= i + j` only: 216 doubles a side at (ff|.) against
+    396; the name, parameters and every other array unchanged. The
+    unrolled form has no tables to pack and refuses it."""
+    from felizjueves.gradient.kernel_gk import compact_extent
+
+    assert compact_extent(5, 5) == 216
+    dense = ke.build_d2eri3_kernel((3, 3, 6))
+    packed = ke.build_d2eri3_kernel((3, 3, 6), compact=True)
+    assert packed.name == dense.name and packed.params == dense.params
+    assert _array_doubles(dense) - _array_doubles(packed) == 3 * (396 - 216)
+    with pytest.raises(ValueError, match="low-stack form's alone"):
+        ke.build_d2eri3_kernel((0, 1, 1), lowstack=False, compact=True)
+
+
+def _bitwise_compact(cls):
+    basis, aux = _eri3_bases(cls)
+    Gam = np.random.default_rng(5).standard_normal(
+        (basis.n_ao, basis.n_ao, aux.n_ao))
+    dense, _ = run_d2eri3(basis, aux, NUCLEI, Gam, boys=boys, classes={cls},
+                          lowstack=True)
+    packed, ran = run_d2eri3(basis, aux, NUCLEI, Gam, boys=boys,
+                             classes={cls}, lowstack=True, compact=True)
+    assert ran == (cls,)
+    assert np.array_equal(dense, packed), ke.d2eri3_name(cls)
+
+
+@pytest.mark.parametrize("cls", [by_l(c, sum(c) + 2, id=_eid(c))
+                                 for c in ERI3_LADDER])
+def test_the_compact_low_stack_d2eri3_is_the_dense_one_bitwise(cls):
+    """Compact tables move only where each entry lives, never a value or
+    the order of a sum, so the two low-stack forms agree BITWISE (#1263)."""
+    _bitwise_compact(cls)
+
+
 # --- the host, every class of the ladder ----------------------------------------
 
 

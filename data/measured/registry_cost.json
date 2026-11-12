@@ -13,11 +13,11 @@
  },
  "counts": {
   "compile/cuda/measured": 119,
-  "compile/cuda/modelled": 460,
+  "compile/cuda/modelled": 462,
   "compile/hip/measured": 119,
-  "compile/hip/modelled": 460,
-  "gpu/cuda/modelled": 579,
-  "gpu/hip/modelled": 579
+  "compile/hip/modelled": 462,
+  "gpu/cuda/modelled": 581,
+  "gpu/hip/modelled": 581
  },
  "held_out": {
   "compile/cuda": {
@@ -15674,6 +15674,37 @@
   },
   {
    "engine": "mmd",
+   "quantity": "s",
+   "deriv": 2,
+   "L": 6,
+   "family": "hessians",
+   "compile": {
+    "cuda": {
+     "s": 7.336,
+     "basis": "modelled",
+     "source": "fit:hessians, extrapolated past L 4"
+    },
+    "hip": {
+     "s": 12.084,
+     "basis": "modelled",
+     "source": "fit:hessians, extrapolated past L 4"
+    }
+   },
+   "gpu": {
+    "cuda": {
+     "s": 7.336,
+     "basis": "modelled",
+     "source": "compile"
+    },
+    "hip": {
+     "s": 12.084,
+     "basis": "modelled",
+     "source": "compile"
+    }
+   }
+  },
+  {
+   "engine": "mmd",
    "quantity": "schwarz",
    "deriv": 0,
    "L": 0,
@@ -16349,6 +16380,37 @@
     },
     "hip": {
      "s": 6.784,
+     "basis": "modelled",
+     "source": "compile"
+    }
+   }
+  },
+  {
+   "engine": "mmd",
+   "quantity": "t",
+   "deriv": 2,
+   "L": 6,
+   "family": "hessians",
+   "compile": {
+    "cuda": {
+     "s": 7.336,
+     "basis": "modelled",
+     "source": "fit:hessians, extrapolated past L 4"
+    },
+    "hip": {
+     "s": 12.084,
+     "basis": "modelled",
+     "source": "fit:hessians, extrapolated past L 4"
+    }
+   },
+   "gpu": {
+    "cuda": {
+     "s": 7.336,
+     "basis": "modelled",
+     "source": "compile"
+    },
+    "hip": {
+     "s": 12.084,
      "basis": "modelled",
      "source": "compile"
     }

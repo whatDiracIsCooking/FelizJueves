@@ -2168,6 +2168,7 @@
    "eri.density_fit.kernel_metric",
    "gradient.kernel_g1e",
    "gradient.kernel_geri3",
+   "gradient.kernel_gk",
    "gradient.kernel_gmetric",
    "hessian.kernel_h1e",
    "ir",

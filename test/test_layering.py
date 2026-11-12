@@ -4357,6 +4357,14 @@ RULES["driver"] = Rule(RULES["driver"].why + ", and the DF Hessian ladder "
                        RULES["driver"].may | {"hessian.kernel_d2eri3"},
                        RULES["driver"].must_not)
 EDGES["emit.__main__"] = EDGES["emit.__main__"] | {"hessian.kernel_d2eri3"}
+# #1263: the low-stack form's opt-in compact bra tables are `kernel_gk`'s
+# (`tables_fragment`, `compact_extent`, `compact_index`), as `kernel_hkx`'s are.
+RULES["d2eri3_builder"] = Rule(
+    RULES["d2eri3_builder"].why + ", `kernel_gk`'s compact tables (#1263)",
+    RULES["d2eri3_builder"].may | {"gradient.kernel_gk"},
+    RULES["d2eri3_builder"].must_not)
+EDGES["hessian.kernel_d2eri3"] = (EDGES["hessian.kernel_d2eri3"]
+                                  | {"gradient.kernel_gk"})
 
 
 def test_the_df_gradient_builders_reach_neither_their_witness_nor_a_machine(

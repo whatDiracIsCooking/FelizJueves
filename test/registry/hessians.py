@@ -13,9 +13,10 @@ CASES = [
         "mmd", q, 2, compile=range(7), gpu=range(7),
         cards=dict.fromkeys(BOTH, range(7)))),
     # d2s / d2t / d2v, unrolled, on both cards through (dd); the low-stack
-    # d2v at (ff) compiled only.
+    # d2v at (ff) compiled only, and so the opt-in low-stack d2s / d2t
+    # (#1263).
     *(case for q in "st" for case in ladder(
-        "mmd", q, 2, compile=range(5), gpu=range(5),
+        "mmd", q, 2, compile=(0, 1, 2, 3, 4, 6), gpu=range(5),
         cards=dict.fromkeys(BOTH, range(5)))),
     *ladder("mmd", "v", 2, compile=(0, 1, 2, 3, 4, 6), gpu=range(5),
             cards=dict.fromkeys(BOTH, range(5))),
@@ -141,6 +142,10 @@ TESTS = {
         Classes("mmd", "metric", 2),
     "test/test_emit_d2eri3.py::test_X_compiles_the_df_hessian_unit":
         Classes("mmd", "eri3", 2),
+    "test/test_emit_d2eri3.py::test_X_compiles_the_compact_unit":
+        Classes("mmd", "eri3", 2),
+    "test/test_emit_hess_1e.py::test_X_compiles_the_low_stack_st_unit":
+        Classes("mmd", "s", 2),
     "test/test_emit_hgp_hess_df.py::test_X_compiles_the_hgp_hessian_unit":
         Classes("hgp", "metric", 2),
     "test/test_emit_ip1e.py::test_X_compiles_the_ip1_unit":

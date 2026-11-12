@@ -294,16 +294,23 @@ def derivative_reader(E: Axis, pool: Locals, side: str) -> Axis:
 
 
 def record_head(la_t: int, lb_t: int, *, interleaved: bool = False,
-                atoms: bool = True) -> list[Stmt]:
+                atoms: bool = True, overlap: bool = False) -> list[Stmt]:
     """Record `rec`'s scalars (`zeta`, `half_inv_zeta`, `sk`, `ea2`,
     `eb2`, `oa`, `ob`, `aa`, `ab`) and the axis tables at `(la_t, lb_t)`,
     inlined. `interleaved` reads `XPA[rec, d]` / `XPB[rec, d]` and `s`
     (the J chain's spelling) instead of `pa_x ...` and `s_ab`. `atoms=False`
     leaves out `aa` / `ab`, for a kernel that reads no atom
-    (`hessian.kernel_jx`)."""
+    (`hessian.kernel_jx`). `overlap=True` stores only the `t = 0` entries
+    (`e_fragment.axis_overlap_tables_fragment`, at `axis_overlap_index`),
+    for a kernel that reads no other (`hessian.kernel_h1e`'s low-stack
+    `d2s` / `d2t`)."""
     rec = Var(REC)
-    frag = ef.axis_tables_fragment(la_t, lb_t)
-    n = ef.axis_table_extent(la_t, lb_t)
+    if overlap:
+        frag = ef.axis_overlap_tables_fragment(la_t, lb_t)
+        n = ef.axis_overlap_extent(la_t, lb_t)
+    else:
+        frag = ef.axis_tables_fragment(la_t, lb_t)
+        n = ef.axis_table_extent(la_t, lb_t)
     binds: dict[str, Expr] = {ef.ZETA: Var(ef.ZETA),
                               ef.HALF_INV_ZETA: Var(ef.HALF_INV_ZETA)}
     for d, a in enumerate("xyz"):
@@ -332,7 +339,7 @@ def record_head(la_t: int, lb_t: int, *, interleaved: bool = False,
           if atoms else ()),
         Note(f"the undressed per-axis E^{{ij}}_t, i <= {la_t}, j <= {lb_t}: "
              "one index above the class on each side, for the derivative "
-             "rule"),
+             "rule" + (" (t = 0 only)" if overlap else "")),
         *(Decl(arr, Scalar.F64, (Lit(n),)) for arr in ef.AXIS_ARRAYS),
         Inline(frag, binds),
     ]
