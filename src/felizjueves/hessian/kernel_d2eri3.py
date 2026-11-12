@@ -113,6 +113,18 @@ RECORDED, not gated: the bra tables two indices up are 9.5 KB alone at
 (ff|.), and the (ff|i) unit is 24,544 B of `sm_86` stack (8 KB of it
 spill), 293 KB of text, 23 s of nvcc.
 
+COMPACT TABLES (#1263), opt-in (`compact=True`, the low-stack form only;
+the unrolled one refuses it): the bra tables hold only the reachable
+`E^{ij}_t`, `t <= i + j`, at `kernel_gk.compact_offset(i, j, lb + 2) + t`
+(`kernel_gk.tables_fragment`, read by `operated_value` at
+`kernel_gk.compact_index`), 216 doubles a side at (ff|.) against 396.
+Only where an entry lives moves, never a value or a sum's order, so the
+two low-stack forms agree BITWISE (test/test_kernel_d2_df_ladder.py).
+Read off a FreeBreakfast build (`sm_86`, nvcc 13.0, device-linked):
+(ff|i) 22,560 -> 18,912 B, (df|i) 18,128 -> 15,280 B, (dd|f) 11,264 ->
+9,360 B. What is left at (ff|i) is mostly the per-lane tower `R` (680
+doubles) and `U` (165), which this form keeps.
+
 A builder: vendor-neutral IR. It imports neither `ao/` nor
 `hessian.host_eri3` (its witness) nor the interpreter nor `reference/`.
 """
@@ -122,6 +134,11 @@ from __future__ import annotations
 from felizjueves.eri.density_fit.kernel_metric import S_AUX
 from felizjueves.gradient.kernel_g1e import Locals, axis_reader
 from felizjueves.gradient.kernel_geri3 import cell_weights
+from felizjueves.gradient.kernel_gk import (
+    compact_extent,
+    compact_index,
+    tables_fragment,
+)
 from felizjueves.gradient.kernel_gmetric import (
     center_binds,
     center_cols,
@@ -272,18 +289,24 @@ def _density_name(ops: Ops, q: int, n: int) -> str:
 
 def build_d2eri3_kernel(cls: Spec | tuple[int, int, int], *,
                         name: str | None = None,
-                        lowstack: bool | None = None) -> Kernel:
+                        lowstack: bool | None = None,
+                        compact: bool = False) -> Kernel:
     """The three-center Hessian kernel of one class (module docstring).
 
     `cls` is a d2 `Target.ERI3` `Spec` or `(la, lb, lP)`. `lowstack` picks
     the form: `None` (the default) is `d2eri3_lowstack(cls)` (THE
     LOW-STACK FORM), `True` / `False` force it. The name, parameters,
-    launch and `H` contract are the same in both."""
+    launch and `H` contract are the same in both. `compact=True` stores
+    the low-stack form's bra tables COMPACT (#1263, module docstring);
+    the unrolled form refuses it."""
     la, lb, lP = _class(cls)
     if lowstack is None:
         lowstack = d2eri3_lowstack((la, lb, lP))
+    if compact and not lowstack:
+        raise ValueError(f"{d2eri3_name((la, lb, lP))}: compact tables are "
+                         "the low-stack form's alone")
     if lowstack:
-        return _build_lowstack((la, lb, lP), name)
+        return _build_lowstack((la, lb, lP), name, compact)
     Lab = la + lb
     dag, order = d2eri3_plan((la, lb, lP))
     fP = ef.center_fragment(lP)
@@ -539,15 +562,25 @@ def _q_name(x: str, k: int, y: str, l: int) -> str:  # noqa: E741
     return "q" + _h(x, k, y, l)[1:]
 
 
-def _build_lowstack(am: tuple[int, int, int], name: str | None) -> Kernel:
+def _build_lowstack(am: tuple[int, int, int], name: str | None,
+                    compact: bool = False) -> Kernel:
     """`build_d2eri3_kernel`'s kernel with no density and no weight held
     (module docstring, THE LOW-STACK FORM): the same parameters, launch and
-    `H` contract."""
+    `H` contract. `compact` stores the bra tables compact (#1263)."""
     la, lb, lP = am
     Lab = la + lb
     L2 = Lab + lP + 2  # the tower's order
     dag, order = d2eri3_plan(am)
-    fB = ef.axis_tables_fragment(la + 2, lb + 2)
+    if compact:
+        fB = tables_fragment(la + 2, lb + 2, ef.AXIS_ARRAYS)
+        n_tab = compact_extent(la + 2, lb + 2)
+
+        def index(i: Expr, j: Expr, t: Expr) -> Expr:
+            return compact_index(i, j, t, lb + 2)
+    else:
+        fB = ef.axis_tables_fragment(la + 2, lb + 2)
+        n_tab = ef.axis_table_extent(la + 2, lb + 2)
+        index = None
     fP = ef.center_tables_fragment(lP)
     odd = lP % 2 == 1  # (-1)^{|tau|}, one sign for the class
     cell, ib, ik = Var(CELL), Var(BRA), Var(KET)
@@ -599,7 +632,7 @@ def _build_lowstack(am: tuple[int, int, int], name: str | None) -> Kernel:
                         top = _iadd(_iadd(a[d], b[d]), Lit(len(op) + 1))
                         out.append(For("q_t", Lit(0), top, Lit(1), (
                             *operated_value(op, d, a[d], b[d], Var("q_t"),
-                                            "o", lb_t, L_t),
+                                            "o", lb_t, L_t, index=index),
                             Assign(Index(f_array(op), (_iadd(
                                 Lit(d * width), Var("q_t")),)), Var("o")),
                         )))
@@ -661,8 +694,7 @@ def _build_lowstack(am: tuple[int, int, int], name: str | None) -> Kernel:
         Note(f"the undressed per-axis E^{{ij}}_t, i <= {la + 2}, j <= "
              f"{lb + 2}: two indices above the class on each side, for the "
              "derivative rule applied twice"),
-        *(Decl(n, Scalar.F64, (Lit(ef.axis_table_extent(la + 2, lb + 2)),))
-          for n in ef.AXIS_ARRAYS),
+        *(Decl(n, Scalar.F64, (Lit(n_tab),)) for n in ef.AXIS_ARRAYS),
         Inline(fB, bra_binds),
     )
     atom = {"A": Var("aa"), "B": Var("ab"), "C": Var("ap")}

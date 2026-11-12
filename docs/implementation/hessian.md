@@ -535,6 +535,27 @@ across the nucleus loop at (dd) and 3,780 (30 KB) at (ff), and every
 pooled factor besides. No `sm_86` or `gfx1200` frame, spill or timing is
 measured for either form.
 
+### The low-stack `d2s` and `d2t` (#1263)
+
+`S` and `T` read only `E^{ij}_0`, so their unrolled frame is not the
+tables: ptxas scalarizes the constant-indexed tables, and the 23,192 B of
+`sm_86` stack at `d2t_33` (9,544 B at `d2s_33`) is the spill of the
+pooled operated factors, every one live across the 21 components. The
+opt-in low-stack form (`lowstack=True`; the default stays the unrolled
+text, byte for byte) keeps the column `t = 0` alone
+(`e_fragment.axis_overlap_tables_fragment`, the same recurrence with the
+locals nothing stored reads dropped), fills `W` by the low-stack `d2v`'s
+loops, and per block row declares each axis's operated factors at `t = 0`
+by `operated`'s rule with the row's indices at run time (`S`, and for `T`
+the kinetic `K` from the same column), then adds `w_r` times the same
+products into the 21 components. The rows run in `block_rows` order and
+every expression is the unrolled one's, so the two forms agree
+**bitwise**, interpreted, for every ordered class through (ff)
+(`test_kernel_h1e.py`). Read off a FreeBreakfast build (nvcc 13.0, `sm_86`,
+device-linked): `d2t_33` 1,952 B, `d2t_23` 1,440 B, `d2t_22` 1,136 B,
+`d2s_33` 1,664 B. Compiled by nvcc and hipcc at (dd) and (ff)
+(`test_emit_hess_1e.py`); not run on a card here, not timed.
+
 ### The generator
 
 `python -m felizjueves.emit --hess-one-e-l [LMAX]` (2 bare, 0..3, a 2 above)
@@ -1115,9 +1136,23 @@ recorded, not gated** (the rule says so, and why, before any row): the
 bra tables two indices up are 9.5 KB alone at (ff|.), so 19 units exceed
 14 KB on `sm_86` (9 on `gfx1200`, worst 20,640 B) ((pf|g) to (pf|i), (dd|g) to (dd|i), and every (df|.) from p and
 every (ff|.)). The worst is (ff|i) at 24,544 B, 8 KB of it spill. Every unit compiles within 29 s ((df|p)), far inside the 300 s
-budget. A form that brings (ff|.) under 14 KB is follow-up work. The
-likely candidates are a triangular table layout (`i + j <= la + lb + 2` is
-all the rule reads) or factors built from the tables one up on demand.
+budget. A form that brings (ff|.) under 14 KB is follow-up work.
+
+**Compact tables (#1263)**, the first of those candidates, is opt-in
+(`compact=True`, the low-stack form only; the unrolled form refuses it):
+the bra tables keep only `t <= i + j`, at `kernel_gk.compact_offset(i, j,
+lb + 2) + t` (`kernel_gk.tables_fragment`, read through
+`operated_value(..., index=kernel_gk.compact_index)`), 216 doubles a side
+at (ff|.) against 396. Only an entry's slot moves, so it is **bitwise**
+the dense low-stack form, interpreted, for every class of the ladder
+(`test_kernel_d2_df_ladder.py`). Read off a FreeBreakfast build (nvcc
+13.0, `sm_86`, device-linked, so 22,560 B dense where the stand-alone unit
+read 24,544): (ff|i) 18,912 B, (df|i) 15,280 B, (dd|i) 12,160 B, (dd|f)
+9,360 B. It does not reach 14 KB at (ff|.): the per-lane tower `R`
+(`n_t(L + 2)`, 680 doubles at (ff|i)) and `U` (165) stay, and shedding them
+needs a different mapping (the tower shared across a warp, say), not a
+layout. Compiled by nvcc and hipcc at (dd|f) and (ff|i)
+(`test_emit_d2eri3.py`); not run on a card here, not timed.
 
 ### The generator
 

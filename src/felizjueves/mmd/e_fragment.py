@@ -751,6 +751,46 @@ def axis_tables_fragment(la: int, lb: int) -> Fragment:
                     tuple(body))
 
 
+_AXIS_OVERLAP_PROVENANCE = (
+    "#1263's overlap tables: only the per-axis E^{ij}_0 stored into Ex, Ey, "
+    "Ez [i (lb+1) + j]; the t > 0 entries stay recurrence locals")
+
+
+def axis_overlap_extent(la: int, lb: int) -> int:
+    """Doubles in each of `axis_overlap_tables_fragment`'s `Ex`, `Ey`,
+    `Ez`: `(la+1)(lb+1)`, the `t = 0` column of `axis_table_extent`."""
+    _check_am("la", la)
+    _check_am("lb", lb)
+    return (la + 1) * (lb + 1)
+
+
+def axis_overlap_index(i: int | Expr, j: int | Expr, lb: int) -> Expr:
+    """`E^{ij}_0`'s slot in an overlap table: `i (lb+1) + j`, an I32
+    expression (a `Lit` when both are ints)."""
+    return _iadd(_imul(_i32(i), lb + 1), _i32(j))
+
+
+def axis_overlap_tables_fragment(la: int, lb: int) -> Fragment:
+    """`axis_tables_fragment(la, lb)` for a consumer that reads only
+    `t = 0` (the overlap and kinetic factors, #1263): the same recurrence,
+    statement for statement, then only `E{x,y,z}_i_j_0` stored, into the
+    LOCAL array binds `Ex`, `Ey`, `Ez` at `axis_overlap_index`, each of
+    `axis_overlap_extent(la, lb)` doubles; the recurrence locals nothing
+    stored reads dropped by `_live`. The values stored are
+    `axis_tables_fragment`'s bitwise."""
+    body: list[Stmt] = [Note(_PROVENANCE), Note(_AXIS_OVERLAP_PROVENANCE),
+                        *_axes_body(la, lb)]
+    for d in range(3):
+        for i in range(la + 1):
+            for j in range(lb + 1):
+                body.append(Assign(
+                    Index(AXIS_ARRAYS[d], (axis_overlap_index(i, j, lb),)),
+                    Var(e_name(d, i, j, 0))))
+    kept, read = _live(body)
+    binds = [b for b in _scalar_binds(la, lb, (0, 1, 2)) if b in read]
+    return Fragment(f"e_axis_overlap_{la}{lb}", (*binds, *AXIS_ARRAYS), kept)
+
+
 def hermite_index(t: tuple[Expr, Expr, Expr]) -> Expr:
     """`t`'s place in `hermite_targets(L)` (any `L >= |t|`), as an I32
     expression of the three I32 components: with `n = |t|`, `m = t_y + t_z`,

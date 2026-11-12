@@ -99,8 +99,21 @@ to the same bound (test/test_kernel_h1e.py). The frame is the tables, `W`,
 plus a fixed set of loops. Below the rule the default is the unrolled
 kernel above, its text unchanged byte for byte (`d2v_22`'s unrolled text
 pinned by digest in test/golden/hessian_digests.json); `lowstack=True` /
-`False` forces either form of `V` at any class. `S` and `T` have one form
-(`d2t_33`, their largest, is ~456 KB) and refuse `lowstack=True`.
+`False` forces either form of `V` at any class.
+
+THE LOW-STACK `d2s` / `d2t` (#1263), opt-in (`lowstack=True`; the default
+stays the unrolled text above, byte for byte). `S` and `T` read only
+`E^{ij}_0`, so the record head keeps that column alone
+(`e_fragment.axis_overlap_tables_fragment`, `(la + 3)(lb_t + 1)` doubles a
+side), the weights go into `W[n_rows]` by loops, and per block row
+(`e_fragment.cartesian_loops`) each axis's operated factors at `t = 0`
+(`S`, and for `T` the kinetic `K` too) are declared by `operated`'s rule
+with the row's indices at run time; the 21 components then add `w_r` times
+the same products, row by row in `block_rows` order. Every term and every
+sum is the unrolled text's in the same order, so the two forms agree
+BITWISE (test/test_kernel_h1e.py). The unrolled `d2t_33` spills to 23,192
+B of `sm_86` stack (its pooled operated factors live across all 21
+components); the low-stack one is 1,952 B, `d2s_33` 9,544 -> 1,664 B.
 
 A builder: vendor-neutral IR. It imports neither `ao/` nor `hessian.host_1e`
 (its witness), nor the interpreter, nor `reference/`.
@@ -440,15 +453,20 @@ def _cart_index(tag: str) -> Expr:
 
 
 def operated_value(op: str, d: int, i: Expr, j: Expr, t: Expr, dst: str,
-                   lb_t: int, L_t: int) -> list[Stmt]:  # noqa: N803
+                   lb_t: int, L_t: int, *,  # noqa: N803
+                   index: Callable[[Expr, Expr, Expr], Expr] | None = None
+                   ) -> list[Stmt]:
     """Declare `dst = (op E)^{ij}_t` on axis `d`, `i`, `j`, `t` I32
     expressions: `operated`'s rule term for term, its `- n f` term behind
     an `If` on `0 < n` and `t <= ` its source's reach, so the value is the
     unrolled pooled local's bitwise. The base is the record head's tables
-    at `(la_t, lb_t)`, `L_t = la_t + lb_t`."""
+    at `(la_t, lb_t)`, `L_t = la_t + lb_t`, read at `index(i, j, t)`
+    (default `e_fragment.axis_table_index`; `kernel_d2eri3`'s compact
+    tables pass `kernel_gk.compact_index`)."""
     if not op:
-        return [Decl(dst, Scalar.F64, init=Index(ef.AXIS_ARRAYS[d], (
-            ef.axis_table_index(i, j, t, lb_t, L_t),)))]
+        at = (index(i, j, t) if index is not None
+              else ef.axis_table_index(i, j, t, lb_t, L_t))
+        return [Decl(dst, Scalar.F64, init=Index(ef.AXIS_ARRAYS[d], (at,)))]
     rest, side = op[:-1], op[-1]
     one = Lit(1)
     if side == "A":
@@ -457,11 +475,11 @@ def operated_value(op: str, d: int, i: Expr, j: Expr, t: Expr, dst: str,
     else:
         up, lo, n, two = ((i, _iadd(j, one)), (i, _c(Fn.SUB, j, one)), j,
                           Var("eb2"))
-    out = operated_value(rest, d, *up, t, dst + "u", lb_t, L_t)
+    out = operated_value(rest, d, *up, t, dst + "u", lb_t, L_t, index=index)
     out.append(Decl(dst, Scalar.F64, init=_mul(two, Var(dst + "u"))))
     reach = _iadd(_iadd(lo[0], lo[1]), Lit(len(rest) + 1))
     out.append(If(_mul(_c(Fn.LT, Lit(0), n), _c(Fn.LT, t, reach)), (
-        *operated_value(rest, d, *lo, t, dst + "l", lb_t, L_t),
+        *operated_value(rest, d, *lo, t, dst + "l", lb_t, L_t, index=index),
         Assign(Var(dst), _c(Fn.SUB, Var(dst), _mul(n, Var(dst + "l")))),
     )))
     return out
@@ -518,20 +536,10 @@ def rolled(ops: Ops, ups: list[tuple[tuple[int, int, int], str]],
         Decl("q_ex", Scalar.F64, init=_mul(Var("wr"), f(0))), y))
 
 
-def _v_lowstack_values(la: int, lb: int) -> list[Stmt]:
-    """The low-stack `d2v`'s weights, nucleus loop and nucleus atomics
-    (module docstring, THE LOW-STACK `d2v`): the same `hXY_kl` and the
-    same 45 nucleus atomics per nucleus as `_v_values`, regrouped by
-    row."""
-    L = la + lb
-    lb_t, L_t = lb + 2, L + 4  # the record head's tables
+def _weights_array(la: int, lb: int) -> list[Stmt]:
+    """The record's weights into the local `W[n_rows]`, `block_rows`
+    order: `kernel_g1e.weights`' rule over loops."""
     na, nb = len(ef.cartesians(la)), len(ef.cartesians(lb))
-    n_rows = na * nb
-    ts = hermite_targets(L + 2)
-    width = L + 3  # one axis's operated factor, t <= a_d + b_d + 2
-    nuc = Var(NUC)
-
-    # --- the weights, as kernel_g1e.weights' rule over loops ----------------
     i, j = Var("i"), Var("j")
 
     def m(row: Expr, col: Expr) -> Index:
@@ -545,7 +553,7 @@ def _v_lowstack_values(la: int, lb: int) -> list[Stmt]:
 
     off = fill(_iadd(m(_iadd(Var("oa"), i), _iadd(Var("ob"), j)),
                      m(_iadd(Var("ob"), j), _iadd(Var("oa"), i))))
-    w_fill: list[Stmt] = [Decl(W_ARRAY, Scalar.F64, (Lit(n_rows),))]
+    w_fill: list[Stmt] = [Decl(W_ARRAY, Scalar.F64, (Lit(na * nb),))]
     if la != lb:  # a diagonal shell pair has la == lb
         w_fill.append(off)
     else:
@@ -553,6 +561,22 @@ def _v_lowstack_values(la: int, lb: int) -> list[Stmt]:
                     _c(Fn.LT, Var("ob"), Var("oa")))
         w_fill.append(If(differ, (off,), (fill(m(_iadd(Var("oa"), i),
                                                  _iadd(Var("oa"), j))),)))
+    return w_fill
+
+
+def _v_lowstack_values(la: int, lb: int) -> list[Stmt]:
+    """The low-stack `d2v`'s weights, nucleus loop and nucleus atomics
+    (module docstring, THE LOW-STACK `d2v`): the same `hXY_kl` and the
+    same 45 nucleus atomics per nucleus as `_v_values`, regrouped by
+    row."""
+    L = la + lb
+    lb_t, L_t = lb + 2, L + 4  # the record head's tables
+    nb = len(ef.cartesians(lb))
+    ts = hermite_targets(L + 2)
+    width = L + 3  # one axis's operated factor, t <= a_d + b_d + 2
+    nuc = Var(NUC)
+
+    w_fill = _weights_array(la, lb)
 
     # --- per row: the operated factors, then every contraction -------------
     contracted = contractions(la, lb)
@@ -658,6 +682,123 @@ LOWSTACK_NOTE = (
     "contraction as loops")
 
 
+# ---------------------------------------------------------------------------
+# The low-stack d2s / d2t (module docstring, THE LOW-STACK `d2s` / `d2t`)
+# ---------------------------------------------------------------------------
+
+ST_LOWSTACK_NOTE = (
+    "LOW-STACK (#1263): only the per-axis E^{ij}_0 held, and per block row "
+    "the operated per-axis factors and the 21 components as loops")
+
+
+def _operated_zero(op: str, d: int, i: Expr, j: Expr, dst: str,
+                   base: Callable[[int, Expr, Expr, str], list[Stmt]]
+                   ) -> list[Stmt]:
+    """Declare `dst = (op f)^{ij}` on axis `d` at `t = 0`, `i`, `j` I32
+    expressions and `base(d, i, j, name)` declaring the plain factor:
+    `operated`'s rule term for term, its `- n f` term behind an `If` on
+    `0 < n` (at `t = 0` its source always reaches), so the value is the
+    unrolled pooled local's bitwise."""
+    if not op:
+        return base(d, i, j, dst)
+    rest, side = op[:-1], op[-1]
+    one = Lit(1)
+    if side == "A":
+        up, lo, n, two = ((_iadd(i, one), j), (_c(Fn.SUB, i, one), j), i,
+                          Var("ea2"))
+    else:
+        up, lo, n, two = ((i, _iadd(j, one)), (i, _c(Fn.SUB, j, one)), j,
+                          Var("eb2"))
+    out = _operated_zero(rest, d, *up, dst + "u", base)
+    out.append(Decl(dst, Scalar.F64, init=_mul(two, Var(dst + "u"))))
+    out.append(If(_c(Fn.LT, Lit(0), n), (
+        *_operated_zero(rest, d, *lo, dst + "l", base),
+        Assign(Var(dst), _c(Fn.SUB, Var(dst), _mul(n, Var(dst + "l")))),
+    )))
+    return out
+
+
+def _st_lowstack_values(target: Target, la: int, lb: int) -> list[Stmt]:
+    """The low-stack `d2s` / `d2t`'s components (module docstring): the
+    same `hXY_kl` as `_s_values` / `_t_values`, each row's terms added in
+    the same order, from loops over the block rows instead of
+    straight-line text."""
+    lb_t = lb + 4 if target is Target.T else lb + 2
+    nb = len(ef.cartesians(lb))
+
+    def s_base(d: int, i: Expr, j: Expr, dst: str) -> list[Stmt]:
+        return [Decl(dst, Scalar.F64, init=Index(ef.AXIS_ARRAYS[d], (
+            ef.axis_overlap_index(i, j, lb_t),)))]
+
+    def k_base(d: int, i: Expr, j: Expr, dst: str) -> list[Stmt]:
+        """`K_ij`, `_t_values`' expression with `j` at run time."""
+        eb = Var("ebk")
+        two = Lit(2)
+
+        def s_at(jj: Expr) -> Index:
+            return Index(ef.AXIS_ARRAYS[d], (ef.axis_overlap_index(i, jj,
+                                                                   lb_t),))
+        return [
+            Decl(dst, Scalar.F64, init=_c(
+                Fn.ADD,
+                _mul(_mul(_mul(Lit(-2.0), eb), eb), s_at(_iadd(j, two))),
+                _mul(_mul(eb, _iadd(_mul(two, j), Lit(1))), s_at(j)))),
+            If(_c(Fn.LT, Lit(1), j), (Assign(Var(dst), _c(
+                Fn.SUB, Var(dst), _mul(_mul(Lit(0.5), _mul(j, _c(
+                    Fn.SUB, j, Lit(1)))), s_at(_c(Fn.SUB, j, two))))),)),
+        ]
+
+    def name(kind: str, op: str, d: int) -> str:
+        return f"{kind}{op or 'n'}{'xyz'[d]}"
+
+    def cell(a: tuple[Expr, Expr, Expr], b: tuple[Expr, Expr, Expr]
+             ) -> tuple[Stmt, ...]:
+        out: list[Stmt] = [
+            Decl("row", Scalar.I32, init=_iadd(
+                _mul(_cart_index("a"), Lit(nb)), _cart_index("b"))),
+            Decl("wr", Scalar.F64, init=Index(W_ARRAY, (Var("row"),))),
+            Note("the row's operated per-axis factors, operated's rule "
+                 "with the row's indices at run time"),
+        ]
+        kinds = [("S", s_base)]
+        if target is Target.T:
+            kinds.append(("K", k_base))
+        for kind, base in kinds:
+            for op in OPS:
+                for d in range(3):
+                    out += _operated_zero(op, d, a[d], b[d],
+                                          name(kind, op, d), base)
+        for comp in COMPONENTS:
+            ops = axis_ops(*comp)
+            h = Var(_h(*comp))
+
+            def prod(kinds_: tuple[str, ...], ops: Ops = ops) -> Expr:
+                return _prod([Var(name(kinds_[d], ops[d], d))
+                              for d in range(3)])
+            if target is Target.T:
+                parts = [prod(tuple("K" if d == m else "S" for d in range(3)))
+                         for m in range(3)]
+                value: Expr = _c(Fn.ADD, _c(Fn.ADD, parts[0], parts[1]),
+                                 parts[2])
+            else:
+                value = prod(("S", "S", "S"))
+            out.append(Assign(h, _iadd(h, _mul(Var("wr"), value))))
+        return tuple(out)
+
+    rows = ef.cartesian_loops(la, ("ax", "ay", "az"), lambda a: (
+        ef.cartesian_loops(lb, ("bx", "by", "bz"),
+                           lambda b: cell(a, b), tag="b"),), tag="a")
+    head: list[Stmt] = [Note(ST_LOWSTACK_NOTE), *_weights_array(la, lb)]
+    if target is Target.T:
+        head.append(Decl("ebk", Scalar.F64, init=Index("eb_ket", (Var(REC),))))
+    return [
+        *head,
+        *(Decl(_h(*c), Scalar.F64, init=Lit(0.0)) for c in COMPONENTS),
+        Note("per block row (e_fragment.cartesian_loops)"),
+        rows,
+    ]
+
+
 def _scatter() -> list[Stmt]:
     """The centre-centre blocks (module docstring): 36 atomics."""
     out: list[Stmt] = [Note(ATOMIC_REASON)]
@@ -687,20 +828,24 @@ def build_h1e_kernel(cls: Spec | tuple[Target, int, int], *,
     """The hessian kernel of one one-electron pair class at d2.
 
     `cls` is a d2 `Target.S` / `T` / `V` `Spec` or `(target, la, lb)`.
-    See the module docstring. `lowstack` picks `V`'s form: `None` (the
-    default) is `h1e_lowstack(cls)`, `True` / `False` force either; `S`
-    and `T` refuse `True`.
+    See the module docstring. `lowstack` picks the form: `None` (the
+    default) is `h1e_lowstack(cls)`, `True` / `False` force either. For
+    `V` the low-stack form is the looped one; for `S` and `T` it is the
+    unrolled text over `t = 0` tables (THE LOW-STACK `d2s` / `d2t`).
     """
     target, la, lb = _class(cls)
     if lowstack is None:
         lowstack = h1e_lowstack(cls)
-    if lowstack and target is not Target.V:
-        raise ValueError(f"{h1e_name(cls)}: only d2v has a low-stack form")
     lb_t = lb + 4 if target is Target.T else lb + 2
-    head = record_head(la + 2, lb_t)
+    # S and T read only E^{ij}_0: their low-stack form keeps that column
+    # alone (THE LOW-STACK `d2s` / `d2t`), the rest of the text unchanged.
+    overlap = lowstack and target is not Target.V
+    head = record_head(la + 2, lb_t, overlap=overlap)
     E = axis_reader(la + 2, lb_t)
     pool = Locals()
-    if target is Target.T:
+    if overlap:
+        values = _st_lowstack_values(target, la, lb)
+    elif target is Target.T:
         head.append(Decl("ebk", Scalar.F64, init=Index("eb_ket", (Var(REC),))))
         values = _t_values(la, lb, E, pool)
     elif target is Target.S:
@@ -712,7 +857,8 @@ def build_h1e_kernel(cls: Spec | tuple[Target, int, int], *,
     what = {Target.S: "overlap", Target.T: "kinetic energy",
             Target.V: "nuclear attraction (the operator's centre-nucleus "
                       "and nucleus-nucleus terms included)"}[target]
-    per_rec = (*head, *values, *_scatter()) if lowstack else (
+    looped = lowstack
+    per_rec = (*head, *values, *_scatter()) if looped else (
         *head, *weights(la, lb),
         Note("the operated factors, each declared where first read"),
         *pool.decls, *values, *_scatter())

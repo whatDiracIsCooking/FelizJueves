@@ -548,6 +548,13 @@ def _offset_expr(i: Expr, j: Expr, l2: int) -> Expr:
                        _mul(j, _iadd(i, Lit(1)))), tri_j)
 
 
+def compact_index(i: Expr, j: Expr, t: Expr, l2: int) -> Expr:
+    """`E^{ij}_t`'s slot in a compact table, `compact_offset(i, j, l2) +
+    t`, as an I32 expression of run-time `i`, `j`, `t` (#1263: the
+    compact twin of `e_fragment.axis_table_index`)."""
+    return _iadd(_offset_expr(i, j, l2), t)
+
+
 def _restored(node, at):
     """`node` (an IR dataclass, or a tuple of them) with every `Index`
     passed through `at` (which returns it, or its replacement)."""

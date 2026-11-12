@@ -111,8 +111,7 @@ L + 2 > 4 `slow`). Ladder `python -m felizjueves.emit --hess-one-e-l
 (`test_emit_hess_1e.py`). **From `la + lb = 4` `d2v` defaults to a
 low-stack form** (`build_h1e_kernel(cls)` picks it when
 `kernel_h1e.h1e_lowstack(cls)`: `V`'s Hermite order `la + lb + 2 >=
-kernel_v.LOWSTACK_MIN_LSUM`; `lowstack=` forces either form, `S` / `T`
-refuse `True`). Name, parameters, launch and `H` contract are the same.
+kernel_v.LOWSTACK_MIN_LSUM`; `lowstack=` forces either form). Name, parameters, launch and `H` contract are the same.
 It forms no Hermite density: per nucleus `[t]^(0)` goes into a local `R`,
 and per block row each axis's operated factors `F{op}[d, t]` (bitwise
 the unrolled pooled locals) and the 28 contractions are loops, so the
@@ -125,6 +124,18 @@ the absolute twin for every ordered class through (ff), and every class
 is held in both forms. Below the rule the text is byte-identical; the
 unrolled `d2v_22` is pinned by its old digest (`d2v_22.unrolled`) in
 `test/golden/hessian_digests.json`. Neither form is measured.
+**`d2s` / `d2t` have an opt-in low-stack form** (#1263, `lowstack=True`;
+the default stays the unrolled text, byte for byte): `t = 0` tables only
+(`e_fragment.axis_overlap_tables_fragment`), the weights into `W`, and per
+block row the operated `S` (and `K`) factors and the 21 components as
+loops, every term and sum in the unrolled order, so **bitwise** the
+unrolled form for every ordered class through (ff), interpreted
+(`test_kernel_h1e.py`). nvcc- and hipcc-compiled at (dd) and (ff)
+(`test_emit_hess_1e.py`); off the goldens. `sm_86` stack read off a
+FreeBreakfast build: `d2t_33` 23,192 -> 1,952 B, `d2t_23` 16,400 -> 1,440
+B, `d2s_33` 9,544 -> 1,664 B (the unrolled forms' stack is spill of the
+pooled factors, not the tables). FreeBreakfast selects it past 8 KiB
+(FreeBreakfast#1263); not run on a card here, not timed.
 **On both cards, in the unrolled form** (before the low-stack `d2v`) (`test_hess_device.py`, generator `test/hess_driver.py`, on the shared runner since #659, which ran on both cards on 2026-10-30):
 H₂O/STO-3G and cc-pVDZ (`slow`), against the host, 6 passed per card;
 worst 1.57e-16 (RTX 3080) and 2.30e-16 (RX 9060 XT) of the absolute twin,
@@ -394,7 +405,16 @@ RX 9060 XT, 2026-10-31): H₂O's 24 classes through (dd|f) and all 70
 classes through (ff|i) on the aux-i system, default forms (the over-14-KB
 low-stack frames included), within 1.2e-17 of the twin (bound 1e-14). No
 assembled DF-J Hessian (with `d2metric_` and `d`'s response), no clock
-measured.
+measured. **COMPACT bra tables, opt-in** (#1263, `compact=True`, the
+low-stack form only): `t <= i + j` stored (`kernel_gk.tables_fragment` /
+`compact_index`, 216 doubles a side at (ff|.) against 396), **bitwise** the
+dense low-stack form for every class of the ladder, interpreted
+(`test_kernel_d2_df_ladder.py`); nvcc- and hipcc-compiled at (dd|f) and
+(ff|i) (`test_emit_d2eri3.py`); off the goldens and digests. `sm_86` stack
+read off a FreeBreakfast build: (ff|i) 22,560 -> 18,912 B, (df|i) 18,128
+-> 15,280 B; the rest at (ff|i) is mostly the per-lane tower `R` (680
+doubles) and `U`. FreeBreakfast selects it past 8 KiB
+(FreeBreakfast#1263); not run on a card here, not timed.
 **Both DF Hessians have HGP twins, interpreted through L = 4 and
 compiled by nvcc and hipcc for s and p, on no card** (`hessian.md`, "The
 DF Hessians on HGP"): `spec.HESSIAN_OFF_NATIVE` = `{metric.hgp, eri3.hgp}`

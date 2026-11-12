@@ -235,12 +235,14 @@ def run_d2metric(aux, nuclei, W, *, boys, classes: Iterable | None = None,
 def run_d2eri3(basis, aux, nuclei, Gam, *, boys,
                classes: Iterable | None = None, lanes: int = 4,
                H: np.ndarray | None = None, lowstack: bool | None = None,
+               compact: bool = False,
                engine: Engine = Engine.MMD, threads: int = 7):
     """The d2 `(mn|P)` kernels on `geri3`'s arrays, into `H[n_atom, 3,
     n_atom, 3]`, one warp of `lanes` per cell (`kernel_d2eri3.launch_shape`);
-    `lowstack` is `build_d2eri3_kernel`'s. `engine=Engine.HGP` launches the
-    HGP twin (`hessian.kernel_hgd2eri3`, one form) on the same arrays, one
-    thread per cell (`kernel_hgeri3`'s mapping, `threads` a block)."""
+    `lowstack` and `compact` are `build_d2eri3_kernel`'s. `engine=
+    Engine.HGP` launches the HGP twin (`hessian.kernel_hgd2eri3`, one
+    form) on the same arrays, one thread per cell (`kernel_hgeri3`'s
+    mapping, `threads` a block)."""
     if engine is Engine.HGP and lowstack is not None:
         raise ValueError("the HGP d2eri3 twin has one form")
     want = None if classes is None else set(classes)
@@ -258,7 +260,8 @@ def run_d2eri3(basis, aux, nuclei, Gam, *, boys,
         else:
             grid, block = d2eri3_shape(cls.n_cell, lanes)
             launch = Launch(grid, block, lanes)
-            kernel = build_d2eri3_kernel(c, lowstack=lowstack)
+            kernel = build_d2eri3_kernel(c, lowstack=lowstack,
+                                         compact=compact)
         H = Interpreter(kernel, launch=launch, boys=boys).run(
             n_cell=cls.n_cell, n_bra_rec=cls.n_bra_rec,
             n_aux_rec=cls.n_aux_rec, n_ao=basis.n_ao, n_aux=aux.n_ao,
