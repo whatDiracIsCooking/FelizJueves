@@ -318,6 +318,26 @@ def test_split_class_matches_the_reference(L: int, n_batches: int) -> None:
     _check(_fused(L, n_batches), seed=3440 + 10 * L + n_batches)
 
 
+@pytest.mark.slow
+@pytest.mark.parametrize("cls", [(7, 6), (6, 6), (7, 5), (5, 6)],
+                         ids=lambda c: f"e_hermite_{c[0]}{c[1]}")
+def test_the_freebreakfast_e_hermite_classes(cls: tuple[int, int]) -> None:
+    """The classes FreeBreakfast emits fused as its `e_hermite`'s low-stack
+    form (FreeBreakfast#1337), each order split over its two shells as its
+    tools/emit/coulomb_kernels.py splits it: against the reference at the
+    pin, and against the literal arm by the summation bound. The kernel
+    reads only the two Hermite orders, so it is the `(lp, 0 | lq, 0)`
+    class's (test_kernel_fused_device.py launches that one)."""
+    lp, lq = cls
+    am = ((lp + 1) // 2, lp // 2, (lq + 1) // 2, lq // 2)
+    op = pq_spec(0).operator
+    spec = Spec(op, 0, am, Target.J, (FUSED,))
+    flat = Spec(op, 0, (lp, 0, lq, 0), Target.J, (FUSED,))
+    assert (build_pq_kernel(spec, name="k")
+            == build_pq_kernel(flat, name="k"))
+    _check(spec, seed=1337 + 10 * lp + lq)
+
+
 def test_a_wide_warp_and_screened_kets() -> None:
     spec = _fused(4)
     args = _inputs(spec, n_bra=3, n_ket=40, seed=44)

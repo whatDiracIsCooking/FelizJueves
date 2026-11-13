@@ -34,6 +34,20 @@ and to each other by the summation bound (test/test_kernel_fused.py). The
 shared-memory traffic grows from one read-modify-write per `p` per ket to
 one per `(p, q)` pair; the register pressure is what it buys.
 
+MEASURED AT FREEBREAKFAST'S CLASSES (FreeBreakfast#1337). There the lever
+is `e_hermite`'s low-stack form, taken where the literal kernel's stack is
+over 8 KiB: (lp, lq) = (7, 6), (6, 6), (7, 5), (5, 6), each order split
+over its two shells. Stand-alone nvcc 13.0, `sm_86`, (7,0|6,0) at L = 13
+goes from 18,160 B of stack (28,892 B of spill stores) to 2,920 B; (6, 6)
+to 1,352 B, (7, 5) to 1,128 B, (5, 6) to 736 B. On the RX 9060 XT (hipcc
+7.2.4, 256 bras x 256 kets, `tau = 0`, median of 15) it is 0.30x the
+literal kernel's time at (7, 6), 0.39x at (6, 6), 0.75x at (7, 5), 0.43x
+at (5, 6), and 0.39-0.86x at every other class timed from L = 10 up, the
+two agreeing to 5e-16 to 2.5e-15 of max |J_p|. Re-associating the
+contraction (bitwise forms that keep it: the targets stored into a local
+array, or each slot's balanced tree placed after its last target) does not
+move nvcc's stack at L = 13. The RTX 3080 is not timed.
+
 Everything else -- the screen, the prelude, the warp reductions, the lane-0
 write and its `passes.atomize`d form for a split class -- is the literal
 kernel's, untouched: the hook replaces only the recurrence-then-contract

@@ -67,6 +67,12 @@ decision, not a gap: `jgen` ships its searched sieve order, and this repo has
 that wire too (the opt-in `tuned` lever, #161) but ships the **literal**
 plan, because the searched one was measured on both cards and refused on
 wall-clock (#166; `j_engine.md`, "Parity with the predecessor").
+The opt-in `fused` lever (#344) is FreeBreakfast's low-stack `e_hermite` at
+(7,6), (6,6), (7,5) and (5,6) (FreeBreakfast#1337): (7,0|6,0) 18,160 ->
+2,920 B of `sm_86` stack, 0.30-0.75x the literal time on the RX 9060 XT,
+all four interpreted, and (7,6) / (6,6) on that card, against the reference
+at the unchanged pin (`levers/fused.py` has the numbers); not bitwise the
+literal kernel.
 **Since milestone 11 the one-electron matrices are generated too**
 (`docs/implementation/one_electron.md` is the one place with the detail): the
 overlap `S` (`Target.S`, `one_electron/kernel_s.py`), the kinetic energy `T` (`Target.T`,
