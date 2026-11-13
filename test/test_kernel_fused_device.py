@@ -12,7 +12,13 @@ once where the interpreter rounds twice, which only tightens that bound.
 
 Cells: one batch at L = 0..4 and the split cell L = 4 x 3 batches (atomic
 write-back), fast; one batch at L = 7, 10 and the subgrid's 3-batch L = 7
-cell `slow` (the milestone's final tier, #364, runs them).
+cell `slow` (the milestone's final tier, #364, runs them); and, `slow`,
+the two of FreeBreakfast's fused `e_hermite` classes (its low-stack form,
+FreeBreakfast#1337) that are a default `pq_spec(L)` split, L = 13 and 12
+(`FB_CELLS`). Its other two, (7,0|5,0) and (5,0|6,0), are not: this
+harness's inputs and oracle (`test_kernel_device._case`) take a class by
+its L in the default split, so they are checked interpreted only
+(test/test_kernel_fused.py).
 """
 
 from __future__ import annotations
@@ -24,12 +30,18 @@ from tiers import by_l
 from felizjueves.eri.j_coulomb.levers.fused import FUSED
 from felizjueves.mmd.kernel import pq_spec
 
+# FreeBreakfast's fused e_hermite<7,6> and <6,6> (FreeBreakfast#1337, its
+# tools/emit/lowstack.py): pq_spec(13) and pq_spec(12).
+FB_CELLS = (13, 12)
+
+
 CELLS = [
     *(pytest.param(pq_spec(L, (FUSED,)), id=f"L{L}-b1-fused")
       for L in range(5)),
     pytest.param(pq_spec(4, (FUSED,), 3), id="L4-b3-fused"),
     *(by_l(pq_spec(L, (FUSED,), n), L, id=f"L{L}-b{n}-fused")
       for L, n in ((7, 1), (7, 3), (10, 1))),
+    *(by_l(pq_spec(L, (FUSED,)), L, id=f"L{L}-b1-fused") for L in FB_CELLS),
 ]
 
 
