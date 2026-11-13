@@ -234,6 +234,76 @@ def test_the_warp_shared_d2eri3_is_bitwise_over_many_records(case):
                     lanes)
 
 
+def test_the_spanning_windows_and_their_refusals():
+    """`span=True` (#1346) keeps the warp-shared tower's split -- `U`, the
+    operated factors, the aux tables and the Boys array local -- with the
+    bra tables in `bra_slots` shared slots; the name and parameters
+    unchanged. It takes compact tables and the low-stack form, and not
+    `shared`; `window` and `bra_slots` are its alone."""
+    i6 = ef.center_table_extent(6)
+    packed = ke.build_d2eri3_kernel((3, 3, 6), compact=True)
+    span = ke.build_d2eri3_kernel((3, 3, 6), compact=True, span=True)
+    assert span.name == packed.name and span.params == packed.params
+    assert _local_doubles(span) == 165 + 6 * 27 + 3 * i6 + 15
+    assert ke.span_slots(3, 64) == 23 and ke.span_slots(280, 32) == 2
+    for kw, match in (
+            (dict(lowstack=False, span=True), "low-stack form's alone"),
+            (dict(span=True), "compact tables and not"),
+            (dict(compact=True, shared=True, span=True),
+             "compact tables and not"),
+            (dict(compact=True, window=32), "spanning windows' alone"),
+            (dict(compact=True, span=True, window=0), "positive int"),
+            (dict(compact=True, span=True, bra_slots=0), "positive int")):
+        with pytest.raises(ValueError, match=match):
+            ke.build_d2eri3_kernel((0, 1, 2), **kw)
+
+
+def _bitwise_span(cls, bases, lanes: int = 4, **kw):
+    basis, aux = bases(cls)
+    Gam = np.random.default_rng(5).standard_normal(
+        (basis.n_ao, basis.n_ao, aux.n_ao))
+    packed, _ = run_d2eri3(basis, aux, NUCLEI, Gam, boys=boys, classes={cls},
+                           lowstack=True, compact=True, lanes=lanes)
+    span, ran = run_d2eri3(basis, aux, NUCLEI, Gam, boys=boys, classes={cls},
+                           lowstack=True, compact=True, span=True,
+                           lanes=lanes, **kw)
+    assert ran == (cls,)
+    assert np.array_equal(packed, span), ke.d2eri3_name(cls)
+
+
+@pytest.mark.parametrize("cls", [by_l(c, sum(c) + 2, id=_eid(c))
+                                 for c in ERI3_LADDER])
+def test_the_spanning_windows_are_the_compact_form_bitwise(cls):
+    """The spanning windows form the same tables (an axis a lane, each
+    axis's recurrence reading only its own axis), tower and `U` by the
+    same statements, and each lane adds the same items in the same order
+    as #632's per-item mapping, so the two agree BITWISE (#1346)."""
+    _bitwise_span(cls, _eri3_bases)
+
+
+@pytest.mark.parametrize("case", [
+    by_l(((0, 1, 1), n, {}), 4, id=f"d2eri3_011-contracted-{n}lanes")
+    for n in (1, 4, 32)] + [
+    by_l(((0, 1, 1), 4, dict(window=1000, bra_slots=10)), 4,
+         id="d2eri3_011-one-window"),
+    by_l(((0, 1, 1), 4, dict(window=7, bra_slots=1)), 4,
+         id="d2eri3_011-window-7-one-bra-slot"),
+    by_l(((1, 1, 0), 2, dict(window=8, bra_slots=1)), 4,
+         id="d2eri3_110-contracted-2lanes"),
+    by_l(((0, 1, 2), 4, dict(window=13)), 5, id="d2eri3_012-window-13"),
+    *(by_l(((1, 1, 2), n, dict(window=w), True), 6,
+           id=f"d2eri3_112-long-aux-window-{w}-{n}lanes")
+      for n, w in ((4, 16), (32, 40)))])
+def test_the_spanning_windows_are_bitwise_over_many_records(case):
+    """Several bra and aux records a cell, windows that straddle pairs and
+    bra records, are cut at a bra slot's end, or hold the whole cell, at
+    warp widths that do and do not divide them: still BITWISE the compact
+    form (#1346)."""
+    cls, lanes, kw, *long = case
+    _bitwise_span(cls, _long_aux_bases if long else _contracted_bases,
+                  lanes, **kw)
+
+
 # --- the host, every class of the ladder ----------------------------------------
 
 

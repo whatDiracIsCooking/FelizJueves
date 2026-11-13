@@ -345,6 +345,21 @@ def test_hipcc_compiles_the_warp_shared_unit(cls, hipcc,
         cls, compact=True, shared=True), tmp_path)
 
 
+# The spanning windows (#1346): opt-in, so off the goldens; compiled alone
+# by both vendors at (dd|f) and (ff|i), over compact tables.
+@pytest.mark.cuda
+@pytest.mark.parametrize("cls", [_cparam(c) for c in COMPACT])
+def test_nvcc_compiles_the_spanning_unit(cls, nvcc, tmp_path: Path) -> None:
+    compile_kernel(nvcc, "cuda", build_d2eri3_kernel(
+        cls, compact=True, span=True), tmp_path)
+
+
+@pytest.mark.hip
+@pytest.mark.parametrize("cls", [_cparam(c) for c in COMPACT])
+def test_hipcc_compiles_the_spanning_unit(cls, hipcc, tmp_path: Path) -> None:
+    compile_kernel(hipcc, "hip", build_d2eri3_kernel(
+        cls, compact=True, span=True), tmp_path)
+
 if __name__ == "__main__":
     if sys.argv[1:] != ["--write"]:
         sys.exit("usage: PYTHONPATH=src python test/test_emit_d2eri3.py "

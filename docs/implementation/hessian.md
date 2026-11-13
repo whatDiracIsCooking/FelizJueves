@@ -1188,6 +1188,34 @@ RTX 3080 is not timed. Compiled by nvcc and hipcc at (dd|f) and (ff|i);
 the caller picks the classes (FreeBreakfast#1265 takes it only where it
 was as fast).
 
+**The spanning windows (#1346)**, opt-in (`span=True`, over compact
+tables, not with `shared`): the warp-shared tower's split, with the phases
+taken in item space. The cell's items (#632's order) go in windows of
+`window` consecutive items (32 by default, one round of a 32-lane warp),
+cut at the cell's end and at the end of the `bra_slots`th (2) bra record
+from the window's first, so a window spans pairs of several bra records.
+Per window the lanes form, as one strided set of units, each spanned bra
+record's tables an axis a lane (the per-axis recurrence reads only its
+own axis's `X_PA`, `X_PB`, bound at run time) and each spanned pair's
+tower, into shared slots; between two barriers each lane takes the
+window's items at #632's places. **Bitwise** the per-item form,
+interpreted, for every ladder class and for contracted cells whose windows
+straddle pairs and bra records (`test_kernel_d2_df_ladder.py`); compiled
+by nvcc and hipcc at (dd|f) and (ff|i). It removes the warp-shared tower's
+serial steps (lane 0 forming the tables, phases that never span bra
+records), not its shared memory, and at aux `l <= 2` -- where the
+per-item form repeats a pair's tower only 3-36 times -- the slots' cost
+in occupancy still loses. Timed on the RX 9060 XT (FreeBreakfast#1346, CH2O, compact tables
+throughout, the median over 9 alternated rounds of paired ratios): against
+the per-item form 0.75-0.99x at (sf|h,i), every (ff) class and from lP = 3
+up on cc-pVTZ / cc-pVTZ-acCD-6-6 but for (pd|g) 1.14x and (pf|f) 1.09x,
+0.80-0.89x at (dd|s..f) on cc-pVDZ / cc-pVDZ-JKFIT, and 1.13-1.65x at
+lP <= 2 of (pf), (dd), (df) on cc-pVTZ / acCD; faster than the warp-shared
+tower at (sf|h,i), (pd|i), (pf|i), (dd|i), (df|f,g,i) and every (ff)
+class, slower at (pd|h), (pf|f,g,h), (dd|f,g,h), (df|h). The RTX 3080 is
+not timed. FreeBreakfast#1346 takes it at the 15 classes where it was the
+fastest of the three.
+
 ### The generator
 
 `python -m felizjueves.emit --hess-eri3-l [LMAX] [--hess-eri3-aux-l
