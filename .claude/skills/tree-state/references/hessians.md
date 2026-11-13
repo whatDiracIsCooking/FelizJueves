@@ -429,6 +429,16 @@ hipcc-compiled at (dd|f) and (ff|i); stand-alone `sm_86` (ff|i) 18,880 ->
 9,896 B. **Timed on the RX 9060 XT only** (FreeBreakfast#1265): faster or
 level from lP = 3 up and at cc-pVDZ/JKFIT's (dd|.), 1.4-2.1x slower at
 lP <= 2 of (pf), (dd), (df) with contracted aux; RTX 3080 not timed.
+**SPANNING WINDOWS, opt-in** (#1346, `span=True`, over compact tables):
+the warp-shared tower with its phases in item space -- windows of 32
+consecutive items spanning pairs and up to 2 bra records, the bra tables
+formed an axis a lane, the towers a pair a lane, into shared slots -- so
+**bitwise** the per-item form for every ladder class and contracted cells
+with straddling and cut windows, interpreted; nvcc- and hipcc-compiled at
+(dd|f) and (ff|i). **Timed on the RX 9060 XT only** (FreeBreakfast#1346):
+0.75-0.99x the per-item form at (sf|h,i), (ff|*) and most of
+lP >= 3, 1.09-1.65x at lP <= 2 of (pf), (dd), (df) with contracted aux;
+FreeBreakfast takes it at 15 classes; RTX 3080 not timed.
 **Both DF Hessians have HGP twins, interpreted through L = 4 and
 compiled by nvcc and hipcc for s and p, on no card** (`hessian.md`, "The
 DF Hessians on HGP"): `spec.HESSIAN_OFF_NATIVE` = `{metric.hgp, eri3.hgp}`

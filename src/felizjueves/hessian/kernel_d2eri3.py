@@ -147,11 +147,52 @@ cc-pVTZ / cc-pVTZ-acCD-6-6 0.80-1.01x for most classes from lP = 3 up but
 records and the phases' shared memory costs occupancy. The caller picks
 the classes (FreeBreakfast's tools/emit/lowstack.py).
 
+THE SPANNING WINDOWS (#1346), opt-in (`span=True`, over compact tables;
+not with `shared`): the warp-shared tower's split -- the bra tables and
+`R` in SHARED memory, a lane keeping `U`, the operated factors, the aux
+tables and the Boys array -- with the phases taken in ITEM space instead
+of per bra record. The cell's items, #632's global order, go in WINDOWS
+of `window` (`SPAN_ITEMS` = 32, one round of a 32-lane warp) consecutive
+items, cut at the end of the cell and at the end of the `bra_slots`th
+(`SPAN_BRA_SLOTS` = 2) bra record from the window's first; a window so
+spans at most `span_slots(...)` record pairs and `bra_slots` bra records,
+across bra records as well as aux records. Per window the lanes take, as
+one strided set of units, the spanned bra records' tables -- AN AXIS A
+LANE, each axis's recurrence (`e_fragment.axis_fragment`) reading only
+that axis's `X_PA`, `X_PB`, bound at run time, so three lanes form a
+record's tables in step -- and the spanned pairs' towers, into the shared
+slots; a `Barrier`; then each lane takes the window's items at exactly
+the places #632's stride gives it, reading its pair's `R` slot and its
+bra record's table slot; a closing `Barrier`. Same statements, same items,
+same order: BITWISE the per-item form (test/test_kernel_d2_df_ladder.py,
+all 70 ladder classes, and contracted cells with windows that straddle
+pairs and bra records, are cut, or hold the whole cell). What it fixes is
+the warp-shared tower's two serial steps -- lane 0 forming the tables
+alone, and a phase that never spans bra records, so a cell whose bra
+records hold few items leaves most of a phase idle. What it does not fix
+is the shared memory: at aux `l <= 2` the per-item form repeats a pair's
+tower only `n_q n_a` (3 to 36) times, sharing saves little, and the
+slots cost occupancy (a 16-item window, half a round, was 1.5-3x the
+per-item time everywhere; 64 items slower than 32 wherever `n_q n_a` is
+small). ITS SPEED, on the RX 9060 XT (FreeBreakfast#1346, CH2O, compact
+tables throughout, the median over 9 alternated rounds of each round's
+ratio of medians of 31 launches; 5 rounds of 11 at lP <= 2): against the
+per-item form 0.75-0.99x at (sf|h,i), every (ff) class and from lP = 3
+up on cc-pVTZ / cc-pVTZ-acCD-6-6, but for (pd|g), 1.14x, and (pf|f),
+1.09x; 0.80-0.89x at (dd|s..f) on cc-pVDZ / cc-pVDZ-JKFIT; and
+1.13-1.65x at lP <= 2 of (pf), (dd), (df) on cc-pVTZ / acCD. Against the
+warp-shared tower it is faster at (sf|h,i), (pd|i), (pf|i), (dd|i),
+(df|f,g,i) and every (ff) class, slower at (pd|h), (pf|f,g,h),
+(dd|f,g,h), (df|h). The caller picks the classes (FreeBreakfast's
+tools/emit/lowstack.py).
+
 A builder: vendor-neutral IR. It imports neither `ao/` nor
 `hessian.host_eri3` (its witness) nor the interpreter nor `reference/`.
 """
 
 from __future__ import annotations
+
+from dataclasses import fields, is_dataclass, replace
 
 from felizjueves.eri.density_fit.kernel_metric import S_AUX
 from felizjueves.gradient.kernel_g1e import Locals, axis_reader
@@ -159,6 +200,7 @@ from felizjueves.gradient.kernel_geri3 import cell_weights
 from felizjueves.gradient.kernel_gk import (
     compact_extent,
     compact_index,
+    compact_offset,
     tables_fragment,
 )
 from felizjueves.gradient.kernel_gmetric import (
@@ -189,6 +231,7 @@ from felizjueves.ir import (
     Factor,
     Fn,
     For,
+    Fragment,
     If,
     Index,
     Inline,
@@ -221,6 +264,7 @@ __all__ = [
     "LOWSTACK_MIN_L",
     "build_d2eri3_kernel",
     "shared_slots",
+    "span_slots",
     "d2eri3_lowstack",
     "d2eri3_name",
     "d2eri3_plan",
@@ -316,7 +360,10 @@ def build_d2eri3_kernel(cls: Spec | tuple[int, int, int], *,
                         name: str | None = None,
                         lowstack: bool | None = None,
                         compact: bool = False,
-                        shared: bool = False) -> Kernel:
+                        shared: bool = False,
+                        span: bool = False,
+                        window: int | None = None,
+                        bra_slots: int | None = None) -> Kernel:
     """The three-center Hessian kernel of one class (module docstring).
 
     `cls` is a d2 `Target.ERI3` `Spec` or `(la, lb, lP)`. `lowstack` picks
@@ -326,17 +373,30 @@ def build_d2eri3_kernel(cls: Spec | tuple[int, int, int], *,
     the low-stack form's bra tables COMPACT (#1263, module docstring);
     the unrolled form refuses it. `shared=True` forms the bra tables and
     the tower once per record pair in SHARED memory (#1265, module
-    docstring, THE WARP-SHARED TOWER); the unrolled form refuses it too."""
+    docstring, THE WARP-SHARED TOWER); the unrolled form refuses it too.
+    `span=True` is that tower over windows of `window` items that span
+    record pairs AND bra records, the bra tables formed per axis by
+    several lanes into `bra_slots` shared slots (#1346, module docstring,
+    THE SPANNING WINDOWS); it needs `compact=True` and excludes
+    `shared`."""
     la, lb, lP = _class(cls)
     if lowstack is None:
         lowstack = d2eri3_lowstack((la, lb, lP))
     for flag, what in ((compact, "compact tables"),
-                       (shared, "the warp-shared tower")):
+                       (shared, "the warp-shared tower"),
+                       (span, "spanning windows")):
         if flag and not lowstack:
             raise ValueError(f"{d2eri3_name((la, lb, lP))}: {what} are "
                              "the low-stack form's alone")
+    if span and (shared or not compact):
+        raise ValueError(f"{d2eri3_name((la, lb, lP))}: spanning windows "
+                         "take compact tables and not `shared`")
+    if not span and (window is not None or bra_slots is not None):
+        raise ValueError(f"{d2eri3_name((la, lb, lP))}: `window` and "
+                         "`bra_slots` are the spanning windows' alone")
     if lowstack:
-        return _build_lowstack((la, lb, lP), name, compact, shared)
+        return _build_lowstack((la, lb, lP), name, compact, shared,
+                               span, window, bra_slots)
     Lab = la + lb
     dag, order = d2eri3_plan((la, lb, lP))
     fP = ef.center_fragment(lP)
@@ -593,7 +653,9 @@ def _q_name(x: str, k: int, y: str, l: int) -> str:  # noqa: E741
 
 
 def _build_lowstack(am: tuple[int, int, int], name: str | None,
-                    compact: bool = False, shared: bool = False) -> Kernel:
+                    compact: bool = False, shared: bool = False,
+                    span: bool = False, window: int | None = None,
+                    bra_slots: int | None = None) -> Kernel:
     """`build_d2eri3_kernel`'s kernel with no density and no weight held
     (module docstring, THE LOW-STACK FORM): the same parameters, launch and
     `H` contract. `compact` stores the bra tables compact (#1263); `shared`
@@ -608,7 +670,8 @@ def _build_lowstack(am: tuple[int, int, int], name: str | None,
         n_tab = compact_extent(la + 2, lb + 2)
 
         def index(i: Expr, j: Expr, t: Expr) -> Expr:
-            return compact_index(i, j, t, lb + 2)
+            at = compact_index(i, j, t, lb + 2)
+            return _iadd(Var(B_SLOT), at) if span else at
     else:
         fB = ef.axis_tables_fragment(la + 2, lb + 2)
         n_tab = ef.axis_table_extent(la + 2, lb + 2)
@@ -625,8 +688,15 @@ def _build_lowstack(am: tuple[int, int, int], name: str | None,
     width = Lab + 3  # one axis's operated factor, t <= a_d + b_d + 2
     contracted = contractions(la, lb)
     n_r = len(hermite_targets(L2))
-    n_slot = (shared_slots(len(ef.cartesians(lP)) * len(ef.cartesians(la)),
-                           n_r, 3 * n_tab) if shared else 1)
+    n_qa = len(ef.cartesians(lP)) * len(ef.cartesians(la))
+    n_slot = (shared_slots(n_qa, n_r, 3 * n_tab) if shared else 1)
+    if span:
+        window = SPAN_ITEMS if window is None else window
+        bra_slots = SPAN_BRA_SLOTS if bra_slots is None else bra_slots
+        for what, v in (("window", window), ("bra_slots", bra_slots)):
+            if type(v) is not int or v < 1:
+                raise ValueError(f"{what} = {v!r} is not a positive int")
+        n_slot = span_slots(n_qa, window)
 
     def m_at(i: Expr, j: Expr) -> Index:
         return Index("M", (i, j, _iadd(Var("op"), Var("rq"))))
@@ -636,8 +706,8 @@ def _build_lowstack(am: tuple[int, int, int], name: str | None,
             def r_at(tau: tuple[Expr, Expr, Expr]) -> Expr:
                 h = ef.hermite_index(tuple(_iadd(t[d], tau[d])
                                            for d in range(3)))
-                return Index(R_ARRAY, (_iadd(Var(R_SLOT), h) if shared
-                                       else h,))
+                return Index(R_ARRAY, (_iadd(Var(R_SLOT), h)
+                                       if shared or span else h,))
             return (*ef.rolled_center_sum(lP, q, r_at, "u", tag="c",
                                           arrays=AUX_TABLES),
                     Assign(Index(U_ARRAY, (ef.hermite_index(t),)), Var("u")))
@@ -790,7 +860,8 @@ def _build_lowstack(am: tuple[int, int, int], name: str | None,
         *(Decl(q, Scalar.F64, init=Lit(0.0))
           for _, ups in contracted for _, q in ups),
         *(Decl(n, Scalar.F64, (Lit(k * len(hermite_targets(x))),),
-               Space.SHARED if shared and n == R_ARRAY else Space.LOCAL)
+               Space.SHARED if (shared or span) and n == R_ARRAY
+               else Space.LOCAL)
           for n, x, k in ((R_ARRAY, L2, n_slot), (U_ARRAY, Lab + 2, 1))),
         *(Decl(f_array(op), Scalar.F64, (Lit(3 * width),)) for op in OPS),
         *((Note(SHARED_NOTE), *table_decls,
@@ -802,6 +873,18 @@ def _build_lowstack(am: tuple[int, int, int], name: str | None,
                            *((aq,) if ef.HALF_INV_ZETA in fP.binds else ()),
                            *aux_tables), item))
           if shared else
+          (Note(SPAN_NOTE),
+           Decl(SPAN_TABLES, Scalar.F64, (Lit(3 * bra_slots * n_tab),),
+                Space.SHARED),
+           *_span_pairs(n_qa, len(ef.cartesians(la)), window, n_r,
+                        bra_slots, n_tab,
+                        _span_tables(la + 2, lb + 2),
+                        (*bra_head, aq, *_slotted(pair_tower)),
+                        (*bra_weights,
+                         *((aq,) if ef.HALF_INV_ZETA in fP.binds else ()),
+                         *aux_tables),
+                        _spanned(item, bra_slots * n_tab)))
+          if span else
           (Note(ITEM_NOTE),
            *_items(len(ef.cartesians(lP)), len(ef.cartesians(la)),
                    (*bra_body, *ket_body)))),
@@ -990,6 +1073,187 @@ def _shared_pairs(n_q: int, n_a: int, n_slot: int, n_r: int,
             If(_c(Fn.LT, lane, Lit(1)), tables),
             For("kb", Var("p0"), Var("p1"), Lit(n_slot), phase),
         )),
+    )
+
+# ---------------------------------------------------------------------------
+# The spanning windows (#1346)
+# ---------------------------------------------------------------------------
+
+B_SLOT = "b_off"  # the start of a bra record's slot in each shared table
+T_SLOT = "t_off"  # the start of one (axis, bra slot) table, its writer's
+SPAN_TABLES = "Es"  # the shared bra tables, [axis][bra slot][compact entry]
+SPAN_ITEMS = 32  # the items a window aims at: one round of 32 lanes
+SPAN_BRA_SLOTS = 2  # the bra records a window may span
+
+SPAN_NOTE = (
+    "SPANNING WINDOWS (#1346): the cell's items in windows of consecutive "
+    "items that span record pairs and bra records; per window the lanes "
+    "form, as one strided set of units, each spanned bra record's three "
+    "axis tables (one lane an axis) and each spanned pair's tower R into "
+    "shared slots; between two barriers each lane takes the window's items "
+    "at the places #632's global stride gives it, so each lane adds the "
+    "same terms in the same order as the per-item form")
+
+
+def span_slots(n_items: int, window: int) -> int:
+    """THE SPANNING WINDOWS' tower slots (#1346): the most record pairs
+    `window` consecutive items can touch, `n_items` a pair."""
+    return (window - 1) // n_items + 2
+
+
+def _span_tables(l1: int, l2: int) -> Fragment:
+    """One axis's compact table of `(l1, l2)` into the shared `Es` at
+    `t_off`: `e_fragment.axis_fragment(l1, l2, 0)`'s recurrence statement
+    for statement, its `PA`, `PB` bound by the host to whichever axis the
+    lane forms, then every `E^{ij}_t` stored at `t_off +
+    compact_offset(i, j, l2) + t` -- the values `kernel_gk.tables_fragment`
+    stores, bitwise, since an axis's recurrence reads only its own axis."""
+    frag = ef.axis_fragment(l1, l2, 0)
+    stores = tuple(
+        Assign(Index(SPAN_TABLES, (_iadd(Var(T_SLOT), Lit(
+            compact_offset(i, j, l2) + t)),)), Var(ef.e_name(0, i, j, t)))
+        for i in range(l1 + 1) for j in range(l2 + 1)
+        for t in range(i + j + 1))
+    return Fragment(f"e_span_table_{l1}{l2}",
+                    (*frag.binds, T_SLOT, SPAN_TABLES), (*frag.body, *stores))
+
+
+def _rebased(node, stride: int):
+    """`node` with every read of `Ex`, `Ey`, `Ez` moved into the shared
+    `Es` at `d stride + ` its index (`d` the axis)."""
+    if isinstance(node, tuple):
+        return tuple(_rebased(x, stride) for x in node)
+    if not is_dataclass(node):
+        return node
+    out = replace(node, **{f.name: _rebased(getattr(node, f.name), stride)
+                           for f in fields(node)})
+    if isinstance(out, Index) and out.array in ef.AXIS_ARRAYS:
+        d = ef.AXIS_ARRAYS.index(out.array)
+        (k,) = out.at
+        return Index(SPAN_TABLES, (_iadd(Lit(d * stride), k),))
+    return out
+
+
+def _spanned(item: tuple[Stmt, ...], stride: int) -> tuple[Stmt, ...]:
+    return _rebased(item, stride)
+
+
+def _span_pairs(n_qa: int, n_a: int, window: int, n_r: int, n_bslot: int,
+                n_tab: int, tables: Fragment, tower: tuple[Stmt, ...],
+                per_item: tuple[Stmt, ...],
+                item: tuple[Stmt, ...]) -> tuple[Stmt, ...]:
+    """The cell's items in WINDOWS of consecutive items (warp-uniform
+    loops): `window` of them, cut at the end of the cell and at the end of
+    the `n_bslot`th bra record from the window's first, so a window spans
+    at most `n_bslot` bra records (and at most `n_slot` pairs by
+    `span_slots`). Per window, units `u` strided over the
+    lanes: the first `3 n_bt` form the spanned bra records' tables, `bs =
+    u / 3`, axis `u mod 3`, into `Es` at `(axis n_bslot + bs) n_tab`; the
+    rest the spanned pairs' towers into `R` at `g n_r`. A `Barrier`; then
+    every lane takes the window's items `it`, `it = lane mod width`, from
+    `it_0`, decoding them as `_items` does and reading its pair's slot
+    `r_off` and its bra record's `b_off`; a closing `Barrier`."""
+    n_slot = span_slots(n_qa, window)
+    lane, width = Call(Fn.THREAD_Y), Call(Fn.BLOCK_DIM_Y)
+    it = Var(ITEM)
+
+    def div(x: Expr, n: Expr) -> Call:
+        return _c(Fn.DIV, x, n)
+
+    def mod(x: Expr, n: Expr) -> Expr:
+        return _c(Fn.SUB, x, _mul(div(x, n), n))
+
+    def sub(x: Expr, y: Expr) -> Call:
+        return _c(Fn.SUB, x, y)
+
+    nqa = Lit(n_qa)
+    binds: dict[str, Expr] = {
+        ef.ZETA: Var("ze"), T_SLOT: Var(T_SLOT),
+        SPAN_TABLES: Var(SPAN_TABLES),
+        Factor.pa(0).name_in_kernel: Var("tb_pa"),
+        Factor.pb(0).name_in_kernel: Var("tb_pb"),
+    }
+    if ef.HALF_INV_ZETA in tables.binds:
+        binds[ef.HALF_INV_ZETA] = _c(Fn.DIV, Lit(0.5), Var("ze"))
+    table_unit: tuple[Stmt, ...] = (
+        Decl("tb_s", Scalar.I32, init=div(Var("tw_u"), Lit(3))),
+        Decl("tb_d", Scalar.I32, init=sub(Var("tw_u"),
+                                          _mul(Var("tb_s"), Lit(3)))),
+        Decl(BRA, Scalar.I32, init=_iadd(Var("b0"), _iadd(Var("w_bl"),
+                                                          Var("tb_s")))),
+        Decl("ze", Scalar.F64, init=Index("zeta_ab", (Var(BRA),))),
+        Note("the unit's axis picked by value, each record vector read at a "
+             "literal axis (FreeBreakfast splits them per axis)"),
+        *(Decl(f"tb_{n}", Scalar.F64, init=Index(arr, (Var(BRA), Lit(0))))
+          for n, arr in (("pa", "XPA"), ("pb", "XPB"))),
+        *(If(_c(Fn.LT, Lit(d - 1), Var("tb_d")), tuple(
+            Assign(Var(f"tb_{n}"), Index(arr, (Var(BRA), Lit(d))))
+            for n, arr in (("pa", "XPA"), ("pb", "XPB"))))
+          for d in (1, 2)),
+        Decl(T_SLOT, Scalar.I32, init=_mul(_iadd(
+            _mul(Var("tb_d"), Lit(n_bslot)), Var("tb_s")), Lit(n_tab))),
+        Inline(tables, binds),
+    )
+
+    def pair(pr: Expr) -> tuple[Stmt, ...]:
+        return (Decl("pr_b", Scalar.I32, init=div(pr, Var("n_p"))),
+                Decl(BRA, Scalar.I32, init=_iadd(Var("b0"), Var("pr_b"))),
+                Decl(KET, Scalar.I32, init=_iadd(Var("p0"), sub(
+                    pr, _mul(Var("pr_b"), Var("n_p"))))))
+
+    tower_unit: tuple[Stmt, ...] = (
+        Decl("tw_g", Scalar.I32, init=sub(Var("tw_u"), Var("w_t"))),
+        *pair(_iadd(Var("w_pl"), Var("tw_g"))),
+        Decl(R_SLOT, Scalar.I32, init=_mul(Var("tw_g"), Lit(n_r))),
+        *tower,
+    )
+    n_pqa = _mul(Var("n_p"), nqa)
+
+    def cap(bound: Expr) -> If:
+        return If(_c(Fn.LT, bound, Var("w_e")), (Assign(Var("w_e"), bound),))
+
+    per_window: tuple[Stmt, ...] = (
+        Decl("w_e", Scalar.I32, init=_iadd(Var("w_s"), Lit(window))),
+        cap(Var("n_it")),
+        cap(_mul(_iadd(div(Var("w_s"), n_pqa), Lit(n_bslot)), n_pqa)),
+        Assign(Var("w_len"), sub(Var("w_e"), Var("w_s"))),
+        Decl("w_pl", Scalar.I32, init=div(Var("w_s"), nqa)),
+        Decl("w_ph", Scalar.I32, init=div(sub(Var("w_e"), Lit(1)), nqa)),
+        Decl("w_bl", Scalar.I32, init=div(Var("w_pl"), Var("n_p"))),
+        Decl("w_t", Scalar.I32, init=_mul(Lit(3), _iadd(sub(
+            div(Var("w_ph"), Var("n_p")), Var("w_bl")), Lit(1)))),
+        Decl("w_u", Scalar.I32, init=_iadd(Var("w_t"), _iadd(sub(
+            Var("w_ph"), Var("w_pl")), Lit(1)))),
+        For("tw_u", lane, Var("w_u"), width, (
+            If(_c(Fn.LT, Var("tw_u"), Var("w_t")), table_unit, tower_unit),
+        )),
+        Barrier(),
+        Decl("it_0", Scalar.I32, init=_iadd(Var("w_s"), mod(sub(
+            _iadd(lane, width), mod(Var("w_s"), width)), width))),
+        For(ITEM, Var("it_0"), Var("w_e"), width, (
+            Decl("it_s", Scalar.I32, init=div(it, nqa)),
+            Decl("it_j", Scalar.I32, init=sub(it, _mul(Var("it_s"), nqa))),
+            Decl(ITEM_Q, Scalar.I32, init=div(Var("it_j"), Lit(n_a))),
+            Decl(ITEM_A, Scalar.I32, init=sub(Var("it_j"), _mul(
+                Var(ITEM_Q), Lit(n_a)))),
+            *pair(Var("it_s")),
+            Decl(R_SLOT, Scalar.I32, init=_mul(sub(Var("it_s"), Var("w_pl")),
+                                               Lit(n_r))),
+            Decl(B_SLOT, Scalar.I32, init=_mul(sub(Var("pr_b"), Var("w_bl")),
+                                               Lit(n_tab))),
+            *per_item,
+            *item,
+        )),
+        Barrier(),
+    )
+    return (
+        Decl("n_p", Scalar.I32, init=sub(Var("p1"), Var("p0"))),
+        Decl("n_it", Scalar.I32, init=_mul(sub(Var("b1"), Var("b0")), n_pqa)),
+        Note(f"windows of up to {window} items, cut at the end of the "
+             f"{n_bslot}th bra record from the window's first: at most "
+             f"{n_slot} pairs and {n_bslot} bra records"),
+        Decl("w_len", Scalar.I32, init=Lit(window)),
+        For("w_s", Lit(0), Var("n_it"), Var("w_len"), per_window),
     )
 
 

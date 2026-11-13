@@ -146,6 +146,8 @@ TESTS = {
         Classes("mmd", "eri3", 2),
     "test/test_emit_d2eri3.py::test_X_compiles_the_warp_shared_unit":
         Classes("mmd", "eri3", 2),
+    "test/test_emit_d2eri3.py::test_X_compiles_the_spanning_unit":
+        Classes("mmd", "eri3", 2),
     "test/test_emit_hess_1e.py::test_X_compiles_the_low_stack_st_unit":
         Classes("mmd", "s", 2),
     "test/test_emit_hess_1e.py::test_X_compiles_the_compact_d2v_unit":
