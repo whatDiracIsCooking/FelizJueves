@@ -150,6 +150,10 @@ TESTS = {
         Classes("hgp", "f", 1),
     "test/test_emit_grad_dfx.py::test_X_compiles_the_xeri3_unit":
         Classes("mmd", "eri3", 1),
+    "test/test_emit_grad_dfx.py::test_X_compiles_the_compact_unit":
+        Classes("mmd", "eri3", 1),
+    "test/test_emit_grad_df.py::test_X_compiles_the_compact_unit":
+        Classes("mmd", "eri3", 1),
     # H2O/STO-3G against s, p, d aux shells: every class through (pp|d).
     "test/test_xeri3_device.py::test_X_xeri3_matches_the_host":
         span("mmd", "eri3", 1, range(5)),

@@ -78,9 +78,11 @@ def _m(n: int) -> np.ndarray:
     return np.random.default_rng(3).standard_normal((n, n))
 
 
-def _launch(target, basis, nuclei, M, la, lb, H, threads=7, lowstack=None):
+def _launch(target, basis, nuclei, M, la, lb, H, threads=7, lowstack=None,
+            compact=False):
     rec = grad.records(basis, nuclei, la, lb)
-    kern = build_h1e_kernel((target, la, lb), lowstack=lowstack)
+    kern = build_h1e_kernel((target, la, lb), lowstack=lowstack,
+                            compact=compact)
     want = {p.name for p in kern.params if p.array}
     arrs = {k: np.array(v, dtype=np.int32 if k.startswith(("off", "atom"))
                         else float) for k, v in rec.items() if k in want}
@@ -171,6 +173,28 @@ def test_the_low_stack_d2s_d2t_is_the_unrolled_form_bitwise(cls,
     scale = _host(target, basis, nuclei, M, pairs, absolute=True).max()
     _close(lo, _host(target, basis, nuclei, M, pairs), scale,
            f"{target} {cls} lowstack")
+
+
+@pytest.mark.parametrize("cls", [by_l(c, sum(c) + 2, id=f"{c[0]}{c[1]}")
+                                 for c in CLASSES])
+def test_the_compact_low_stack_d2v_is_the_dense_one_bitwise(cls) -> None:
+    """Compact tables (#1265) move only where each entry lives, never a
+    value or the order of a sum, so the two low-stack `d2v`s agree
+    BITWISE; every other form refuses `compact`."""
+    basis, nuclei = _fixture("hf_ccpvtz")
+    M = _m(basis.n_ao)
+    dense = _launch(Target.V, basis, nuclei, M, *cls, _zeros(nuclei),
+                    lowstack=True)
+    packed = _launch(Target.V, basis, nuclei, M, *cls, _zeros(nuclei),
+                     lowstack=True, compact=True)
+    assert np.array_equal(dense, packed), f"d2v {cls}"
+
+
+def test_compact_tables_are_the_low_stack_d2v_alone() -> None:
+    for cls, lowstack in (((Target.V, 1, 1), False), ((Target.S, 3, 3), True),
+                          ((Target.T, 2, 2), True)):
+        with pytest.raises(ValueError, match="low-stack d2v's alone"):
+            build_h1e_kernel(cls, lowstack=lowstack, compact=True)
 
 
 @pytest.mark.parametrize(("target", "lowstack"), [

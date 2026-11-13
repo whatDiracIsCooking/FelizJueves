@@ -85,6 +85,16 @@ low-stack unit through (ff|i) is at most 13,792 B of `sm_86` stack and
 are chunked (`kernel_gmetric.chunked_fold`), so it builds at Python's
 default recursion limit at any class.
 
+COMPACT TABLES (#1265), opt-in (`compact=True`, the low-stack form only;
+the unrolled one refuses it): `kernel_d2eri3`'s #1263 move one derivative
+order down. The bra tables hold only the reachable `E^{ij}_t`, `t <= i +
+j` (`bra_tables`: `kernel_gk.tables_fragment`, read by `rolled_e_sum` at
+`kernel_gk.compact_index`), 125 doubles a side at (ff|.) against 225. Only
+where an entry lives moves, never a value or a sum's order, so the two
+low-stack forms agree BITWISE (test/test_kernel_geri3.py). `kernel_xeri3`
+takes the same tables. Standalone nvcc 13.0, `sm_86`: (ff|i) 13,792 ->
+11,600 B (`xeri3`: 13,536 -> 11,280 B).
+
     params  n_cell n_bra_rec n_aux_rec n_ao n_aux n_atom (I32)
             zeta_ab[n_bra_rec]  P XPA XPB[n_bra_rec, 3]  s_ab  ea_bra  eb_ket
             A[n_aux_rec, 3]  alpha[n_aux_rec]  s_aux[n_aux_rec]
@@ -109,6 +119,11 @@ from felizjueves.gradient.kernel_g1e import (
     Locals,
     axis_reader,
     derivative_reader,
+)
+from felizjueves.gradient.kernel_gk import (
+    compact_extent,
+    compact_index,
+    tables_fragment,
 )
 from felizjueves.gradient.kernel_gmetric import (
     center_binds,
@@ -155,6 +170,7 @@ from felizjueves.spec import Operator, Spec, Target
 
 __all__ = [
     "LOWSTACK_MIN_L",
+    "bra_tables",
     "build_geri3_kernel",
     "cell_weights",
     "geri3_lowstack",
@@ -260,18 +276,24 @@ def cell_weights(la: int, lb: int, lP: int) -> list[Stmt]:
 
 def build_geri3_kernel(cls: Spec | tuple[int, int, int], *,
                        name: str | None = None,
-                       lowstack: bool | None = None) -> Kernel:
+                       lowstack: bool | None = None,
+                       compact: bool = False) -> Kernel:
     """The three-center gradient kernel of one class (module docstring).
 
     `cls` is a d1 `Target.ERI3` `Spec` or `(la, lb, lP)`. `lowstack` picks
     the form: `None` (the default) is `geri3_lowstack(cls)` (THE LOW-STACK
     FORM), `True` / `False` force it. The name, parameters, launch and `G`
-    contract are the same in both."""
+    contract are the same in both. `compact=True` stores the low-stack
+    form's bra tables COMPACT (#1265, module docstring); the unrolled form
+    refuses it."""
     la, lb, lP = _class(cls)
     if lowstack is None:
         lowstack = geri3_lowstack((la, lb, lP))
+    if compact and not lowstack:
+        raise ValueError(f"{geri3_name((la, lb, lP))}: compact tables are "
+                         "the low-stack form's alone")
     if lowstack:
-        return _build_lowstack((la, lb, lP), name)
+        return _build_lowstack((la, lb, lP), name, compact)
     Lab = la + lb
     dag, order = geri3_plan((la, lb, lP))
     fP = ef.center_fragment(lP)
@@ -509,15 +531,36 @@ def _iadd(x: Expr, y: Expr) -> Expr:
     return _c(Fn.ADD, x, y)
 
 
-def _build_lowstack(am: tuple[int, int, int], name: str | None) -> Kernel:
+def bra_tables(la_t: int, lb_t: int, compact: bool):
+    """The low-stack bra's per-axis tables at `(la_t, lb_t)`: the fragment
+    filling `Ex Ey Ez`, their extent, and `e_fragment.rolled_e_sum` reading
+    them. `compact` keeps only the reachable `E^{ij}_t`, `t <= i + j`
+    (`kernel_gk.tables_fragment` at `kernel_gk.compact_index`, #1265): the
+    same values summed in the same order, so the two agree BITWISE."""
+    if not compact:
+        return (ef.axis_tables_fragment(la_t, lb_t),
+                ef.axis_table_extent(la_t, lb_t), ef.rolled_e_sum)
+
+    def index(i: Expr, j: Expr, t: Expr) -> Expr:
+        return compact_index(i, j, t, lb_t)
+
+    def e_sum(*args, **kw) -> tuple[Stmt, ...]:
+        return ef.rolled_e_sum(*args, index=index, **kw)
+
+    return (tables_fragment(la_t, lb_t, ef.AXIS_ARRAYS),
+            compact_extent(la_t, lb_t), e_sum)
+
+
+def _build_lowstack(am: tuple[int, int, int], name: str | None,
+                    compact: bool = False) -> Kernel:
     """`build_geri3_kernel`'s kernel with no density and no weight held
     (module docstring, THE LOW-STACK FORM): the same parameters, launch and
-    `G` contract."""
+    `G` contract. `compact` stores the bra tables compact (#1265)."""
     la, lb, lP = am
     Lab = la + lb
     L1 = Lab + lP + 1  # the tower's order
     dag, order = geri3_plan(am)
-    fB = ef.axis_tables_fragment(la + 1, lb + 1)
+    fB, n_tab, e_sum = bra_tables(la + 1, lb + 1, compact)
     fP = ef.center_tables_fragment(lP)
     odd = lP % 2 == 1
     cell, ib, ik = Var(CELL), Var(BRA), Var(KET)
@@ -574,11 +617,11 @@ def _build_lowstack(am: tuple[int, int, int], name: str | None) -> Kernel:
                         la_, lb_ = (lo, b) if side == "A" else (a, lo)
                         hi, dn = f"h{side}{k}", f"l{side}{k}"
                         out += [
-                            *ef.rolled_e_sum(la + 1, lb + 1, ra_, rb_,
+                            *e_sum(la + 1, lb + 1, ra_, rb_,
                                              u_read, hi, tag=f"p{side}{k}"),
                             Decl(dn, Scalar.F64, init=Lit(0.0)),
                             If(_c(Fn.LT, Lit(0), ab[k]), (
-                                *ef.rolled_e_sum(la + 1, lb + 1, la_, lb_,
+                                *e_sum(la + 1, lb + 1, la_, lb_,
                                                  u_read, f"m{side}{k}",
                                                  tag=f"q{side}{k}"),
                                 Assign(Var(dn), _mul(ab[k],
@@ -591,7 +634,7 @@ def _build_lowstack(am: tuple[int, int, int], name: str | None) -> Kernel:
                         ]
                 for k in range(3):
                     out += [
-                        *ef.rolled_e_sum(la + 1, lb + 1, a, b, u_read,
+                        *e_sum(la + 1, lb + 1, a, b, u_read,
                                          f"hC{k}", tag=f"pC{k}", up=k),
                         Assign(Var(f"gC{k}"), _c(
                             minus_ab, Var(f"gC{k}"),
@@ -656,8 +699,7 @@ def _build_lowstack(am: tuple[int, int, int], name: str | None) -> Kernel:
         Note(f"the undressed per-axis E^{{ij}}_t, i <= {la + 1}, j <= "
              f"{lb + 1}: one index above the class on each side, for the "
              "derivative rule (e_fragment.axis_tables_fragment)"),
-        *(Decl(n, Scalar.F64, (Lit(ef.axis_table_extent(la + 1, lb + 1)),))
-          for n in ef.AXIS_ARRAYS),
+        *(Decl(n, Scalar.F64, (Lit(n_tab),)) for n in ef.AXIS_ARRAYS),
         Inline(fB, bra_binds),
         Note("the aux records of the cell"),
         For(KET, Var("p0"), Var("p1"), Lit(1), ket_body),

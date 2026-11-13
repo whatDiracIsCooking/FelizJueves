@@ -4365,6 +4365,15 @@ RULES["d2eri3_builder"] = Rule(
     RULES["d2eri3_builder"].must_not)
 EDGES["hessian.kernel_d2eri3"] = (EDGES["hessian.kernel_d2eri3"]
                                   | {"gradient.kernel_gk"})
+# #1265: the low-stack `geri3` (and through it `xeri3`) and the low-stack
+# `d2v` take the same opt-in compact tables from `kernel_gk`.
+for _rule_name, _module in (("geri3_builder", "gradient.kernel_geri3"),
+                            ("h1e_builder", "hessian.kernel_h1e")):
+    RULES[_rule_name] = Rule(
+        RULES[_rule_name].why + ", `kernel_gk`'s compact tables (#1265)",
+        RULES[_rule_name].may | {"gradient.kernel_gk"},
+        RULES[_rule_name].must_not)
+    EDGES[_module] = EDGES[_module] | {"gradient.kernel_gk"}
 
 
 def test_the_df_gradient_builders_reach_neither_their_witness_nor_a_machine(

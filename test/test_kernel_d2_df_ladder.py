@@ -42,7 +42,7 @@ from felizjueves.ao.shell import Basis, Shell
 from felizjueves.hessian import host_df, host_eri3
 from felizjueves.hessian import kernel_d2eri3 as ke
 from felizjueves.hessian import kernel_d2metric as km
-from felizjueves.ir import Decl, walk
+from felizjueves.ir import Decl, Space, walk
 from felizjueves.mmd import e_fragment as ef
 from felizjueves.reference.boys import boys
 from felizjueves.reference.pq import pq
@@ -147,6 +147,91 @@ def test_the_compact_low_stack_d2eri3_is_the_dense_one_bitwise(cls):
     """Compact tables move only where each entry lives, never a value or
     the order of a sum, so the two low-stack forms agree BITWISE (#1263)."""
     _bitwise_compact(cls)
+
+
+def _local_doubles(k) -> int:
+    n = 0
+    for s in walk(k.body):
+        if isinstance(s, Decl) and s.shape and s.space is Space.LOCAL:
+            size = 1
+            for e in s.shape:
+                size *= e.value
+            n += size
+    return n
+
+
+def test_the_warp_shared_tower_and_its_refusal():
+    """`shared=True` (#1265) moves the bra tables and the tower `R` into
+    shared memory, formed once per record pair: at (ff|i) a lane keeps
+    `U`, the six operated factors, the aux tables and the Boys array,
+    1,320 + 1,296 + 1,176 + 120 B; the name and parameters unchanged. The
+    unrolled form refuses it."""
+    i6 = ef.center_table_extent(6)
+    packed = ke.build_d2eri3_kernel((3, 3, 6), compact=True)
+    warp = ke.build_d2eri3_kernel((3, 3, 6), compact=True, shared=True)
+    assert warp.name == packed.name and warp.params == packed.params
+    assert _array_doubles(warp) == _array_doubles(packed)
+    assert _local_doubles(warp) == 165 + 6 * 27 + 3 * i6 + 15 == 489
+    with pytest.raises(ValueError, match="low-stack form's alone"):
+        ke.build_d2eri3_kernel((0, 1, 1), lowstack=False, shared=True)
+
+
+def _contracted_bases(cls):
+    """`_eri3_bases` with two- and three-primitive shells: several bra and
+    aux records a cell, so the lanes' places in a pair's items move with
+    the pair (`kernel_d2eri3._shared_pairs`)."""
+    la, lb, lP = cls
+    sh = [Shell(lb, B, (1.1, 0.4), (0.6, 0.5)),
+          Shell(la, A, (0.8, 0.3, 2.0), (1.0, 0.4, 0.2))]
+    return Basis(tuple(sh)), Basis((Shell(lP, C, (1.6, 0.5), (1.0, 0.7)),))
+
+
+def _long_aux_bases(cls):
+    """`_contracted_bases` with a five-primitive aux shell: at (pp|d) a
+    phase holds four aux records (`kernel_d2eri3.shared_slots`), so a
+    bra record's last phase is partial."""
+    basis, _ = _contracted_bases(cls)
+    exps = (2.4, 1.6, 0.9, 0.5, 0.25)
+    return basis, Basis((Shell(cls[2], C, exps, (0.3, 1.0, 0.7, 0.5, 0.2)),))
+
+
+def _bitwise_shared(cls, bases, lanes: int = 4):
+    basis, aux = bases(cls)
+    Gam = np.random.default_rng(5).standard_normal(
+        (basis.n_ao, basis.n_ao, aux.n_ao))
+    packed, _ = run_d2eri3(basis, aux, NUCLEI, Gam, boys=boys, classes={cls},
+                           lowstack=True, compact=True, lanes=lanes)
+    warp, ran = run_d2eri3(basis, aux, NUCLEI, Gam, boys=boys, classes={cls},
+                           lowstack=True, compact=True, shared=True,
+                           lanes=lanes)
+    assert ran == (cls,)
+    assert np.array_equal(packed, warp), ke.d2eri3_name(cls)
+
+
+@pytest.mark.parametrize("cls", [by_l(c, sum(c) + 2, id=_eid(c))
+                                 for c in ERI3_LADDER])
+def test_the_warp_shared_d2eri3_is_the_compact_one_bitwise(cls):
+    """The warp-shared tower forms the same tables, tower and `U` by the
+    same statements, and each lane adds the same items in the same order
+    as #632's per-item mapping, so the two agree BITWISE (#1265)."""
+    _bitwise_shared(cls, _eri3_bases)
+
+
+@pytest.mark.parametrize("case", [
+    by_l(((0, 1, 1), n), 4, id=f"d2eri3_011-contracted-{n}lanes")
+    for n in (2, 4, 32)] + [
+    by_l(((1, 1, 0), 2), 4, id="d2eri3_110-contracted-2lanes"),
+    by_l(((0, 1, 2), 4), 5, id="d2eri3_012-contracted-4lanes"),
+    by_l(((1, 2, 0), 8), 5, id="d2eri3_120-contracted-8lanes"),
+    *(by_l(((1, 1, 2), n, True), 6, id=f"d2eri3_112-partial-phase-{n}lanes")
+      for n in (4, 32))])
+def test_the_warp_shared_d2eri3_is_bitwise_over_many_records(case):
+    """Several bra and aux records a cell, at warp widths that do and do
+    not divide a phase's items, and a partial last phase: still BITWISE
+    the compact form (#1265)."""
+    cls, lanes, *long = case
+    _bitwise_shared(cls, _long_aux_bases if long else _contracted_bases,
+                    lanes)
 
 
 # --- the host, every class of the ladder ----------------------------------------

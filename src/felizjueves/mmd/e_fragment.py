@@ -835,7 +835,8 @@ def cartesian_loops(l: int, names: tuple[str, str, str],  # noqa: E741
 
 def rolled_e_sum(la: int, lb: int, a: tuple[Expr, Expr, Expr],
                  b: tuple[Expr, Expr, Expr], x: Callable[[Expr], Expr],
-                 dst: str, *, tag: str = "e", up: int | None = None
+                 dst: str, *, tag: str = "e", up: int | None = None,
+                 index: Callable[[Expr, Expr, Expr], Expr] | None = None
                  ) -> tuple[Stmt, ...]:
     """`dst = SUM_t E^{ab}_t X[t]` over the reachable `t` of one row, as
     loops over the per-axis tables (module doc, THE LOW-STACK E PATH).
@@ -845,7 +846,9 @@ def rolled_e_sum(la: int, lb: int, a: tuple[Expr, Expr, Expr],
     I32 `hermite_targets` index `h`. Declares the F64 `dst` and the I32
     and F64 locals `{tag}_*`. `up = k` reads `X[t + 1_k]` in place of
     `X[t]` (the Hermite shift of a d1 kernel, #613); the default text is
-    unchanged."""
+    unchanged. `index(i, j, t)` places `E^{ij}_t` in the tables (default
+    `axis_table_index`; compact tables pass `kernel_gk.compact_index`,
+    #1265): only each row's base moves."""
     L = la + lb
     t = (Var(f"{tag}_tx"), Var(f"{tag}_ty"), Var(f"{tag}_tz"))
     at = t if up is None else tuple(
@@ -876,7 +879,8 @@ def rolled_e_sum(la: int, lb: int, a: tuple[Expr, Expr, Expr],
     ))
     return (
         *(Decl(base[d], Scalar.I32,
-               init=axis_table_index(a[d], b[d], 0, lb, L)) for d in range(3)),
+               init=(axis_table_index(a[d], b[d], 0, lb, L) if index is None
+                     else index(a[d], b[d], Lit(0)))) for d in range(3)),
         Decl(dst, Scalar.F64, init=Lit(0.0)),
         x_loop,
     )

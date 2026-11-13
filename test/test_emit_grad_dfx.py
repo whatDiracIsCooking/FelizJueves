@@ -29,7 +29,15 @@ import sys
 from pathlib import Path
 
 import pytest
-from test_emit_grad import _WARNING, BACKEND, FLAGS_VAR, GOLDEN, _names, _run
+from test_emit_grad import (
+    _WARNING,
+    BACKEND,
+    FLAGS_VAR,
+    GOLDEN,
+    _names,
+    _run,
+    compile_kernel,
+)
 
 from felizjueves.emit import __main__ as emit_cli
 from felizjueves.gradient.kernel_xeri3 import build_xeri3_kernel, xeri3_name
@@ -225,6 +233,22 @@ def _compile_unit(tc, backend: str, cls, tmp_path: Path) -> None:
                         re.MULTILINE)
     assert not warned, (f"{tc.name}: warning(s) in generated text (#92) -- "
                         f"fix the emitter, never a flag: {warned}")
+
+
+# The compact xeri3 (#1265): opt-in, so off the goldens; compiled alone by
+# both vendors at the top of the ladder, (ff|i).
+@pytest.mark.cuda
+@pytest.mark.parametrize("cls", [(3, 3, 6)], ids=xeri3_name)
+def test_nvcc_compiles_the_compact_unit(cls, nvcc, tmp_path) -> None:
+    compile_kernel(nvcc, "cuda", build_xeri3_kernel(cls, compact=True),
+                   tmp_path)
+
+
+@pytest.mark.hip
+@pytest.mark.parametrize("cls", [(3, 3, 6)], ids=xeri3_name)
+def test_hipcc_compiles_the_compact_unit(cls, hipcc, tmp_path) -> None:
+    compile_kernel(hipcc, "hip", build_xeri3_kernel(cls, compact=True),
+                   tmp_path)
 
 
 if __name__ == "__main__":

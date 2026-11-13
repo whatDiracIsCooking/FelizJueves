@@ -350,6 +350,24 @@ def test_hipcc_compiles_the_low_stack_st_unit(unit, hipcc, tmp_path) -> None:
     compile_kernel(hipcc, "hip", _kernel(*unit, lowstack=True), tmp_path)
 
 
+# THE COMPACT LOW-STACK `d2v` (#1265): opt-in, so off the goldens; compiled
+# alone by both vendors at (dd) and (ff).
+@pytest.mark.cuda
+@pytest.mark.parametrize("cls", [by_l(c, 2 + sum(c), id=f"d2v_{c[0]}{c[1]}-compact")
+                                 for c in ((2, 2), (3, 3))])
+def test_nvcc_compiles_the_compact_d2v_unit(cls, nvcc, tmp_path) -> None:
+    compile_kernel(nvcc, "cuda", build_h1e_kernel(
+        (FAMILY["d2v"], *cls), lowstack=True, compact=True), tmp_path)
+
+
+@pytest.mark.hip
+@pytest.mark.parametrize("cls", [by_l(c, 2 + sum(c), id=f"d2v_{c[0]}{c[1]}-compact")
+                                 for c in ((2, 2), (3, 3))])
+def test_hipcc_compiles_the_compact_d2v_unit(cls, hipcc, tmp_path) -> None:
+    compile_kernel(hipcc, "hip", build_h1e_kernel(
+        (FAMILY["d2v"], *cls), lowstack=True, compact=True), tmp_path)
+
+
 if __name__ == "__main__":
     if sys.argv[1:] != ["--write"]:
         sys.exit("usage: PYTHONPATH=src python test/test_emit_hess_1e.py --write")

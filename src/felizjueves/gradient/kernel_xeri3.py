@@ -100,6 +100,7 @@ from felizjueves.gradient.kernel_geri3 import (
     AUX_TABLES,
     R_ARRAY,
     U_ARRAY,
+    bra_tables,
     geri3_plan,
 )
 from felizjueves.gradient.kernel_gmetric import center_cols, launch_shape, tower
@@ -195,15 +196,17 @@ def _plus(*vs: tuple[int, ...]) -> tuple[int, int, int]:
 
 
 def build_xeri3_kernel(cls: Spec | tuple[int, int, int], *,
-                       name: str | None = None) -> Kernel:
+                       name: str | None = None,
+                       compact: bool = False) -> Kernel:
     """The uncontracted three-center d1 kernel of one class (module
     docstring). `cls` is an uncontracted d1 `Target.ERI3` `Spec` or `(la,
-    lb, lP)`."""
+    lb, lP)`. `compact=True` stores the bra tables COMPACT, `t <= i + j`
+    only (`kernel_geri3.bra_tables`, #1265): bitwise the same values."""
     la, lb, lP = _class(cls)
     Lab = la + lb
     L1 = Lab + lP + 1  # the tower's order
     dag, order = geri3_plan((la, lb, lP))
-    fB = ef.axis_tables_fragment(la + 1, lb + 1)
+    fB, n_tab, e_sum = bra_tables(la + 1, lb + 1, compact)
     fP = ef.center_tables_fragment(lP)
     nA, nB, nP = (len(ef.cartesians(x)) for x in (la, lb, lP))
     # X = -dA, and dA carries (-1)^{lP}: an odd class adds, an even one
@@ -252,11 +255,11 @@ def build_xeri3_kernel(cls: Spec | tuple[int, int, int], *,
                         dst = (x_at(k, m, n, col) if side == "A"
                                else x_at(k, n, m, col))
                         side_out += [
-                            *ef.rolled_e_sum(la + 1, lb + 1, ra_, rb_,
+                            *e_sum(la + 1, lb + 1, ra_, rb_,
                                              u_read, hi, tag=f"p{side}{k}"),
                             Decl(dn, Scalar.F64, init=Lit(0.0)),
                             If(_c(Fn.LT, Lit(0), ab[k]), (
-                                *ef.rolled_e_sum(la + 1, lb + 1, la_, lb_,
+                                *e_sum(la + 1, lb + 1, la_, lb_,
                                                  u_read, f"m{side}{k}",
                                                  tag=f"q{side}{k}"),
                                 Assign(Var(dn), _mul(ab[k],
@@ -327,8 +330,7 @@ def build_xeri3_kernel(cls: Spec | tuple[int, int, int], *,
         Note(f"the undressed per-axis E^{{ij}}_t, i <= {la + 1}, j <= "
              f"{lb + 1}: one index above the class on each side, for the "
              "derivative rule (e_fragment.axis_tables_fragment)"),
-        *(Decl(n, Scalar.F64, (Lit(ef.axis_table_extent(la + 1, lb + 1)),))
-          for n in ef.AXIS_ARRAYS),
+        *(Decl(n, Scalar.F64, (Lit(n_tab),)) for n in ef.AXIS_ARRAYS),
         Inline(fB, bra_binds),
         Note("the aux records of the cell"),
         For(KET, Var("p0"), Var("p1"), Lit(1), ket_body),

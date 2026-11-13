@@ -535,6 +535,15 @@ across the nucleus loop at (dd) and 3,780 (30 KB) at (ff), and every
 pooled factor besides. No `sm_86` or `gfx1200` frame, spill or timing is
 measured for either form.
 
+**Compact `d2v` tables (#1265)**, opt-in (`compact=True`, the low-stack
+`d2v` only): the record head's tables keep only `t <= i + j`
+(`kernel_gk.tables_fragment`, read through `operated_value(...,
+index=kernel_gk.compact_index)`, `d2eri3`'s #1263 move), 216 doubles a
+side at (ff) against 396; **bitwise** the dense low-stack form for every
+ordered class through (ff), interpreted (`test_kernel_h1e.py`).
+Stand-alone nvcc 13.0, `sm_86`: `d2v_33` 17,216 -> 13,024 B. Compiled by
+nvcc and hipcc at (dd) and (ff). Timed on the RX 9060 XT (FreeBreakfast#1265, CH2O cc-pVTZ, median of 15): 0.98x at (pf), 1.01x at (df), 1.05x at (dd), 1.08x at (ff) the dense form's time, bit-identical on the card.
+
 ### The low-stack `d2s` and `d2t` (#1263)
 
 `S` and `T` read only `E^{ij}_0`, so their unrolled frame is not the
@@ -1153,6 +1162,31 @@ read 24,544): (ff|i) 18,912 B, (df|i) 15,280 B, (dd|i) 12,160 B, (dd|f)
 needs a different mapping (the tower shared across a warp, say), not a
 layout. Compiled by nvcc and hipcc at (dd|f) and (ff|i)
 (`test_emit_d2eri3.py`); not run on a card here, not timed.
+
+**The warp-shared tower (#1265)**, opt-in (`shared=True`, the low-stack
+form only): the bra tables and `R` move into SHARED memory, formed once
+rather than once per item. Lane 0 forms a bra record's tables; its aux
+records go in phases of `kernel_d2eri3.shared_slots(...)` records (enough
+for 64 items a phase, within 2,048 doubles of shared memory with the
+tables), one lane forming each pair's tower into its slot; between two
+barriers the lanes take the phase's items at the places #632's global
+stride gives them. Each lane forms the same values by the same statements
+and adds the same items in the same order, so it is **bitwise** the
+per-item form, interpreted, for every class of the ladder and for
+contracted cells at several warp widths with a partial last phase
+(`test_kernel_d2_df_ladder.py`). A lane keeps `U`, the six operated
+factors, the aux tables and the Boys array: stand-alone nvcc 13.0,
+`sm_86`, (ff|i) 18,880 -> 9,896 B of stack and 10,624 B of shared; (dd|f)
+9,232 -> 4,416 B. **Its speed depends on the class.** Timed on the RX 9060
+XT (FreeBreakfast#1265, compact tables both ways, the median of 15 runs,
+every class against the per-item form): 0.80-0.92x at (dd|s..f) on CH2O
+cc-pVDZ / cc-pVDZ-JKFIT; on CH2O cc-pVTZ / cc-pVTZ-acCD-6-6, 0.80-1.01x
+for most classes from lP = 3 up, but 1.4-2.1x at lP <= 2 of (pf), (dd),
+(df) -- many short aux records a cell, where the phases' shared memory
+costs occupancy -- and 1.06-1.17x at (ff|s), (ff|f), (dd|i), (pf|i). The
+RTX 3080 is not timed. Compiled by nvcc and hipcc at (dd|f) and (ff|i);
+the caller picks the classes (FreeBreakfast#1265 takes it only where it
+was as fast).
 
 ### The generator
 
