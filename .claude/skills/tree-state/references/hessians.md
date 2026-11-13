@@ -140,6 +140,11 @@ pooled factors, not the tables). FreeBreakfast selects it past 8 KiB
 H₂O/STO-3G and cc-pVDZ (`slow`), against the host, 6 passed per card;
 worst 1.57e-16 (RTX 3080) and 2.30e-16 (RX 9060 XT) of the absolute twin,
 `d2v` on cc-pVDZ. Nothing above (dd) on a card, nothing measured; the low-stack `d2v` has not run on a card (clang 18's CUDA front end passed `d2v_22` / `d2v_33`, a proxy).
+The low-stack `d2v` has **opt-in COMPACT tables** (#1265, `compact=True`):
+`t <= i + j` stored, **bitwise** the dense low-stack form for every ordered
+class through (ff), interpreted; nvcc- and hipcc-compiled at (dd) and (ff);
+stand-alone `sm_86` `d2v_33` 17,216 -> 13,024 B; timed on the RX 9060 XT
+only, 0.98-1.08x the dense form (slower at (dd), (ff)).
 **The dipole and quadrupole Hessians are generated, interpreted and
 compiled by nvcc and hipcc, on no card** (`hessian.md`, "The dipole and
 quadrupole Hessians"): `Target.DIPOLE` and `QUADRUPOLE` join
@@ -415,6 +420,15 @@ read off a FreeBreakfast build: (ff|i) 22,560 -> 18,912 B, (df|i) 18,128
 -> 15,280 B; the rest at (ff|i) is mostly the per-lane tower `R` (680
 doubles) and `U`. FreeBreakfast selects it past 8 KiB
 (FreeBreakfast#1263); not run on a card here, not timed.
+**A WARP-SHARED TOWER, opt-in** (#1265, `shared=True`, the low-stack form
+only): bra tables and `R` in shared memory, formed once per bra record /
+record pair (phases of `shared_slots` aux records), the lanes on the same
+items in the same order as #632's mapping, so **bitwise** the per-item form
+for every ladder class and contracted cells, interpreted; nvcc- and
+hipcc-compiled at (dd|f) and (ff|i); stand-alone `sm_86` (ff|i) 18,880 ->
+9,896 B. **Timed on the RX 9060 XT only** (FreeBreakfast#1265): faster or
+level from lP = 3 up and at cc-pVDZ/JKFIT's (dd|.), 1.4-2.1x slower at
+lP <= 2 of (pf), (dd), (df) with contracted aux; RTX 3080 not timed.
 **Both DF Hessians have HGP twins, interpreted through L = 4 and
 compiled by nvcc and hipcc for s and p, on no card** (`hessian.md`, "The
 DF Hessians on HGP"): `spec.HESSIAN_OFF_NATIVE` = `{metric.hgp, eri3.hgp}`

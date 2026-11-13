@@ -125,6 +125,28 @@ Read off a FreeBreakfast build (`sm_86`, nvcc 13.0, device-linked):
 9,360 B. What is left at (ff|i) is mostly the per-lane tower `R` (680
 doubles) and `U` (165), which this form keeps.
 
+THE WARP-SHARED TOWER (#1265), opt-in (`shared=True`, the low-stack form
+only): the bra tables and `R` move into SHARED memory, formed once instead
+of once per item. Per bra record lane 0 forms the tables; the aux records
+go in PHASES of `shared_slots(...)` records (enough for `SHARED_ITEMS` = 64
+items a phase, within `SHARED_DOUBLES` = 2,048 doubles with the tables),
+each lane of the phase forming one pair's tower into its slot of `R`;
+then, between two `Barrier`s, the lanes take the phase's items at exactly
+the places #632's global stride gives them (`_shared_pairs`). Each lane
+forms the same values by the same statements and adds the same items in
+the same order, so the form is BITWISE the per-item one
+(test/test_kernel_d2_df_ladder.py: all 70 ladder classes, and contracted
+cells at several warp widths with a partial last phase). A lane keeps `U`,
+the six operated factors, the aux tables and the Boys array: standalone
+nvcc 13.0, `sm_86`, (ff|i) 18,880 -> 9,896 B of stack (10,624 B of shared),
+(dd|f) 9,232 -> 4,416 B. ITS SPEED depends on the class: on the RX 9060 XT
+(compact tables both ways, median of 15) it is 0.80-0.92x the per-item
+form's time at (dd|s..f) on CH2O cc-pVDZ / cc-pVDZ-JKFIT, and on CH2O
+cc-pVTZ / cc-pVTZ-acCD-6-6 0.80-1.01x for most classes from lP = 3 up but
+1.4-2.1x at lP <= 2 of (pf), (dd), (df), where a cell has many short aux
+records and the phases' shared memory costs occupancy. The caller picks
+the classes (FreeBreakfast's tools/emit/lowstack.py).
+
 A builder: vendor-neutral IR. It imports neither `ao/` nor
 `hessian.host_eri3` (its witness) nor the interpreter nor `reference/`.
 """
@@ -160,6 +182,7 @@ from felizjueves.hessian.kernel_h1e import (
 from felizjueves.ir import (
     Assign,
     AtomicAdd,
+    Barrier,
     Call,
     Decl,
     Expr,
@@ -175,6 +198,7 @@ from felizjueves.ir import (
     Note,
     Param,
     Scalar,
+    Space,
     Stmt,
     Var,
     WarpReduce,
@@ -196,6 +220,7 @@ __all__ = [
     "ACCUMULATORS",
     "LOWSTACK_MIN_L",
     "build_d2eri3_kernel",
+    "shared_slots",
     "d2eri3_lowstack",
     "d2eri3_name",
     "d2eri3_plan",
@@ -290,7 +315,8 @@ def _density_name(ops: Ops, q: int, n: int) -> str:
 def build_d2eri3_kernel(cls: Spec | tuple[int, int, int], *,
                         name: str | None = None,
                         lowstack: bool | None = None,
-                        compact: bool = False) -> Kernel:
+                        compact: bool = False,
+                        shared: bool = False) -> Kernel:
     """The three-center Hessian kernel of one class (module docstring).
 
     `cls` is a d2 `Target.ERI3` `Spec` or `(la, lb, lP)`. `lowstack` picks
@@ -298,15 +324,19 @@ def build_d2eri3_kernel(cls: Spec | tuple[int, int, int], *,
     LOW-STACK FORM), `True` / `False` force it. The name, parameters,
     launch and `H` contract are the same in both. `compact=True` stores
     the low-stack form's bra tables COMPACT (#1263, module docstring);
-    the unrolled form refuses it."""
+    the unrolled form refuses it. `shared=True` forms the bra tables and
+    the tower once per record pair in SHARED memory (#1265, module
+    docstring, THE WARP-SHARED TOWER); the unrolled form refuses it too."""
     la, lb, lP = _class(cls)
     if lowstack is None:
         lowstack = d2eri3_lowstack((la, lb, lP))
-    if compact and not lowstack:
-        raise ValueError(f"{d2eri3_name((la, lb, lP))}: compact tables are "
-                         "the low-stack form's alone")
+    for flag, what in ((compact, "compact tables"),
+                       (shared, "the warp-shared tower")):
+        if flag and not lowstack:
+            raise ValueError(f"{d2eri3_name((la, lb, lP))}: {what} are "
+                             "the low-stack form's alone")
     if lowstack:
-        return _build_lowstack((la, lb, lP), name, compact)
+        return _build_lowstack((la, lb, lP), name, compact, shared)
     Lab = la + lb
     dag, order = d2eri3_plan((la, lb, lP))
     fP = ef.center_fragment(lP)
@@ -563,10 +593,12 @@ def _q_name(x: str, k: int, y: str, l: int) -> str:  # noqa: E741
 
 
 def _build_lowstack(am: tuple[int, int, int], name: str | None,
-                    compact: bool = False) -> Kernel:
+                    compact: bool = False, shared: bool = False) -> Kernel:
     """`build_d2eri3_kernel`'s kernel with no density and no weight held
     (module docstring, THE LOW-STACK FORM): the same parameters, launch and
-    `H` contract. `compact` stores the bra tables compact (#1263)."""
+    `H` contract. `compact` stores the bra tables compact (#1263); `shared`
+    forms them and the tower once per record pair in shared memory
+    (#1265)."""
     la, lb, lP = am
     Lab = la + lb
     L2 = Lab + lP + 2  # the tower's order
@@ -592,6 +624,9 @@ def _build_lowstack(am: tuple[int, int, int], name: str | None,
     lb_t, L_t = lb + 2, Lab + 4  # the bra record's tables
     width = Lab + 3  # one axis's operated factor, t <= a_d + b_d + 2
     contracted = contractions(la, lb)
+    n_r = len(hermite_targets(L2))
+    n_slot = (shared_slots(len(ef.cartesians(lP)) * len(ef.cartesians(la)),
+                           n_r, 3 * n_tab) if shared else 1)
 
     def m_at(i: Expr, j: Expr) -> Index:
         return Index("M", (i, j, _iadd(Var("op"), Var("rq"))))
@@ -599,8 +634,10 @@ def _build_lowstack(am: tuple[int, int, int], name: str | None,
     def per_q(q: tuple[Expr, Expr, Expr]) -> tuple[Stmt, ...]:
         def u_of(t: tuple[Expr, Expr, Expr]) -> tuple[Stmt, ...]:
             def r_at(tau: tuple[Expr, Expr, Expr]) -> Expr:
-                return Index(R_ARRAY, (ef.hermite_index(tuple(
-                    _iadd(t[d], tau[d]) for d in range(3))),))
+                h = ef.hermite_index(tuple(_iadd(t[d], tau[d])
+                                           for d in range(3)))
+                return Index(R_ARRAY, (_iadd(Var(R_SLOT), h) if shared
+                                       else h,))
             return (*ef.rolled_center_sum(lP, q, r_at, "u", tag="c",
                                           arrays=AUX_TABLES),
                     Assign(Index(U_ARRAY, (ef.hermite_index(t),)), Var("u")))
@@ -656,8 +693,8 @@ def _build_lowstack(am: tuple[int, int, int], name: str | None,
     aux_binds: dict[str, Expr] = {n: Var(n) for n in AUX_TABLES}
     if ef.HALF_INV_ZETA in fP.binds:
         aux_binds[ef.HALF_INV_ZETA] = _c(Fn.DIV, Lit(0.5), Var("aq"))
-    ket_body: tuple[Stmt, ...] = (
-        Decl("aq", Scalar.F64, init=Index("alpha", (ik,))),
+    aq = Decl("aq", Scalar.F64, init=Index("alpha", (ik,)))
+    pair_tower: tuple[Stmt, ...] = (
         *(Decl(nm, Scalar.F64, init=_c(Fn.SUB, Var(f"P{d}"),
                                        Index("A", (ik, Lit(d)))))
           for d, nm in enumerate(PQ_PARAMS)),
@@ -668,15 +705,20 @@ def _build_lowstack(am: tuple[int, int, int], name: str | None,
              f"{lP},0) at L + 2 = {L2}, the targets no U reads dropped, each "
              "live one stored into R as it forms"),
         *tw,
+    )
+    aux_tables: tuple[Stmt, ...] = (
         Note("the aux record's single-center E, per axis: "
              "e_fragment.center_tables_fragment, inlined"),
         *(Decl(n, Scalar.F64, (Lit(ef.center_table_extent(lP)),))
           for n in AUX_TABLES),
         Inline(fP, aux_binds),
         Decl("w", Scalar.F64, init=_mul(Var("sb"), Index(S_AUX, (ik,)))),
+    )
+    item: tuple[Stmt, ...] = (
         *_cartesian_of("q", lP, Var(ITEM_Q), ("qx", "qy", "qz")),
         *per_q((Var("qx"), Var("qy"), Var("qz"))),
     )
+    ket_body = (aq, *pair_tower, *aux_tables, *item)
     bra_binds: dict[str, Expr] = {ef.ZETA: Var("ze"),
                                   **{n: Var(n) for n in ef.AXIS_ARRAYS}}
     if ef.HALF_INV_ZETA in fB.binds:
@@ -684,18 +726,26 @@ def _build_lowstack(am: tuple[int, int, int], name: str | None,
     for d in range(3):
         bra_binds[Factor.pa(d).name_in_kernel] = Index("XPA", (ib, Lit(d)))
         bra_binds[Factor.pb(d).name_in_kernel] = Index("XPB", (ib, Lit(d)))
-    bra_body: tuple[Stmt, ...] = (
+    bra_head: tuple[Stmt, ...] = (
         Decl("ze", Scalar.F64, init=Index("zeta_ab", (ib,))),
         *(Decl(f"P{d}", Scalar.F64, init=Index("P", (ib, Lit(d))))
           for d in range(3)),
+    )
+    bra_weights: tuple[Stmt, ...] = (
         Decl("sb", Scalar.F64, init=Index("s_ab", (ib,))),
         Decl("ea2", Scalar.F64, init=_mul(Lit(2.0), Index("ea_bra", (ib,)))),
         Decl("eb2", Scalar.F64, init=_mul(Lit(2.0), Index("eb_ket", (ib,)))),
-        Note(f"the undressed per-axis E^{{ij}}_t, i <= {la + 2}, j <= "
-             f"{lb + 2}: two indices above the class on each side, for the "
-             "derivative rule applied twice"),
-        *(Decl(n, Scalar.F64, (Lit(n_tab),)) for n in ef.AXIS_ARRAYS),
-        Inline(fB, bra_binds),
+    )
+    tables_note = Note(f"the undressed per-axis E^{{ij}}_t, i <= {la + 2}, "
+                       f"j <= {lb + 2}: two indices above the class on each "
+                       "side, for the derivative rule applied twice")
+    table_decls = tuple(
+        Decl(n, Scalar.F64, (Lit(n_tab),),
+             Space.SHARED if shared else Space.LOCAL)
+        for n in ef.AXIS_ARRAYS)
+    bra_body: tuple[Stmt, ...] = (
+        *bra_head, *bra_weights, tables_note,
+        *(() if shared else table_decls), Inline(fB, bra_binds),
     )
     atom = {"A": Var("aa"), "B": Var("ab"), "C": Var("ap")}
 
@@ -739,12 +789,22 @@ def _build_lowstack(am: tuple[int, int, int], name: str | None,
         Note(LOWSTACK_NOTE),
         *(Decl(q, Scalar.F64, init=Lit(0.0))
           for _, ups in contracted for _, q in ups),
-        *(Decl(n, Scalar.F64, (Lit(len(hermite_targets(x))),))
-          for n, x in ((R_ARRAY, L2), (U_ARRAY, Lab + 2))),
+        *(Decl(n, Scalar.F64, (Lit(k * len(hermite_targets(x))),),
+               Space.SHARED if shared and n == R_ARRAY else Space.LOCAL)
+          for n, x, k in ((R_ARRAY, L2, n_slot), (U_ARRAY, Lab + 2, 1))),
         *(Decl(f_array(op), Scalar.F64, (Lit(3 * width),)) for op in OPS),
-        Note(ITEM_NOTE),
-        *_items(len(ef.cartesians(lP)), len(ef.cartesians(la)),
-                (*bra_body, *ket_body)),
+        *((Note(SHARED_NOTE), *table_decls,
+           *_shared_pairs(len(ef.cartesians(lP)), len(ef.cartesians(la)),
+                          n_slot, n_r,
+                          (bra_head[0], tables_note, Inline(fB, bra_binds)),
+                          (*bra_head, aq, *_slotted(pair_tower)),
+                          (*bra_weights,
+                           *((aq,) if ef.HALF_INV_ZETA in fP.binds else ()),
+                           *aux_tables), item))
+          if shared else
+          (Note(ITEM_NOTE),
+           *_items(len(ef.cartesians(lP)), len(ef.cartesians(la)),
+                   (*bra_body, *ket_body)))),
         *_reduced([q for _, ups in contracted for _, q in ups]),
         *signed,
         If(_c(Fn.LT, Call(Fn.THREAD_Y), Lit(1)), tuple(scatter)),
@@ -832,6 +892,104 @@ def _items(n_q: int, n_a: int, body: tuple[Stmt, ...]) -> tuple[Stmt, ...]:
                                            Lit(n_q * n_a))),
         For(ITEM, Call(Fn.THREAD_Y), Var("n_it"), Call(Fn.BLOCK_DIM_Y),
             (*decode, *body)),
+    )
+
+
+R_SLOT = "r_off"  # the start of a record pair's slot in the shared R
+SHARED_ITEMS = 64  # the items a phase aims at: two warps of 32 lanes
+SHARED_DOUBLES = 2048  # the shared budget a warp: 16 KiB
+
+
+def shared_slots(n_items: int, n_r: int, n_tables: int) -> int:
+    """THE WARP-SHARED TOWER's slots (#1265): how many aux records of one
+    bra record share a phase, each its own `R` (`n_r` doubles) in shared
+    memory beside the bra tables (`n_tables`). Enough that a phase has
+    `SHARED_ITEMS` items (`n_items` a pair), within `SHARED_DOUBLES`
+    doubles, and at least one."""
+    want = -(-SHARED_ITEMS // n_items)
+    room = (SHARED_DOUBLES - n_tables) // n_r
+    return max(1, min(want, room))
+
+
+def _slotted(body: tuple[Stmt, ...]) -> tuple[Stmt, ...]:
+    """The tower `body` with each store into `R` moved into its pair's
+    slot, `R[r_off + i]` (`store_targets` puts them at the top level)."""
+    out: list[Stmt] = []
+    for st in body:
+        if (isinstance(st, Assign) and isinstance(st.dst, Index)
+                and st.dst.array == R_ARRAY):
+            (i,) = st.dst.at
+            st = Assign(Index(R_ARRAY, (_iadd(Var(R_SLOT), i),)), st.value)
+        out.append(st)
+    return tuple(out)
+
+
+SHARED_NOTE = (
+    "WARP-SHARED TOWER (#1265): the bra tables (per bra record, by lane 0) "
+    "and the tower R (per record pair, a lane each, into its slot) are "
+    "formed once into SHARED memory, a phase of aux records at a time; "
+    "between two barriers the lanes take the phase's items (pair, aux row "
+    "q, bra row a) at the places #632's global stride gives them, so each "
+    "lane adds the same terms in the same order as the per-item form")
+
+
+def _shared_pairs(n_q: int, n_a: int, n_slot: int, n_r: int,
+                  tables: tuple[Stmt, ...], tower: tuple[Stmt, ...],
+                  per_item: tuple[Stmt, ...],
+                  item: tuple[Stmt, ...]) -> tuple[Stmt, ...]:
+    """The cell's record pairs `(ib, ik)`, `ik` inner, in PHASES of up to
+    `n_slot` aux records of one bra record (warp-uniform loops). Per bra
+    record lane 0 runs `tables` (the shared bra tables). Per phase the
+    lanes form the phase's towers, one pair each, into their `R` slots
+    (`r_off = g n_r`); a `Barrier`; then every lane takes the phase's
+    items `j = (g n_q + q) n_a + a` that #632's mapping (`_items`) hands
+    it -- global item `pr0 n_q n_a + j`, `pr0` the phase's first pair,
+    strided by the warp's width from the lane, so `j` from `(lane - pr0
+    n_q n_a) mod width` -- running `per_item` and `item`. A closing
+    `Barrier` keeps the next phase's writes behind every read of this
+    one."""
+    n_qa = n_q * n_a
+    lane, width = Call(Fn.THREAD_Y), Call(Fn.BLOCK_DIM_Y)
+    it = Var(ITEM)
+
+    def mod(x: Expr, n: Expr) -> Expr:
+        return _c(Fn.SUB, x, _mul(_c(Fn.DIV, x, n), n))
+
+    def slot(g: Expr) -> tuple[Stmt, ...]:
+        return (Decl(KET, Scalar.I32, init=_iadd(Var("kb"), g)),
+                Decl(R_SLOT, Scalar.I32, init=_mul(g, Lit(n_r))))
+
+    phase: tuple[Stmt, ...] = (
+        Decl("n_g", Scalar.I32, init=_c(Fn.SUB, Var("p1"), Var("kb"))),
+        If(_c(Fn.LT, Lit(n_slot), Var("n_g")),
+           (Assign(Var("n_g"), Lit(n_slot)),)),
+        For("tw_g", lane, Var("n_g"), width, (*slot(Var("tw_g")), *tower)),
+        Barrier(),
+        Decl("it_p", Scalar.I32, init=_mul(_iadd(
+            _mul(_c(Fn.SUB, Var(BRA), Var("b0")), Var("n_p")),
+            _c(Fn.SUB, Var("kb"), Var("p0"))), Lit(n_qa))),
+        Decl("it_0", Scalar.I32, init=mod(_c(Fn.SUB, _iadd(lane, width),
+                                              mod(Var("it_p"), width)),
+                                          width)),
+        For(ITEM, Var("it_0"), _mul(Var("n_g"), Lit(n_qa)), width, (
+            Decl("it_g", Scalar.I32, init=_c(Fn.DIV, it, Lit(n_qa))),
+            Decl("it_j", Scalar.I32, init=_c(Fn.SUB, it, _mul(
+                Var("it_g"), Lit(n_qa)))),
+            Decl(ITEM_Q, Scalar.I32, init=_c(Fn.DIV, Var("it_j"), Lit(n_a))),
+            Decl(ITEM_A, Scalar.I32, init=_c(Fn.SUB, Var("it_j"), _mul(
+                Var(ITEM_Q), Lit(n_a)))),
+            *slot(Var("it_g")),
+            *per_item,
+            *item,
+        )),
+        Barrier(),
+    )
+    return (
+        Decl("n_p", Scalar.I32, init=_c(Fn.SUB, Var("p1"), Var("p0"))),
+        For(BRA, Var("b0"), Var("b1"), Lit(1), (
+            If(_c(Fn.LT, lane, Lit(1)), tables),
+            For("kb", Var("p0"), Var("p1"), Lit(n_slot), phase),
+        )),
     )
 
 

@@ -135,7 +135,7 @@ def run_ipmetric(aux, *, boys, classes: Iterable | None = None,
 def run_eri3(basis, aux, nuclei, Gam, *, boys,
              classes: Iterable | None = None, threads: int = 7,
              G: np.ndarray | None = None, lowstack: bool | None = None,
-             engine: Engine = Engine.MMD):
+             compact: bool = False, engine: Engine = Engine.MMD):
     if engine is Engine.HGP and lowstack is not None:
         raise ValueError("the HGP geri3 sibling has one form")
     want = None if classes is None else set(classes)
@@ -147,7 +147,8 @@ def run_eri3(basis, aux, nuclei, Gam, *, boys,
             continue
         grid, block = launch_shape(cls.n_cell, threads)
         kernel = (build_hgeri3_kernel(c) if engine is Engine.HGP
-                  else build_geri3_kernel(c, lowstack=lowstack))
+                  else build_geri3_kernel(c, lowstack=lowstack,
+                                          compact=compact))
         G = Interpreter(kernel,
                         launch=Launch(grid, block, 1), boys=boys).run(
             n_cell=cls.n_cell, n_bra_rec=cls.n_bra_rec,
@@ -175,12 +176,14 @@ def xeri3_arrays(cls: Eri3Class, basis, aux, nuclei,
 
 def run_xeri3(basis, aux, nuclei, *, boys, classes: Iterable | None = None,
               aux_shells: range | None = None, cells: Iterable | None = None,
-              threads: int = 7, X: np.ndarray | None = None):
+              threads: int = 7, X: np.ndarray | None = None,
+              compact: bool = False):
     """The uncontracted `xeri3` kernels over ONE AUX BLOCK: the aux shells
     `aux_shells` (a contiguous range, default all), so `X` is `[3, n_ao,
     n_ao, n_blk]` from `aux0 = aux.offsets[aux_shells.start]`. `cells`, if
     given, further restricts the launch to those `(i, j, n)` cells (basis
-    order, `i <= j`). `X` (default zeros) is passed in and returned."""
+    order, `i <= j`). `X` (default zeros) is passed in and returned;
+    `compact` is `build_xeri3_kernel`'s."""
     sh = range(len(aux.shells)) if aux_shells is None else aux_shells
     aux0 = aux.offsets[sh.start] if len(sh) else 0
     n_blk = sum(aux.shells[n].n_cart for n in sh)
@@ -197,7 +200,7 @@ def run_xeri3(basis, aux, nuclei, *, boys, classes: Iterable | None = None,
         if not keep:
             continue
         grid, block = launch_shape(len(keep), threads)
-        X = Interpreter(build_xeri3_kernel(c),
+        X = Interpreter(build_xeri3_kernel(c, compact=compact),
                         launch=Launch(grid, block, 1), boys=boys).run(
             n_cell=len(keep), n_bra_rec=cls.n_bra_rec,
             n_aux_rec=cls.n_aux_rec, n_ao=basis.n_ao, n_blk=n_blk,
@@ -235,7 +238,7 @@ def run_d2metric(aux, nuclei, W, *, boys, classes: Iterable | None = None,
 def run_d2eri3(basis, aux, nuclei, Gam, *, boys,
                classes: Iterable | None = None, lanes: int = 4,
                H: np.ndarray | None = None, lowstack: bool | None = None,
-               compact: bool = False,
+               compact: bool = False, shared: bool = False,
                engine: Engine = Engine.MMD, threads: int = 7):
     """The d2 `(mn|P)` kernels on `geri3`'s arrays, into `H[n_atom, 3,
     n_atom, 3]`, one warp of `lanes` per cell (`kernel_d2eri3.launch_shape`);
@@ -261,7 +264,7 @@ def run_d2eri3(basis, aux, nuclei, Gam, *, boys,
             grid, block = d2eri3_shape(cls.n_cell, lanes)
             launch = Launch(grid, block, lanes)
             kernel = build_d2eri3_kernel(c, lowstack=lowstack,
-                                         compact=compact)
+                                         compact=compact, shared=shared)
         H = Interpreter(kernel, launch=launch, boys=boys).run(
             n_cell=cls.n_cell, n_bra_rec=cls.n_bra_rec,
             n_aux_rec=cls.n_aux_rec, n_ao=basis.n_ao, n_aux=aux.n_ao,

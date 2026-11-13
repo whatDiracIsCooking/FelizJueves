@@ -147,6 +147,42 @@ def test_one_launch_over_the_class_is_the_host_gradient(cls) -> None:
     assert np.abs(G.sum(axis=0)).max() <= TOL * scale
 
 
+LADDER = [(a, b, p) for a in range(4) for b in range(a, 4) for p in range(7)]
+
+
+def _ladder_bases(cls):
+    """test_kernel_df_grad_ladder.py's: one primitive a shell, `la` at A,
+    `lb` at B, the aux shell at C."""
+    la, lb, lP = cls
+    sh = [Shell(lb, B, (1.1,), (1.0,)), Shell(la, A, (0.8,), (1.0,))]
+    return Basis(tuple(sh)), Basis((Shell(lP, C, (1.6,), (1.0,)),))
+
+
+@pytest.mark.parametrize("case", [
+    *(by_l((c, False), sum(c) + 1, id=_id(c)) for c in CLASSES),
+    *(by_l((c, True), sum(c) + 1, id=geri3_name(c) + "-ladder")
+      for c in LADDER if sum(c) > L_CAP)])
+def test_the_compact_low_stack_geri3_is_the_dense_one_bitwise(case) -> None:
+    """Compact bra tables (#1265, `kernel_geri3.bra_tables`) move only where
+    each entry lives, never a value or a sum's order: the two low-stack
+    forms agree BITWISE, every class to L = 4 on the contracted bases and
+    the ladder above it to (ff|i)."""
+    cls, ladder = case
+    basis, aux = _ladder_bases(cls) if ladder else (BASIS, AUX)
+    Gam = _gam(basis, aux)
+    dense, _ = run_eri3(basis, aux, NUCLEI, Gam, boys=boys, classes={cls},
+                        lowstack=True)
+    packed, ran = run_eri3(basis, aux, NUCLEI, Gam, boys=boys,
+                           classes={cls}, lowstack=True, compact=True)
+    assert ran == (cls,)
+    assert np.array_equal(dense, packed), geri3_name(cls)
+
+
+def test_compact_tables_are_the_low_stack_forms_alone() -> None:
+    with pytest.raises(ValueError, match="low-stack form's alone"):
+        build_geri3_kernel((0, 1, 1), lowstack=False, compact=True)
+
+
 @cache
 def _h2o():
     ts = manifest.three_center_set("h2o_sto3g_jkfit_3c")

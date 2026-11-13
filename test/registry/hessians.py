@@ -144,8 +144,12 @@ TESTS = {
         Classes("mmd", "eri3", 2),
     "test/test_emit_d2eri3.py::test_X_compiles_the_compact_unit":
         Classes("mmd", "eri3", 2),
+    "test/test_emit_d2eri3.py::test_X_compiles_the_warp_shared_unit":
+        Classes("mmd", "eri3", 2),
     "test/test_emit_hess_1e.py::test_X_compiles_the_low_stack_st_unit":
         Classes("mmd", "s", 2),
+    "test/test_emit_hess_1e.py::test_X_compiles_the_compact_d2v_unit":
+        Classes("mmd", "v", 2),
     "test/test_emit_hgp_hess_df.py::test_X_compiles_the_hgp_hessian_unit":
         Classes("hgp", "metric", 2),
     "test/test_emit_ip1e.py::test_X_compiles_the_ip1_unit":

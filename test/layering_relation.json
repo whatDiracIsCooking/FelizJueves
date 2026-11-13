@@ -1832,6 +1832,7 @@
   "gradient.kernel_geri3": [
    "eri.density_fit.kernel_metric",
    "gradient.kernel_g1e",
+   "gradient.kernel_gk",
    "gradient.kernel_gmetric",
    "ir",
    "mmd.e_fragment",
@@ -2223,6 +2224,7 @@
   ],
   "hessian.kernel_h1e": [
    "gradient.kernel_g1e",
+   "gradient.kernel_gk",
    "ir",
    "mmd.e_fragment",
    "mmd.recurrence",

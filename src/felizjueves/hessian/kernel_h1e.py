@@ -101,6 +101,14 @@ kernel above, its text unchanged byte for byte (`d2v_22`'s unrolled text
 pinned by digest in test/golden/hessian_digests.json); `lowstack=True` /
 `False` forces either form of `V` at any class.
 
+COMPACT `d2v` TABLES (#1265), opt-in (`compact=True`, the low-stack `d2v`
+only; every other form refuses it): the record head's tables hold only
+the reachable `E^{ij}_t`, `t <= i + j` (`kernel_gk.tables_fragment`, read
+by `operated_value` at `kernel_gk.compact_index`, `kernel_d2eri3`'s #1263
+move), 216 doubles a side at (ff) against 396. Only where an entry lives
+moves, so the two low-stack forms agree BITWISE (test/test_kernel_h1e.py).
+Standalone nvcc 13.0, `sm_86`: `d2v_33` 17,216 -> 13,024 B of stack.
+
 THE LOW-STACK `d2s` / `d2t` (#1263), opt-in (`lowstack=True`; the default
 stays the unrolled text above, byte for byte). `S` and `T` read only
 `E^{ij}_0`, so the record head keeps that column alone
@@ -133,6 +141,11 @@ from felizjueves.gradient.kernel_g1e import (
     record_head,
     weights,
 )
+from felizjueves.gradient.kernel_gk import (
+    compact_extent,
+    compact_index,
+    tables_fragment,
+)
 from felizjueves.ir import (
     Assign,
     AtomicAdd,
@@ -143,6 +156,7 @@ from felizjueves.ir import (
     For,
     If,
     Index,
+    Inline,
     Intent,
     Kernel,
     Lit,
@@ -564,11 +578,12 @@ def _weights_array(la: int, lb: int) -> list[Stmt]:
     return w_fill
 
 
-def _v_lowstack_values(la: int, lb: int) -> list[Stmt]:
+def _v_lowstack_values(la: int, lb: int, index: Callable[
+        [Expr, Expr, Expr], Expr] | None = None) -> list[Stmt]:
     """The low-stack `d2v`'s weights, nucleus loop and nucleus atomics
     (module docstring, THE LOW-STACK `d2v`): the same `hXY_kl` and the
     same 45 nucleus atomics per nucleus as `_v_values`, regrouped by
-    row."""
+    row. `index` places the tables' entries (`operated_value`'s)."""
     L = la + lb
     lb_t, L_t = lb + 2, L + 4  # the record head's tables
     nb = len(ef.cartesians(lb))
@@ -594,7 +609,7 @@ def _v_lowstack_values(la: int, lb: int) -> list[Stmt]:
                 top = _iadd(_iadd(a[d], b[d]), Lit(len(op) + 1))
                 out.append(For("q_t", Lit(0), top, Lit(1), (
                     *operated_value(op, d, a[d], b[d], Var("q_t"), "o",
-                                     lb_t, L_t),
+                                     lb_t, L_t, index=index),
                     Assign(Index(f_array(op), (_iadd(Lit(d * width),
                                                       Var("q_t")),)),
                            Var("o")),
@@ -813,6 +828,21 @@ def _scatter() -> list[Stmt]:
     return out
 
 
+def _compact_head(head: list[Stmt], la_t: int, lb_t: int) -> list[Stmt]:
+    """`record_head`'s statements with the axis tables COMPACT
+    (`kernel_gk.tables_fragment`, `compact_extent` doubles a side): the
+    same binds, every value in its compact slot (#1265)."""
+    out: list[Stmt] = []
+    for st in head:
+        if isinstance(st, Decl) and st.name in ef.AXIS_ARRAYS:
+            st = Decl(st.name, st.type, (Lit(compact_extent(la_t, lb_t)),))
+        elif isinstance(st, Inline):
+            st = Inline(tables_fragment(la_t, lb_t, ef.AXIS_ARRAYS),
+                        dict(st.bindings))
+        out.append(st)
+    return out
+
+
 def h1e_lowstack(cls: Spec | tuple[Target, int, int]) -> bool:
     """THE SELECTION RULE (module docstring, THE LOW-STACK `d2v`): True for
     `V` when its Hermite order `la + lb + 2 >= LOWSTACK_MIN_LSUM`, where
@@ -824,7 +854,8 @@ def h1e_lowstack(cls: Spec | tuple[Target, int, int]) -> bool:
 
 def build_h1e_kernel(cls: Spec | tuple[Target, int, int], *,
                      name: str | None = None,
-                     lowstack: bool | None = None) -> Kernel:
+                     lowstack: bool | None = None,
+                     compact: bool = False) -> Kernel:
     """The hessian kernel of one one-electron pair class at d2.
 
     `cls` is a d2 `Target.S` / `T` / `V` `Spec` or `(target, la, lb)`.
@@ -832,10 +863,15 @@ def build_h1e_kernel(cls: Spec | tuple[Target, int, int], *,
     default) is `h1e_lowstack(cls)`, `True` / `False` force either. For
     `V` the low-stack form is the looped one; for `S` and `T` it is the
     unrolled text over `t = 0` tables (THE LOW-STACK `d2s` / `d2t`).
+    `compact=True` stores the low-stack `d2v`'s tables COMPACT, `t <= i +
+    j` only (#1265, THE LOW-STACK `d2v`); every other form refuses it.
     """
     target, la, lb = _class(cls)
     if lowstack is None:
         lowstack = h1e_lowstack(cls)
+    if compact and not (lowstack and target is Target.V):
+        raise ValueError(f"{h1e_name((target, la, lb))}: compact tables are "
+                         "the low-stack d2v's alone")
     lb_t = lb + 4 if target is Target.T else lb + 2
     # S and T read only E^{ij}_0: their low-stack form keeps that column
     # alone (THE LOW-STACK `d2s` / `d2t`), the rest of the text unchanged.
@@ -851,7 +887,13 @@ def build_h1e_kernel(cls: Spec | tuple[Target, int, int], *,
     elif target is Target.S:
         values = _s_values(la, lb, operated(E, pool, ""))
     elif lowstack:
-        values = _v_lowstack_values(la, lb)
+        index = None
+        if compact:
+            head = _compact_head(head, la + 2, lb_t)
+
+            def index(i: Expr, j: Expr, t: Expr) -> Expr:
+                return compact_index(i, j, t, lb_t)
+        values = _v_lowstack_values(la, lb, index)
     else:
         values = _v_values(la, lb, operated(E, pool, ""))
     what = {Target.S: "overlap", Target.T: "kinetic energy",

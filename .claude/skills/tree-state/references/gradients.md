@@ -352,6 +352,11 @@ L <= 4 `geri3` and L <= 9 `gmetric` class fits; at L = 5 the unrolled
 and (g|i), (h|h) 15,968 / 18,200 B. Every low-stack unit is at most
 13,792 B of `sm_86` stack (`geri3_336`, 1,916 B spill stores, 3.1 s) and
 12,816 B of `gfx1200` scratch, compiled in at most 5.2 s. Not timed.
+**COMPACT bra tables, opt-in** (#1265, `compact=True`, the low-stack
+`geri3` and any `xeri3`): `t <= i + j` stored, **bitwise** the dense form,
+interpreted through (ff|i); nvcc- and hipcc-compiled at (ff|i); stand-alone
+`sm_86` (ff|i) `geri3` 13,792 -> 11,600 B, `xeri3` 13,536 -> 11,280 B;
+timed on the RX 9060 XT only, 0.87-1.01x the dense form.
 Interpreted (`test_kernel_df_grad_ladder.py`, `slow` above L + 1 = 4):
 every class above L = 4 against `host_df` within 16 eps of the
 tower-twin split-centre scale (`test_kernel_metric.pq_tower` on `|Gam|`;

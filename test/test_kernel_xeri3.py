@@ -122,6 +122,22 @@ def _ladder_bases(cls):
     return Basis(tuple(sh)), Basis((Shell(lP, C, (1.6,), (1.0,)),))
 
 
+@pytest.mark.parametrize("case", [
+    *(by_l((c, False), sum(c) + 1, id=_id(c)) for c in CLASSES),
+    *(by_l((c, True), sum(c) + 1, id=_id(c) + "-ladder")
+      for c in LADDER if sum(c) > L_CAP)])
+def test_the_compact_xeri3_is_the_dense_one_bitwise(case) -> None:
+    """Compact bra tables (#1265) move only where each entry lives, never
+    a value or a sum's order: the two forms agree BITWISE."""
+    cls, ladder = case
+    basis, aux = _ladder_bases(cls) if ladder else (BASIS, AUX)
+    dense, _ = run_xeri3(basis, aux, NUCLEI, boys=boys, classes={cls})
+    packed, ran = run_xeri3(basis, aux, NUCLEI, boys=boys, classes={cls},
+                            compact=True)
+    assert ran == (cls,)
+    assert np.array_equal(dense, packed), _id(cls)
+
+
 @pytest.mark.parametrize("cls", [by_l(c, sum(c) + 1, id=_id(c))
                                  for c in LADDER if sum(c) >= 5])
 def test_every_ladder_class_above_l4_is_the_host_tensor(cls) -> None:

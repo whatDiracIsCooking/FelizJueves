@@ -691,6 +691,18 @@ compiled alone under a 300 s budget; an unrolled form is admissible at <=
 - The clock is NOT measured: #606 found its d0 low-stack forms 1.46x to
   4.58x slower, and nothing says these are not.
 
+**Compact tables (#1265)**, opt-in (`compact=True`, the low-stack `geri3`
+only; the unrolled form refuses it; `xeri3` takes it at any class): the bra
+tables keep only `t <= i + j` (`kernel_geri3.bra_tables`:
+`kernel_gk.tables_fragment`, read by `e_fragment.rolled_e_sum(...,
+index=kernel_gk.compact_index)`), 125 doubles a side at (ff|.) against
+225. Only an entry's slot moves, so both are **bitwise** their dense forms,
+interpreted (`test_kernel_geri3.py`, `test_kernel_xeri3.py`: every class to
+L = 4 on the contracted bases, the ladder above it to (ff|i)). Stand-alone
+nvcc 13.0, `sm_86`: (ff|i) `geri3` 13,792 -> 11,600 B, `xeri3` 13,536 ->
+11,280 B. Compiled by nvcc and hipcc at (ff|i). Timed on the RX 9060 XT (FreeBreakfast#1265, CH2O cc-pVTZ / cc-pVTZ-acCD-6-6, median of 15): `geri3` 0.87-1.01x, `xeri3` 0.95-0.99x the dense form's time at (df|h), (ff|s), (ff|f), (ff|i), bit-identical on the card.
+FreeBreakfast selects it past 8 KiB (FreeBreakfast#1265).
+
 **The generator.** `python -m felizjueves.emit --grad-df-l [LMAX]
 [--grad-df-aux-l AUXMAX]` (#613: the split cap of FreeBreakfast's
 `df_kernels.py`; LMAX the orbital `l`, 1 bare, 0..3; AUXMAX the aux `l`,
