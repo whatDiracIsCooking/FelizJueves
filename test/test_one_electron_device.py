@@ -295,8 +295,9 @@ def _rec_abs(cls, r, target: Target, nuclei) -> list[float]:
 
 
 def _place(M: np.ndarray, r, na: int, nb: int, vals) -> None:
-    """kernel_jab's scatter rule, ADDING: the block and its mirror; a
-    diagonal shell pair's lower triangle, mirrored once."""
+    """The block and its mirror, ADDING (the kernel's lower triangle, as
+    the driver mirrors it); a diagonal shell pair's lower triangle,
+    mirrored once."""
     oa, o_b = r.off_a, r.off_b
     for i in range(na):
         for j in range(nb):

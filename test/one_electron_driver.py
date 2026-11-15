@@ -20,9 +20,11 @@ by `emit/cuda.py` / `emit/hip.py` unchanged.
 ON THE SHARED RUNNER (#649, ported by #658): one runner per class's unit,
 one launch per pair class, one thread per record (`launch_shape`, `THREADS`
 lanes), the `n_ao x n_ao` matrix carried from class to class from zero.
-Every class ADDS (each kernel's scatter is an `AtomicAdd`, kernel_jab's
-rule), so several classes into one matrix is the kernels' own contract: an
-element is owned by exactly one shell pair. The spec names every argument
+Every class ADDS (each kernel's scatter is an `AtomicAdd` into the lower
+triangle only), so several classes into one matrix is the kernels' own
+contract: an element is owned by exactly one shell pair. After the last
+class, the host mirrors the lower triangle onto the upper, the step every
+caller of these kernels owes (`build_on_card`). The spec names every argument
 from the kernel's own parameter list (V's `Z` / `Cnuc` are the launch's),
 so the call cannot drift from the signature.
 
@@ -132,9 +134,11 @@ def build_on_card(launch: OneELaunch, target: Target, n_ao: int, backend: str,
                   tc: Toolchain, workdir: Path, *,
                   units: Mapping[str, Path] | None = None) -> np.ndarray:
     """`target`'s matrix of `launch` built on the card, `[run][n_ao, n_ao]`
-    (`RUNS` whole runs, each from zero). The caller holds the card (its
-    device fixture)."""
+    (`RUNS` whole runs, each from zero, each lower triangle mirrored onto
+    the upper). The caller holds the card (its device fixture)."""
     steps = one_e_steps(launch, target, n_ao)
     binaries = build_steps(tc, backend, steps, workdir, units=units)
-    return np.stack(run_chain(binaries, steps, carried(steps),
+    runs = np.stack(run_chain(binaries, steps, carried(steps),
                               np.zeros((n_ao, n_ao)), workdir, runs=RUNS))
+    lower = np.tril(runs)
+    return lower + np.swapaxes(np.tril(runs, -1), -1, -2)

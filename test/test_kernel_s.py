@@ -4,7 +4,7 @@ THE WITNESS is `one_electron.overlap.overlap_block` (#233), the host's `S` block
 summed `t = 0` column of the blocks `ao.pairs.primitive_pairs` dresses. The
 kernel's records are those pairs' `(zeta, P - A, P - B)` and the host's one
 scalar `s` per record (`ao.density.epair`, `pairs.dress`'s own `scale`), and its
-scatter is `kernel_jab`'s rule. Against it:
+scatter writes the lower triangle only (the caller mirrors it). Against it:
 
 - PER CLASS, every ordered pair class (ss) through (ff) on the tracked
   HF/cc-pVTZ basis (the one fixture whose shells reach f), in ONE launch
@@ -23,11 +23,11 @@ EXACT, NOT A TOLERANCE, against the block. Interpreted with the records in
 order, the kernel performs `overlap_block`'s multiplications in its
 association and its additions in its order (kernel_s's docstring names the
 two admitted departures and why neither changes a bit), so the reference is
-`overlap_block` placed by `kernel_jab`'s rule and the assertion is
+`overlap_block` placed into the lower triangle and the assertion is
 `np.array_equal`.
 
 AGAINST `overlap_matrix`, A STATED BOUND. `one_electron.one_electron.matrix` reads a
-diagonal shell pair's UPPER triangle; `kernel_jab`'s rule keeps the LOWER.
+diagonal shell pair's UPPER triangle; the kernel keeps the LOWER, mirrored.
 `<a_i|b_j>` and `<a_j|b_i>` are the same integral reached along different
 `E` recurrence paths, so they agree to rounding, not by construction. The
 bound is `8 eps |S|` per element (`eps = 2^-52`): a few roundings of the
@@ -140,17 +140,24 @@ def _launch(cls, basis, pairs, S, threads=5):
 
 
 def _host(basis, pairs, M):
-    """`overlap_block` placed into `M` by `kernel_jab`'s scatter rule."""
+    """`overlap_block` placed into `M`'s lower triangle, as the kernel writes it."""
     sh, off = basis.shells, basis.offsets
     for i, j in pairs:
         blk = overlap_block(sh[i], sh[j])
         for r in range(sh[i].n_cart):
             for c in range(sh[j].n_cart):
                 if i == j and c > r:
-                    continue  # diagonal: the lower triangle, mirrored
-                M[off[i] + r, off[j] + c] = blk[r][c]
-                M[off[j] + c, off[i] + r] = blk[r][c]
+                    continue  # diagonal: the lower triangle only
+                if off[i] >= off[j]:  # below, or a diagonal pair's
+                    M[off[i] + r, off[j] + c] = blk[r][c]
+                else:  # above the diagonal: the transpose
+                    M[off[j] + c, off[i] + r] = blk[r][c]
     return M
+
+
+def _mirror(M):
+    """The caller's mirror: the lower triangle onto the upper."""
+    return np.tril(M) + np.tril(M, -1).T
 
 
 def _owned(basis, pairs) -> np.ndarray:
@@ -158,7 +165,7 @@ def _owned(basis, pairs) -> np.ndarray:
     m = np.zeros((basis.n_ao, basis.n_ao), bool)
     for i, j in pairs:
         m[off[i]:off[i] + sh[i].n_cart, off[j]:off[j] + sh[j].n_cart] = True
-    return m | m.T
+    return np.tril(m | m.T)
 
 
 def _whole(basis) -> np.ndarray:
@@ -205,8 +212,8 @@ def test_one_launch_over_the_class_equals_the_host_block(cls):
     want = _host(basis, pairs, np.zeros((n, n)))
     assert np.array_equal(got, want)
     owned = _owned(basis, pairs)
-    assert np.all(got[~owned] == 0.0)  # exactly the pairs' blocks and mirrors
-    assert np.array_equal(got, got.T)
+    assert np.all(got[~owned] == 0.0)  # exactly the pairs' blocks, lower triangle
+    assert not np.triu(got, 1).any()  # nothing above the diagonal
 
 
 # ---------------------------------------------------------------------------
@@ -225,6 +232,7 @@ def test_the_whole_matrix(name):
     sh = basis.shells
     every = [(i, j) for i in range(len(sh)) for j in range(i, len(sh))]
     assert np.array_equal(S, _host(basis, every, np.zeros((n, n))))  # bitwise
+    S = _mirror(S)
     assert np.array_equal(S, S.T)
     R = np.array(overlap_matrix(basis))
     diag = _diag_mask(basis)
@@ -247,17 +255,17 @@ def test_a_diagonal_pair_adds_into_every_element_once_per_record(l):  # noqa: E7
     """Structurally: the diagonal branch's destinations are the block's
     `n^2` elements, each exactly once. Numerically: ONE record of a
     diagonal shell pair leaves `S` equal to that record's dressed `t = 0`
-    column, lower triangle mirrored, and a naive double count differs."""
+    column's lower triangle, and a naive double count differs."""
     k = build_s_kernel((l, l))
-    (scatter,) = [s for s in walk(k.body) if isinstance(s, If)
-                  and any(isinstance(t, AtomicAdd) for t in s.then)]
+    _, inner = [s for s in walk(k.body) if isinstance(s, If)
+                and any(isinstance(t, AtomicAdd) for t in s.then)]
     n = len(ef.cartesians(l))
     dsts = []
-    for s in scatter.orelse:
+    for s in inner.orelse:
         if isinstance(s, AtomicAdd):
             rows, cols = s.dst.at  # (oa + i, oa + j)
             dsts.append((rows.args[1].value, cols.args[1].value))
-    assert sorted(dsts) == [(i, j) for i in range(n) for j in range(n)]
+    assert sorted(dsts) == [(i, j) for i in range(n) for j in range(i + 1)]
 
     basis = _basis("hf_ccpvtz")
     sh, off = basis.shells, basis.offsets
@@ -273,7 +281,7 @@ def test_a_diagonal_pair_adds_into_every_element_once_per_record(l):  # noqa: E7
     o = off[i]
     for r in range(n):
         for c in range(r + 1):
-            want[o + r, o + c] = want[o + c, o + r] = pp.block[r * n + c][0]
+            want[o + r, o + c] = pp.block[r * n + c][0]
     assert np.array_equal(got, want)
     d = np.diag(got)[o:o + n]
     assert np.all(d != 0.0)
@@ -359,12 +367,13 @@ def test_every_write_to_S_is_an_atomic_add_with_its_reason(cls):
     adds = [s for s in stmts if isinstance(s, AtomicAdd)]
     assert {s.dst.array for s in adds} == {"S"}
     na, nb = len(ef.cartesians(cls[0])), len(ef.cartesians(cls[1]))
-    (scatter,) = [s for s in stmts if isinstance(s, If)
-                  and any(isinstance(t, AtomicAdd) for t in s.then)]
-    off = [s for s in scatter.then if isinstance(s, AtomicAdd)]
-    diag = [s for s in scatter.orelse if isinstance(s, AtomicAdd)]
-    assert len(off) == 2 * na * nb
-    assert len(diag) == (na * na if cls[0] == cls[1] else 0)
+    outer, inner = [s for s in stmts if isinstance(s, If)
+                    and any(isinstance(t, AtomicAdd) for t in s.then)]
+    below = [s for s in outer.then if isinstance(s, AtomicAdd)]
+    above = [s for s in inner.then if isinstance(s, AtomicAdd)]
+    diag = [s for s in inner.orelse if isinstance(s, AtomicAdd)]
+    assert len(below) == len(above) == na * nb  # one add per element
+    assert len(diag) == (na * (na + 1) // 2 if cls[0] == cls[1] else 0)
 
 
 def test_it_inlines_the_overlap_fragment_not_the_block():

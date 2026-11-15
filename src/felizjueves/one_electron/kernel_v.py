@@ -20,7 +20,8 @@ one pair class `(la, lb)`,
         acc[r] = acc[r] - Z_C u[r]
     v[r] = s[k] acc[r]
 
-then the scatter, `kernel_jab`'s rule unchanged (as in `kernel_s`).
+then the scatter into the lower triangle only, one add per element (as in
+`kernel_s`); the caller mirrors it onto the upper after the last launch.
 
 THE RECURRENCE IS IMPORTED, NOT REWRITTEN. The `[t]^(0)` statements are
 `recurrence.fundamental_prelude` and `recurrence.recurrence_body` over the
@@ -103,7 +104,7 @@ parameters, launch and output contract and no `E^{ab}` block:
             u = SUM_t E^{ab}_t R[t]   e_fragment.rolled_e_sum: loops over
                                       the reachable t, factored per axis
             acc[row] -= Z_C u
-    scatter s acc[row]                kernel_jab's rule, as loops
+    scatter s acc[row]                the lower triangle, as loops
 
 so the frame is the tables, `acc` and `R` (520 doubles at (ff), 4,160 B on
 sm_86, no spill), and the text is the recurrence plus a fixed set of
@@ -188,17 +189,25 @@ REC = "rec"  # the record index: one thread per primitive-pair record
 NUC = "c"  # the nucleus index, serial inside the record
 
 ATOMIC_REASON = (
-    "AtomicAdd: several primitive records of one shell pair, and both mirror "
-    "positions, add into the same V elements (kernel_jab's scatter rule)")
+    "AtomicAdd: several primitive records of one shell pair add into the same "
+    "V elements; one add per element, into the lower triangle only")
 
 ZEROED_V = (
     "PRECONDITION: V is zeroed by the caller before the first V launch of a "
-    "build; this kernel only adds")
+    "build; this kernel only adds, and only into the lower triangle (row >= "
+    "col): the caller mirrors it onto the upper after the last launch")
 
 _DIAGONAL = (
-    "diagonal shell pair (off_a == off_b): the lower triangle i >= j only, "
-    "each mirrored once -- kernel_jab's diagonal rule, so the diagonal is not "
-    "double-counted")
+    "diagonal shell pair (off_a == off_b): the block's lower triangle i >= j "
+    "only, no mirror")
+
+_BELOW = (
+    "off_a > off_b: the block (off_a + i, off_b + j) lies wholly below the "
+    "diagonal (two shells' AO ranges are disjoint)")
+
+_ABOVE = (
+    "off_a < off_b: the block lies wholly above the diagonal, so its "
+    "transpose (off_b + j, off_a + i) is written instead")
 
 
 def v_spec(la: int, lb: int) -> Spec:
@@ -359,39 +368,35 @@ def build_v_kernel(cls: Spec | tuple[int, int], *,
         values.append(Decl(f"v{r}", Scalar.F64, init=_c(
             Fn.MUL, Var("sk"), Var(f"acc{r}"))))
 
-    # --- the scatter: kernel_jab's rule ------------------------------------
+    # --- the scatter: the lower triangle only ------------------------------
     def at(row: Expr, col: Expr) -> Index:
         return Index("V", (row, col))
 
     def plus(base: str, k: int) -> Expr:
         return _c(Fn.ADD, Var(base), Lit(k))
 
-    off_diag: list[Stmt] = [Note(ATOMIC_REASON)]
+    below: list[Stmt] = [Note(_BELOW), Note(ATOMIC_REASON)]
+    above: list[Stmt] = [Note(_ABOVE), Note(ATOMIC_REASON)]
     for i in range(len(ef.cartesians(la))):
         for j in range(nb):
             vr = Var(f"v{i * nb + j}")
-            off_diag += [AtomicAdd(at(plus("oa", i), plus("ob", j)), vr),
-                         AtomicAdd(at(plus("ob", j), plus("oa", i)), vr)]
-    scatter: Stmt
-    differ = _c(Fn.ADD, _c(Fn.LT, Var("oa"), Var("ob")),
-                _c(Fn.LT, Var("ob"), Var("oa")))
+            below.append(AtomicAdd(at(plus("oa", i), plus("ob", j)), vr))
+            above.append(AtomicAdd(at(plus("ob", j), plus("oa", i)), vr))
+    diag: list[Stmt] = []
     if la == lb:
-        diag: list[Stmt] = [Note(_DIAGONAL), Note(ATOMIC_REASON)]
+        diag = [Note(_DIAGONAL), Note(ATOMIC_REASON)]
         for i in range(nb):
             for j in range(i + 1):
                 vr = Var(f"v{i * nb + j}")
                 diag.append(AtomicAdd(at(plus("oa", i), plus("oa", j)), vr))
-                if i != j:
-                    diag.append(AtomicAdd(at(plus("oa", j), plus("oa", i)), vr))
-        scatter = If(differ, tuple(off_diag), tuple(diag))
-    else:
-        scatter = If(differ, tuple(off_diag))
+    scatter = If(_c(Fn.LT, Var("ob"), Var("oa")), tuple(below), (
+        If(_c(Fn.LT, Var("oa"), Var("ob")), tuple(above), tuple(diag)),))
 
     per_rec = (*head,
                Note("the nuclei, serially inside the record (milestone 11's "
                     "mapping pin)"),
                nuclei, *values,
-               Note("scatter into V_mn and its mirror V_nm"), scatter)
+               Note("scatter into the lower triangle of V"), scatter)
     body: tuple[Stmt, ...] = (
         Note(f"nuclear attraction, class (la, lb) = ({la}, {lb}): V_ab = "
              "-SUM_C Z_C SUM_t E^{ab}_t [t]^(0)(P - C, sqrt(zeta)), the J "
@@ -524,7 +529,7 @@ def _build_lowstack(spec: Spec, name: str | None) -> Kernel:
     ]
     nuclei = For(NUC, Lit(0), Var("n_nuc"), Lit(1), tuple(per_nuc))
 
-    # --- the scatter: kernel_jab's rule, rolled over the block -------------
+    # --- the scatter: the lower triangle only, rolled over the block -------
     def at(row: Expr, col: Expr) -> Index:
         return Index("V", (row, col))
 
@@ -534,41 +539,32 @@ def _build_lowstack(spec: Spec, name: str | None) -> Kernel:
         return Decl("v", Scalar.F64, init=_c(Fn.MUL, Var("sk"), Index(
             ACC, (_c(Fn.ADD, _c(Fn.MUL, i, Lit(nb)), j),))))
 
-    off_diag: tuple[Stmt, ...] = (
-        Note(ATOMIC_REASON),
-        For("i", Lit(0), Lit(na), Lit(1), (For("j", Lit(0), Lit(nb), Lit(1), (
-            value(),
-            AtomicAdd(at(_c(Fn.ADD, Var("oa"), i), _c(Fn.ADD, Var("ob"), j)),
-                      Var("v")),
-            AtomicAdd(at(_c(Fn.ADD, Var("ob"), j), _c(Fn.ADD, Var("oa"), i)),
-                      Var("v")),
-        )),)),
-    )
-    differ = _c(Fn.ADD, _c(Fn.LT, Var("oa"), Var("ob")),
-                _c(Fn.LT, Var("ob"), Var("oa")))
-    scatter: Stmt
+    def block(note: str, row: Expr, col: Expr) -> tuple[Stmt, ...]:
+        return (Note(note), Note(ATOMIC_REASON),
+                For("i", Lit(0), Lit(na), Lit(1), (
+                    For("j", Lit(0), Lit(nb), Lit(1), (
+                        value(), AtomicAdd(at(row, col), Var("v")),)),)))
+
+    oa_i, ob_j = _c(Fn.ADD, Var("oa"), i), _c(Fn.ADD, Var("ob"), j)
+    diag: tuple[Stmt, ...] = ()
     if la == lb:
-        diag: tuple[Stmt, ...] = (
+        diag = (
             Note(_DIAGONAL), Note(ATOMIC_REASON),
             For("i", Lit(0), Lit(nb), Lit(1), (
                 For("j", Lit(0), _c(Fn.ADD, i, Lit(1)), Lit(1), (
                     value(),
-                    AtomicAdd(at(_c(Fn.ADD, Var("oa"), i),
-                                 _c(Fn.ADD, Var("oa"), j)), Var("v")),
-                    If(_c(Fn.LT, j, i), (
-                        AtomicAdd(at(_c(Fn.ADD, Var("oa"), j),
-                                     _c(Fn.ADD, Var("oa"), i)), Var("v")),)),
+                    AtomicAdd(at(oa_i, _c(Fn.ADD, Var("oa"), j)), Var("v")),
                 )),)),
         )
-        scatter = If(differ, off_diag, diag)
-    else:
-        scatter = If(differ, off_diag)
+    scatter = If(_c(Fn.LT, Var("ob"), Var("oa")), block(_BELOW, oa_i, ob_j), (
+        If(_c(Fn.LT, Var("oa"), Var("ob")), block(_ABOVE, ob_j, oa_i),
+           diag),))
 
     per_rec = (*head,
                Note("the nuclei, serially inside the record (milestone 11's "
                     "mapping pin)"),
                nuclei,
-               Note("V_ab = s acc, scattered into V_mn and its mirror V_nm: "
+               Note("V_ab = s acc, scattered into the lower triangle of V: "
                     "s = c_a c_b (pi/zeta)^{3/2} is the host's "
                     "(ao.pairs.dress); no prefactor and no K_AB is formed "
                     "here"),

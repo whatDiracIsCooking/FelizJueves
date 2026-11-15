@@ -5,7 +5,7 @@ fixed ket shift on the axis tables at `lb + 2`, dressed by `ao.pairs.dress`
 and summed over `primitive_pairs` order. The kernel's records are those
 pairs' `(zeta, P - A, P - B)`, the host's one scalar `s` per record
 (`ao.density.epair`, `pairs.dress`'s own `scale`) and the ket exponent `beta`
-(`eb_ket`), and its scatter is `kernel_jab`'s rule. Against it:
+(`eb_ket`), and its scatter writes the lower triangle only. Against it:
 
 - PER CLASS, every ordered pair class (ss) through (ff) on the tracked
   HF/cc-pVTZ basis (the one fixture whose shells reach f), in ONE launch
@@ -23,11 +23,11 @@ HF/cc-pVTZ's whole matrix) is `slow`, by test/tiers.py's cut.
 EXACT, NOT A TOLERANCE, against the block. Interpreted with the records in
 order, the kernel performs `kinetic_block`'s multiplications in its
 association and its additions in its order (kernel_t's docstring), so the
-reference is `kinetic_block` placed by `kernel_jab`'s rule and the
+reference is `kinetic_block` placed into the lower triangle and the
 assertion is `np.array_equal`.
 
 AGAINST `kinetic_matrix`, A STATED BOUND. `one_electron.one_electron.matrix` reads a
-diagonal shell pair's UPPER triangle; `kernel_jab`'s rule keeps the LOWER.
+diagonal shell pair's UPPER triangle; the kernel keeps the LOWER, mirrored.
 `<a_i|T|a_j>` and `<a_j|T|a_i>` are the same integral reached along
 different `E` paths and different shifts, so they agree to rounding, not by
 construction. `T`'s bracket is a signed sum (the `-2 beta^2` term against
@@ -146,17 +146,24 @@ def _launch(cls, basis, pairs, T, threads=5):
 
 
 def _host(basis, pairs, M):
-    """`kinetic_block` placed into `M` by `kernel_jab`'s scatter rule."""
+    """`kinetic_block` placed into `M`'s lower triangle, as the kernel writes it."""
     sh, off = basis.shells, basis.offsets
     for i, j in pairs:
         blk = kinetic_block(sh[i], sh[j])
         for r in range(sh[i].n_cart):
             for c in range(sh[j].n_cart):
                 if i == j and c > r:
-                    continue  # diagonal: the lower triangle, mirrored
-                M[off[i] + r, off[j] + c] = blk[r][c]
-                M[off[j] + c, off[i] + r] = blk[r][c]
+                    continue  # diagonal: the lower triangle only
+                if off[i] >= off[j]:  # below, or a diagonal pair's
+                    M[off[i] + r, off[j] + c] = blk[r][c]
+                else:  # above the diagonal: the transpose
+                    M[off[j] + c, off[i] + r] = blk[r][c]
     return M
+
+
+def _mirror(M):
+    """The caller's mirror: the lower triangle onto the upper."""
+    return np.tril(M) + np.tril(M, -1).T
 
 
 def _owned(basis, pairs) -> np.ndarray:
@@ -164,7 +171,7 @@ def _owned(basis, pairs) -> np.ndarray:
     m = np.zeros((basis.n_ao, basis.n_ao), bool)
     for i, j in pairs:
         m[off[i]:off[i] + sh[i].n_cart, off[j]:off[j] + sh[j].n_cart] = True
-    return m | m.T
+    return np.tril(m | m.T)
 
 
 def _whole(basis) -> np.ndarray:
@@ -201,8 +208,8 @@ def test_one_launch_over_the_class_equals_the_host_block(cls):
     want = _host(basis, pairs, np.zeros((n, n)))
     assert np.array_equal(got, want)  # bitwise
     owned = _owned(basis, pairs)
-    assert np.all(got[~owned] == 0.0)  # exactly the pairs' blocks and mirrors
-    assert np.array_equal(got, got.T)
+    assert np.all(got[~owned] == 0.0)  # exactly the pairs' blocks, lower triangle
+    assert not np.triu(got, 1).any()  # nothing above the diagonal
 
 
 # ---------------------------------------------------------------------------
@@ -221,6 +228,7 @@ def test_the_whole_matrix(name):
     sh, off = basis.shells, basis.offsets
     every = [(i, j) for i in range(len(sh)) for j in range(i, len(sh))]
     assert np.array_equal(T, _host(basis, every, np.zeros((n, n))))  # bitwise
+    T = _mirror(T)
     assert np.array_equal(T, T.T)
     R = np.array(kinetic_matrix(basis))
     diag = np.zeros((n, n), bool)
@@ -246,17 +254,17 @@ def test_the_whole_matrix(name):
                                          ids=str))
 def test_a_diagonal_pair_adds_into_every_element_once_per_record(l):  # noqa: E741
     """ONE record of a diagonal shell pair leaves `T` equal to that
-    record's dressed bracket, lower triangle mirrored."""
+    record's dressed bracket, lower triangle only."""
     k = build_t_kernel((l, l))
-    (scatter,) = [s for s in walk(k.body) if isinstance(s, If)
-                  and any(isinstance(t, AtomicAdd) for t in s.then)]
+    _, inner = [s for s in walk(k.body) if isinstance(s, If)
+                and any(isinstance(t, AtomicAdd) for t in s.then)]
     n = len(ef.cartesians(l))
     dsts = []
-    for s in scatter.orelse:
+    for s in inner.orelse:
         if isinstance(s, AtomicAdd):
             rows, cols = s.dst.at  # (oa + i, oa + j)
             dsts.append((rows.args[1].value, cols.args[1].value))
-    assert sorted(dsts) == [(i, j) for i in range(n) for j in range(n)]
+    assert sorted(dsts) == [(i, j) for i in range(n) for j in range(i + 1)]
 
     basis = _basis("hf_ccpvtz")
     sh, off = basis.shells, basis.offsets
@@ -271,7 +279,7 @@ def test_a_diagonal_pair_adds_into_every_element_once_per_record(l):  # noqa: E7
     o = off[i]
     for r in range(n):
         for c in range(r + 1):
-            want[o + r, o + c] = want[o + c, o + r] = blk[r][c]
+            want[o + r, o + c] = blk[r][c]
     assert np.array_equal(got, want)
     assert np.all(np.diag(got)[o:o + n] > 0.0)  # kinetic energy is positive
 
@@ -358,12 +366,13 @@ def test_every_write_to_T_is_an_atomic_add_with_its_reason(cls):
     adds = [s for s in stmts if isinstance(s, AtomicAdd)]
     assert {s.dst.array for s in adds} == {"T"}
     na, nb = len(ef.cartesians(cls[0])), len(ef.cartesians(cls[1]))
-    (scatter,) = [s for s in stmts if isinstance(s, If)
-                  and any(isinstance(t, AtomicAdd) for t in s.then)]
-    off = [s for s in scatter.then if isinstance(s, AtomicAdd)]
-    diag = [s for s in scatter.orelse if isinstance(s, AtomicAdd)]
-    assert len(off) == 2 * na * nb
-    assert len(diag) == (na * na if cls[0] == cls[1] else 0)
+    outer, inner = [s for s in stmts if isinstance(s, If)
+                    and any(isinstance(t, AtomicAdd) for t in s.then)]
+    below = [s for s in outer.then if isinstance(s, AtomicAdd)]
+    above = [s for s in inner.then if isinstance(s, AtomicAdd)]
+    diag = [s for s in inner.orelse if isinstance(s, AtomicAdd)]
+    assert len(below) == len(above) == na * nb  # one add per element
+    assert len(diag) == (na * (na + 1) // 2 if cls[0] == cls[1] else 0)
 
 
 def test_it_inlines_the_kinetic_fragment_and_binds_eb_from_eb_ket():
