@@ -14,12 +14,13 @@ pair `r = (a, b)`,
     K_ij = -2 eb^2 E^{i,j+2}_0 + eb (2j+1) E^{ij}_0 - 1/2 j(j-1) E^{i,j-2}_0
 
 with `KE` written by `e_fragment.kinetic_fragment(la, lb)` from the axis
-tables at `lb + 2`, and `v` added into the AO matrix by `kernel_jab`'s
-scatter rule, UNCHANGED (as in `kernel_s.py`):
+tables at `lb + 2`, and `v` added into the LOWER TRIANGLE of the AO matrix
+only, one add per element (as in `kernel_s.py`, whose docstring has why);
+the caller mirrors it onto the upper after the last launch:
 
-    off-diagonal (off_a != off_b):  T[off_a+i, off_b+j] += v;  T[off_b+j, off_a+i] += v
-    diagonal     (off_a == off_b):  only i >= j;  T[off_a+i, off_a+j] += v,
-                                    and for i != j also T[off_a+j, off_a+i] += v
+    off_a > off_b:   T[off_a+i, off_b+j] += v
+    off_a < off_b:   T[off_b+j, off_a+i] += v
+    off_a == off_b:  only i >= j;  T[off_a+i, off_a+j] += v
 
 THE PARAMETER BLOCK: `kernel_s`'s, plus the ket exponent per record.
 
@@ -61,8 +62,8 @@ WHY `==` IN THE INTERPRETER. `one_electron.kinetic.kinetic_block` forms, per rec
 that association (its axis entries are `mmd.hermite.e_axis`'s, raised in
 its order -- test/test_e_fragment.py), `v = sk * KE[r]` is `scale * x`, and
 the kernel's `+=` chain starts from the caller's zeroed `T` -- the same
-`0.0 + x` as the host's. So the reference is `kinetic_block` placed by
-`kernel_jab`'s rule, held bitwise (test/test_kernel_t.py); against
+`0.0 + x` as the host's. So the reference is `kinetic_block` placed into
+the lower triangle, held bitwise (test/test_kernel_t.py); against
 `kinetic_matrix`, which reads a diagonal pair's UPPER triangle, a stated
 bound (`kernel_s.py` says why).
 
@@ -110,17 +111,25 @@ __all__ = [
 REC = "rec"  # the record index: one thread per primitive-pair record
 
 ATOMIC_REASON = (
-    "AtomicAdd: several primitive records of one shell pair, and both mirror "
-    "positions, add into the same T elements (kernel_jab's scatter rule)")
+    "AtomicAdd: several primitive records of one shell pair add into the same "
+    "T elements; one add per element, into the lower triangle only")
 
 ZEROED_T = (
     "PRECONDITION: T is zeroed by the caller before the first T launch of a "
-    "build; this kernel only adds")
+    "build; this kernel only adds, and only into the lower triangle (row >= "
+    "col): the caller mirrors it onto the upper after the last launch")
 
 _DIAGONAL = (
-    "diagonal shell pair (off_a == off_b): the lower triangle i >= j only, "
-    "each mirrored once -- kernel_jab's diagonal rule, so the diagonal is not "
-    "double-counted")
+    "diagonal shell pair (off_a == off_b): the block's lower triangle i >= j "
+    "only, no mirror")
+
+_BELOW = (
+    "off_a > off_b: the block (off_a + i, off_b + j) lies wholly below the "
+    "diagonal (two shells' AO ranges are disjoint)")
+
+_ABOVE = (
+    "off_a < off_b: the block lies wholly above the diagonal, so its "
+    "transpose (off_b + j, off_a + i) is written instead")
 
 
 def t_spec(la: int, lb: int) -> Spec:
@@ -215,36 +224,32 @@ def build_t_kernel(cls: Spec | tuple[int, int], *,
         values.append(Decl(f"v{r}", Scalar.F64, init=_c(
             Fn.MUL, Var("sk"), Index(ef.KE_ARRAY, (Lit(r),)))))
 
-    # --- the scatter: kernel_jab's rule ------------------------------------
+    # --- the scatter: the lower triangle only ------------------------------
     def at(row: Expr, col: Expr) -> Index:
         return Index("T", (row, col))
 
     def plus(base: str, k: int) -> Expr:
         return _c(Fn.ADD, Var(base), Lit(k))
 
-    off_diag: list[Stmt] = [Note(ATOMIC_REASON)]
+    below: list[Stmt] = [Note(_BELOW), Note(ATOMIC_REASON)]
+    above: list[Stmt] = [Note(_ABOVE), Note(ATOMIC_REASON)]
     for i in range(len(ef.cartesians(la))):
         for j in range(nb):
             vr = Var(f"v{i * nb + j}")
-            off_diag += [AtomicAdd(at(plus("oa", i), plus("ob", j)), vr),
-                         AtomicAdd(at(plus("ob", j), plus("oa", i)), vr)]
-    scatter: Stmt
-    differ = _c(Fn.ADD, _c(Fn.LT, Var("oa"), Var("ob")),
-                _c(Fn.LT, Var("ob"), Var("oa")))
+            below.append(AtomicAdd(at(plus("oa", i), plus("ob", j)), vr))
+            above.append(AtomicAdd(at(plus("ob", j), plus("oa", i)), vr))
+    diag: list[Stmt] = []
     if la == lb:
-        diag: list[Stmt] = [Note(_DIAGONAL), Note(ATOMIC_REASON)]
+        diag = [Note(_DIAGONAL), Note(ATOMIC_REASON)]
         for i in range(nb):
             for j in range(i + 1):
                 vr = Var(f"v{i * nb + j}")
                 diag.append(AtomicAdd(at(plus("oa", i), plus("oa", j)), vr))
-                if i != j:
-                    diag.append(AtomicAdd(at(plus("oa", j), plus("oa", i)), vr))
-        scatter = If(differ, tuple(off_diag), tuple(diag))
-    else:
-        scatter = If(differ, tuple(off_diag))
+    scatter = If(_c(Fn.LT, Var("ob"), Var("oa")), tuple(below), (
+        If(_c(Fn.LT, Var("oa"), Var("ob")), tuple(above), tuple(diag)),))
 
     per_rec = (*head, *values,
-               Note("scatter into T_mn and its mirror T_nm"), scatter)
+               Note("scatter into the lower triangle of T"), scatter)
     body: tuple[Stmt, ...] = (
         Note(f"kinetic energy, class (la, lb) = ({la}, {lb}): T_ab by the "
              "fixed ket shift on the E axis tables read at lb + 2 "

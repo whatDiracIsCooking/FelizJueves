@@ -1,8 +1,8 @@
 """`kernel_v`: the nuclear-attraction kernel, `Target.V`, interpreted (#239).
 
 THE WITNESS is `one_electron.potential.potential_block` (#235) with
-`reference.pq.one_centre` injected, placed into the matrix by `kernel_jab`'s
-scatter rule (the diagonal shell pair's lower triangle, mirrored). The
+`reference.pq.one_centre` injected, placed into the matrix's lower triangle
+as the kernel writes it (the caller mirrors it onto the upper). The
 kernel's records are `ao.density.epair`'s `(P, zeta, s)` per primitive pair, plus
 `P - A` and `P - B`; its Boys function is `reference.boys.boys`, injected
 into the interpreter.
@@ -181,17 +181,24 @@ def _launch(cls, basis, pairs, nuclei, V, threads=5, lowstack=None):
 
 
 def _place(basis, pairs, M, block):
-    """`block(sa, sb)` placed into `M` by `kernel_jab`'s scatter rule."""
+    """`block(sa, sb)` placed into `M`'s lower triangle, as the kernel writes it."""
     sh, off = basis.shells, basis.offsets
     for i, j in pairs:
         blk = block(sh[i], sh[j])
         for r in range(sh[i].n_cart):
             for c in range(sh[j].n_cart):
                 if i == j and c > r:
-                    continue  # diagonal: the lower triangle, mirrored
-                M[off[i] + r, off[j] + c] = blk[r][c]
-                M[off[j] + c, off[i] + r] = blk[r][c]
+                    continue  # diagonal: the lower triangle only
+                if off[i] >= off[j]:  # below, or a diagonal pair's
+                    M[off[i] + r, off[j] + c] = blk[r][c]
+                else:  # above the diagonal: the transpose
+                    M[off[j] + c, off[i] + r] = blk[r][c]
     return M
+
+
+def _mirror(M):
+    """The caller's mirror: the lower triangle onto the upper."""
+    return np.tril(M) + np.tril(M, -1).T
 
 
 def _host(basis, pairs, nuclei):
@@ -227,7 +234,7 @@ def _owned(basis, pairs) -> np.ndarray:
     m = np.zeros((basis.n_ao, basis.n_ao), bool)
     for i, j in pairs:
         m[off[i]:off[i] + sh[i].n_cart, off[j]:off[j] + sh[j].n_cart] = True
-    return m | m.T
+    return np.tril(m | m.T)
 
 
 def _check(got, want, mag, label):
@@ -263,8 +270,8 @@ def test_one_launch_over_the_class_agrees_with_the_host_to_round_off(cls):
     mag = _magnitude(SYNTHETIC, pairs, NUCLEI)
     _check(got, want, mag, f"({cls[0]}{cls[1]})")
     owned = _owned(SYNTHETIC, pairs)
-    assert np.all(got[~owned] == 0.0)  # exactly the pairs' blocks and mirrors
-    assert np.array_equal(got, got.T)  # the scatter mirrors the same value
+    assert np.all(got[~owned] == 0.0)  # exactly the pairs' blocks, lower triangle
+    assert not np.triu(got, 1).any()  # nothing above the diagonal
 
 
 def test_dd_builds_and_interprets_the_full_block_and_the_L4_tower():
@@ -284,7 +291,7 @@ def test_dd_builds_and_interprets_the_full_block_and_the_L4_tower():
     got = _launch((2, 2), basis, [(0, 1)], nuc, np.zeros((12, 12)), threads=1)
     _check(got, _host(basis, [(0, 1)], nuc),
            _magnitude(basis, [(0, 1)], nuc), "(dd), one record")
-    assert np.count_nonzero(got) == 2 * 36
+    assert np.count_nonzero(got) == 36  # the lower triangle only
 
 
 def test_the_whole_matrix_on_h2o_sto3g():
@@ -299,6 +306,7 @@ def test_the_whole_matrix_on_h2o_sto3g():
     every = [(i, j) for i in range(len(sh)) for j in range(i, len(sh))]
     _check(V, _host(basis, every, nuclei), _magnitude(basis, every, nuclei),
            "H2O/STO-3G")
+    V = _mirror(V)
     assert np.array_equal(V, V.T)
     assert np.all(np.diag(V) < 0.0)  # positive nuclei attract
 
@@ -472,12 +480,13 @@ def test_every_write_to_V_is_an_atomic_add_with_its_reason(cls):
     adds = [s for s in stmts if isinstance(s, AtomicAdd)]
     assert {s.dst.array for s in adds} == {"V"}
     na, nb = len(ef.cartesians(cls[0])), len(ef.cartesians(cls[1]))
-    (scatter,) = [s for s in stmts if isinstance(s, If)
-                  and any(isinstance(t, AtomicAdd) for t in s.then)]
-    off = [s for s in scatter.then if isinstance(s, AtomicAdd)]
-    diag = [s for s in scatter.orelse if isinstance(s, AtomicAdd)]
-    assert len(off) == 2 * na * nb
-    assert len(diag) == (na * na if cls[0] == cls[1] else 0)
+    outer, inner = [s for s in stmts if isinstance(s, If)
+                    and any(isinstance(t, AtomicAdd) for t in s.then)]
+    below = [s for s in outer.then if isinstance(s, AtomicAdd)]
+    above = [s for s in inner.then if isinstance(s, AtomicAdd)]
+    diag = [s for s in inner.orelse if isinstance(s, AtomicAdd)]
+    assert len(below) == len(above) == na * nb  # one add per element
+    assert len(diag) == (na * (na + 1) // 2 if cls[0] == cls[1] else 0)
 
 
 # ---------------------------------------------------------------------------
@@ -651,7 +660,7 @@ def test_the_other_form_agrees_with_the_host_to_round_off(cls):
     mag = _magnitude(SYNTHETIC, pairs, NUCLEI)
     _check(got, want, mag, f"({cls[0]}{cls[1]}) other form")
     assert np.all(got[~_owned(SYNTHETIC, pairs)] == 0.0)
-    assert np.array_equal(got, got.T)
+    assert not np.triu(got, 1).any()  # nothing above the diagonal
 
 
 @pytest.mark.parametrize("cls", [_cls_param(c) for c in CLASSES])

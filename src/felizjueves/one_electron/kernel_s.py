@@ -12,14 +12,22 @@ pair class `(la, lb)` and per Cartesian pair `r = (i, j)`,
 
     v = s[k] * ((Ex_{a_x b_x 0} * Ey_{a_y b_y 0}) * Ez_{a_z b_z 0})
 
-added into the AO matrix by `kernel_jab`'s scatter rule, UNCHANGED:
+added into the LOWER TRIANGLE of the AO matrix only (row >= col), one add
+per element:
 
-    off-diagonal (off_a != off_b):  S[off_a+i, off_b+j] += v;  S[off_b+j, off_a+i] += v
-    diagonal     (off_a == off_b):  only i >= j;  S[off_a+i, off_a+j] += v,
-                                    and for i != j also S[off_a+j, off_a+i] += v
+    off_a > off_b:   S[off_a+i, off_b+j] += v
+    off_a < off_b:   S[off_b+j, off_a+i] += v    (the transpose: the block
+                                                  lies above the diagonal)
+    off_a == off_b:  only i >= j;  S[off_a+i, off_a+j] += v
 
-`S` is symmetric and that rule is already proved (test/test_kernel_jab.py);
-reusing it is what lets the interpreted kernel be bitwise `==` to the host.
+Two distinct shells' AO ranges are disjoint, so a whole off-diagonal block
+lands in one triangle; the branch is per record, not per element. Classes
+are ordered `la <= lb`, which does NOT order the offsets, hence both
+off-diagonal branches. THE CALLER MIRRORS the lower triangle onto the upper
+once, after the last launch of a build: half the atomics of `kernel_jab`'s
+both-positions rule, and an `S` that is bitwise symmetric by construction
+rather than by two atomic orders agreeing. The lower triangle is exactly what
+`kernel_jab`'s rule writes there, so the mirrored matrix is that rule's.
 
 THE PARAMETER BLOCK:
 
@@ -80,8 +88,8 @@ The diagonal rule keeps the LOWER triangle of a diagonal shell pair's block
 reads the
 UPPER. For a symmetric operator the two agree to rounding, not necessarily
 bitwise -- `E^{ij}` and `E^{ji}` are raised along different paths -- so the
-bitwise witness is `overlap_block` with `kernel_jab`'s rule applied, and
-`overlap_matrix` is held to a stated tolerance (test/test_kernel_s.py).
+bitwise witness is `overlap_block` placed into the lower triangle, and,
+mirrored, `overlap_matrix` held to a stated tolerance (test/test_kernel_s.py).
 
 On a card the atomics' order differs run to run; that tolerance is a device
 test's, not this module's.
@@ -144,17 +152,25 @@ def pb_name(d: int) -> str:
 
 
 ATOMIC_REASON = (
-    "AtomicAdd: several primitive records of one shell pair, and both mirror "
-    "positions, add into the same S elements (kernel_jab's scatter rule)")
+    "AtomicAdd: several primitive records of one shell pair add into the same "
+    "S elements; one add per element, into the lower triangle only")
 
 ZEROED_S = (
     "PRECONDITION: S is zeroed by the caller before the first S launch of a "
-    "build; this kernel only adds")
+    "build; this kernel only adds, and only into the lower triangle (row >= "
+    "col): the caller mirrors it onto the upper after the last launch")
 
 _DIAGONAL = (
-    "diagonal shell pair (off_a == off_b): the lower triangle i >= j only, "
-    "each mirrored once -- kernel_jab's diagonal rule, so the diagonal is not "
-    "double-counted")
+    "diagonal shell pair (off_a == off_b): the block's lower triangle i >= j "
+    "only, no mirror")
+
+_BELOW = (
+    "off_a > off_b: the block (off_a + i, off_b + j) lies wholly below the "
+    "diagonal (two shells' AO ranges are disjoint)")
+
+_ABOVE = (
+    "off_a < off_b: the block lies wholly above the diagonal, so its "
+    "transpose (off_b + j, off_a + i) is written instead")
 
 
 def s_spec(la: int, lb: int) -> Spec:
@@ -257,36 +273,32 @@ def build_s_kernel(cls: Spec | tuple[int, int], *,
     rec = Var(REC)
     head, values = record_values(la, lb)
 
-    # --- the scatter: kernel_jab's rule ------------------------------------
+    # --- the scatter: the lower triangle only ------------------------------
     def at(row: Expr, col: Expr) -> Index:
         return Index("S", (row, col))
 
     def plus(base: str, k: int) -> Expr:
         return _c(Fn.ADD, Var(base), Lit(k))
 
-    off_diag: list[Stmt] = [Note(ATOMIC_REASON)]
+    below: list[Stmt] = [Note(_BELOW), Note(ATOMIC_REASON)]
+    above: list[Stmt] = [Note(_ABOVE), Note(ATOMIC_REASON)]
     for i in range(len(ef.cartesians(la))):
         for j in range(nb):
             vr = Var(f"v{i * nb + j}")
-            off_diag += [AtomicAdd(at(plus("oa", i), plus("ob", j)), vr),
-                         AtomicAdd(at(plus("ob", j), plus("oa", i)), vr)]
-    scatter: Stmt
-    differ = _c(Fn.ADD, _c(Fn.LT, Var("oa"), Var("ob")),
-                _c(Fn.LT, Var("ob"), Var("oa")))
+            below.append(AtomicAdd(at(plus("oa", i), plus("ob", j)), vr))
+            above.append(AtomicAdd(at(plus("ob", j), plus("oa", i)), vr))
+    diag: list[Stmt] = []
     if la == lb:
-        diag: list[Stmt] = [Note(_DIAGONAL), Note(ATOMIC_REASON)]
+        diag = [Note(_DIAGONAL), Note(ATOMIC_REASON)]
         for i in range(nb):
             for j in range(i + 1):
                 vr = Var(f"v{i * nb + j}")
                 diag.append(AtomicAdd(at(plus("oa", i), plus("oa", j)), vr))
-                if i != j:
-                    diag.append(AtomicAdd(at(plus("oa", j), plus("oa", i)), vr))
-        scatter = If(differ, tuple(off_diag), tuple(diag))
-    else:
-        scatter = If(differ, tuple(off_diag))
+    scatter = If(_c(Fn.LT, Var("ob"), Var("oa")), tuple(below), (
+        If(_c(Fn.LT, Var("oa"), Var("ob")), tuple(above), tuple(diag)),))
 
     per_rec = (*head, *values,
-               Note("scatter into S_mn and its mirror S_nm"), scatter)
+               Note("scatter into the lower triangle of S"), scatter)
     body: tuple[Stmt, ...] = (
         Note(f"overlap, class (la, lb) = ({la}, {lb}): S_ab as the t = 0 "
              "column of the dressed E block (ao/overlap.py)"),
