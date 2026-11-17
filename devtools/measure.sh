@@ -3,7 +3,8 @@
 # suite does NOT do. test/ checks correctness only; what measures, or reads
 # back what was measured, lives in measure/ and runs from here.
 #
-#   devtools/measure.sh <sweep> [--backend cuda|hip] [--full] [-- <pytest args>]
+#   devtools/measure.sh <sweep> [--backend cuda|hip] [--device N|auto] [--full]
+#                       [-- <pytest args>]
 #   devtools/measure.sh list
 #   devtools/measure.sh remeasure [<python -m felizjueves.performance.measured args>]
 #
@@ -126,7 +127,9 @@
 #                   recompute to, and the recorded hashes today's text
 #
 # --backend picks the card / compiler (default KERNEL_BACKEND); `check`
-# ignores it. --full adds the `slow` cases (the rows and cells above
+# ignores it. --device N times card N of that backend (exporting
+# CUDA_VISIBLE_DEVICES / HIP_VISIBLE_DEVICES), --device auto the first whose
+# lock is free; the sweep locks that card alone, and says which. --full adds the `slow` cases (the rows and cells above
 # tiers.FAST_L_MAX) to `check` and `recheck`. `-- <args>` reach pytest, e.g.
 # `-- --collect-only -q` to see what a sweep would run without running it.
 #
@@ -216,6 +219,7 @@ done
 [ -n "$kind" ] || { echo "measure: unknown sweep '$sweep' (try: list)" >&2; exit 64; }
 
 backend=$KERNEL_BACKEND
+device=
 full=
 pytest_extra=()
 while [ $# -gt 0 ]; do
@@ -223,6 +227,7 @@ while [ $# -gt 0 ]; do
     --backend) backend=${2:?--backend needs cuda or hip}; shift 2 ;;
     --cuda)    backend=cuda; shift ;;
     --hip)     backend=hip;  shift ;;
+    --device)  device=${2:?--device needs a card index or auto}; shift 2 ;;
     --full)    full=1; shift ;;
     --)        shift; pytest_extra=("$@"); break ;;
     -h|--help) usage; exit 0 ;;
@@ -234,6 +239,9 @@ case $backend in
   hip)  compiler=$HIPCC ;;
   *) echo "measure: --backend must be cuda or hip, not '$backend'" >&2; exit 64 ;;
 esac
+if [ -n "$device" ]; then
+  select_card "$backend" "$device" || exit $?
+fi
 
 M=$MEASURE_DIR
 files=() select=() envs=()
@@ -337,9 +345,10 @@ if [ "$kind" = timed ] || [ "$kind" = device ]; then
     case $a in --collect-only|--co) collect_only=1 ;; esac
   done
   if [ "$present" = 0 ] && [ "$collect_only" = 0 ]; then
-    cannot "no $backend card enumerated (devtools/doctor.sh says why) -- a $sweep
+    cannot "no $backend card $(gpu_card_index "$backend") enumerated (devtools/doctor.sh says why) -- a $sweep
                run here would skip every case and measure nothing"
   fi
+  echo "measure: device: card $(gpu_card_index "$backend"), lock $(gpu_lock_path "$backend")"
 fi
 
 case $kind in

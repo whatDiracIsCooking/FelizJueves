@@ -147,8 +147,146 @@ find_venv() {
   return 1
 }
 
-# Does amdkfd have an actual GPU node? Echoes nothing; returns 0 when at least
-# one node in kfd's topology is a GPU, 1 otherwise.
+# --- which card: one lock, and one set of probes, per card ------------------
+#
+# A run launches on device 0 of whatever its runtime can see, and the variable
+# that narrows that view says which PHYSICAL card that is. So the card is read
+# from the environment rather than chosen here, and every probe below -- the
+# lock, the enumeration, the device node -- asks about that one card. With no
+# variable set it is card 0, the default device, which on a one-card-per-vendor
+# box is the only card and is what every probe asked before cards were told
+# apart.
+#
+#   gpu_card_index cuda|hip   -> the card's index, one line
+#
+#   cuda  the first entry of CUDA_VISIBLE_DEVICES.
+#   hip   the first entry of HIP_VISIBLE_DEVICES (0 when unset), read THROUGH
+#         ROCR_VISIBLE_DEVICES when that is set: ROCr filters the agents first
+#         and HIP indexes what is left, so HIP_VISIBLE_DEVICES=1 under
+#         ROCR_VISIBLE_DEVICES=2,3 is physical card 3.
+#
+# Only the FIRST visible card counts: the tests launch on device 0 alone, so
+# `CUDA_VISIBLE_DEVICES=2,3` locks card 2 and leaves 3 to another run. An
+# entry that is not an index (a GPU UUID, a MIG id) is kept as it is, spelled
+# safe for a file name: it still names one card consistently, it just does not
+# match the index spelling of the same card, and the node probes below fall
+# back to every node for it. Whitespace is dropped; nothing else is parsed.
+#
+# test/conftest.py's card_index is the Python twin, and test/test_card_lock.py
+# runs both over the same environments.
+gpu_card_index() {
+  local sel outer first list
+  case "${1:-}" in
+    cuda) sel=${CUDA_VISIBLE_DEVICES:-}; outer= ;;
+    hip)  sel=${HIP_VISIBLE_DEVICES:-}; outer=${ROCR_VISIBLE_DEVICES:-} ;;
+    *) echo "gpu_card_index: unknown backend '${1:-}' (cuda|hip)" >&2; return 2 ;;
+  esac
+  sel=${sel//[[:space:]]/}; outer=${outer//[[:space:]]/}
+  first=${sel%%,*}
+  [ -n "$first" ] || first=0
+  if [ -n "$outer" ] && [[ $first =~ ^[0-9]+$ ]]; then
+    IFS=, read -ra list <<<"$outer"
+    # 10#: a leading zero is decimal here, as it is to the runtime.
+    if (( 10#$first < ${#list[@]} )) && [ -n "${list[10#$first]}" ]; then
+      first=${list[10#$first]}
+    fi
+  fi
+  printf '%s\n' "${first//[^A-Za-z0-9-]/_}"
+}
+
+# The card's lock file: GPU_LOCK_PATH (config.sh) with `{backend}` and
+# `{index}` filled in. The one spelling doctor.sh, kernel-tier.sh and the
+# auto-pick read; conftest's lock_path fills the same template the same way.
+gpu_lock_path() {
+  local index path
+  index=$(gpu_card_index "${1:-}") || return 2
+  path=${GPU_LOCK_PATH//\{backend\}/$1}
+  printf '%s\n' "${path//\{index\}/$index}"
+}
+
+# How many cards the backend's driver enumerates (0 when none), physical,
+# whatever the *_VISIBLE_DEVICES variables say.
+gpu_card_count() {
+  local d n=0 props gfxver
+  case "${1:-}" in
+    cuda)
+      for d in /proc/driver/nvidia/gpus/*/; do
+        [ -d "$d" ] && n=$((n + 1))
+      done
+      if [ "$n" = 0 ] && command -v nvidia-smi >/dev/null 2>&1; then
+        n=$(nvidia-smi -L 2>/dev/null | grep -c '^GPU [0-9]') || n=0
+      fi
+      ;;
+    hip)
+      for props in /sys/class/kfd/kfd/topology/nodes/*/properties; do
+        [ -r "$props" ] || continue
+        # 2>/dev/null: amd_enumerated below has why.
+        gfxver=$(sed -n 's/^gfx_target_version //p' "$props" 2>/dev/null | head -1)
+        [ -n "$gfxver" ] && [ "$gfxver" != 0 ] && n=$((n + 1))
+      done
+      ;;
+    *) echo "gpu_card_count: unknown backend '${1:-}' (cuda|hip)" >&2; return 2 ;;
+  esac
+  echo "$n"
+}
+
+# Is the selected card among them? An index past the last card is no card --
+# the runtime would see none either. A non-index entry (a UUID) is taken on
+# trust when any card is here.
+gpu_card_enumerated() {
+  local index n
+  index=$(gpu_card_index "$1") || return 2
+  n=$(gpu_card_count "$1") || return 2
+  [ "$n" -gt 0 ] || return 1
+  [[ $index =~ ^[0-9]+$ ]] || return 0
+  (( 10#$index < n ))
+}
+
+# The first card whose lock is free, for `--device auto`; card 0 when every
+# one is held (the run then waits on it, saying for whom, as any run does).
+# A hint, not a reservation: the lock is taken by the run itself, so two
+# auto-picks racing for one free card both get it and the second waits. Only
+# this project's locks are asked -- a card busy under another project's lock
+# looks free here.
+gpu_free_card() {
+  local backend=$1 n i var path
+  case $backend in
+    cuda) var=CUDA_VISIBLE_DEVICES ;;
+    hip)  var=HIP_VISIBLE_DEVICES ;;
+    *) echo "gpu_free_card: unknown backend '$backend' (cuda|hip)" >&2; return 2 ;;
+  esac
+  n=$(gpu_card_count "$backend")
+  for ((i = 0; i < n; i++)); do
+    path=$(export "$var=$i"; gpu_lock_path "$backend")
+    if [ ! -e "$path" ] || flock -n "$path" true 2>/dev/null; then
+      echo "$i"; return 0
+    fi
+  done
+  echo 0
+}
+
+# `--device N|auto` for the tiers: export the backend's *_VISIBLE_DEVICES so
+# the run -- its probes, its lock and every launch under it -- is on card N.
+#
+#   select_card <backend> <N|auto>    (sets SELECTED_CARD; 64 on a bad value)
+select_card() {
+  local backend=$1 device=$2
+  [ "$device" != auto ] || device=$(gpu_free_card "$backend")
+  if ! [[ $device =~ ^[0-9]+$ ]]; then
+    echo "--device takes a card index or 'auto', not '$device'" >&2
+    return 64
+  fi
+  case $backend in
+    cuda) export CUDA_VISIBLE_DEVICES=$device ;;
+    hip)  export HIP_VISIBLE_DEVICES=$device ;;
+    *) echo "select_card: unknown backend '$backend' (cuda|hip)" >&2; return 2 ;;
+  esac
+  # shellcheck disable=SC2034  # read by the caller
+  SELECTED_CARD=$device
+}
+
+# Does amdkfd have the selected GPU (gpu_card_index)? Echoes nothing; returns 0
+# when kfd's topology lists that many GPU nodes, 1 otherwise.
 #
 # WHY NOT `[ -e /dev/kfd ]`, which is what kernel-tier.sh asked before #431:
 # that node exists whenever the amdkfd/amdgpu module is LOADED, whether or not
@@ -175,35 +313,28 @@ find_venv() {
 # on exactly this field -- this is that rule, lifted to where every caller can
 # reach it.
 amd_enumerated() {
-  local props gfxver
-  for props in /sys/class/kfd/kfd/topology/nodes/*/properties; do
-    [ -r "$props" ] || continue
-    # 2>/dev/null because `-r` is not the whole answer: it asks access(2),
-    # which reads the permission bits, while the READ itself can still be
-    # refused -- measured in a container with kfd's sysfs visible and no
-    # --device=/dev/kfd, where every node answered `Operation not permitted`
-    # and sed sprayed that onto the stderr of every tier that asked.
-    gfxver=$(sed -n 's/^gfx_target_version //p' "$props" 2>/dev/null | head -1)
-    [ -n "$gfxver" ] && [ "$gfxver" != 0 ] && return 0
-  done
-  return 1
+  # The node walk is gpu_card_count's, which skips the CPU node on
+  # gfx_target_version and swallows a refused read (below).
+  #
+  # 2>/dev/null on its sed because `-r` is not the whole answer: it asks
+  # access(2), which reads the permission bits, while the READ itself can
+  # still be refused -- measured in a container with kfd's sysfs visible and
+  # no --device=/dev/kfd, where every node answered `Operation not permitted`
+  # and sed sprayed that onto the stderr of every tier that asked.
+  gpu_card_enumerated hip
 }
 
-# Does the NVIDIA driver have an actual GPU enumerated? Returns 0 when it does.
+# Does the NVIDIA driver have the selected GPU enumerated? Returns 0 when it does.
 #
 # The same question amd_enumerated asks, for the other vendor, and with the
 # same trap avoided: /dev/nvidiactl exists whenever the nvidia module is
 # loaded, card or not, so it is not asked here. /proc/driver/nvidia/gpus/ holds
 # one directory per GPU the driver bound (the container runtime mounts it under
 # --gpus), which needs nothing installed; `nvidia-smi -L` is the fallback for a
-# container that got the tool but not that procfs view.
+# container that got the tool but not that procfs view. gpu_card_count does the
+# counting; the selected card (gpu_card_index) must be among the cards counted.
 nvidia_enumerated() {
-  local d
-  for d in /proc/driver/nvidia/gpus/*/; do
-    [ -d "$d" ] && return 0
-  done
-  command -v nvidia-smi >/dev/null 2>&1 &&
-    nvidia-smi -L 2>/dev/null | grep -q '^GPU [0-9]'
+  gpu_card_enumerated cuda
 }
 
 # ENUMERATED IS NOT USABLE, and `present` means usable (#712).
@@ -333,14 +464,36 @@ gpu_nodes() {
       # regeneration (the profilers' node included), probe only what a LAUNCH
       # needs -- so a box with no profiler node is not reported as a revoked
       # card.
+      #
+      # ONE CARD'S NODE, the selected one (gpu_card_index): a launch on card
+      # 2 opens /dev/nvidia2, and a revoked grant on card 3 is not this run's
+      # problem. The CUDA index is taken as the device minor, which holds
+      # where the cards are alike and CUDA orders them by PCI bus, as nvidia
+      # does; when that node is not here -- a container handed one card,
+      # which is /dev/nvidia2 inside and device 0 to CUDA, or a UUID entry --
+      # every card node is probed instead, which is what this asked before.
+      local card one=
+      card=$(gpu_card_index cuda)
+      [[ $card =~ ^[0-9]+$ ]] && [ -c "/dev/nvidia$((10#$card))" ] &&
+        one=/dev/nvidia$((10#$card))
       for n in /dev/nvidiactl /dev/nvidia-uvm /dev/nvidia[0-9]*; do
-        [ -c "$n" ] && echo "$n"
+        [ -c "$n" ] || continue
+        case $n in
+          /dev/nvidiactl|/dev/nvidia-uvm) ;;
+          *) [ -z "$one" ] || [ "$n" = "$one" ] || continue ;;
+        esac
+        echo "$n"
       done
       ;;
     hip)
       # kfd is the compute driver; the DRM render nodes are what it allocates
       # through. /dev/dri/card* is display-side and not probed.
       [ -c /dev/kfd ] && echo /dev/kfd
+      # EVERY AMD card's nodes, not the selected one's: kfd is one node for
+      # all of them, and mapping a HIP index to a render node needs ROCm's
+      # own ordering, which this probe must not depend on. One AMD card is
+      # all this repo has run on.
+      #
       # AMD's render nodes ONLY, chosen by the driver that owns each one.
       # A bare /dev/dri/renderD* glob is wrong on a two-vendor box: this one
       # has renderD128 on amdgpu and renderD129 on nvidia, and ROCm never

@@ -18,19 +18,22 @@ probe, and is split by what a test needs -- the two are not the same gate:
 - CORRECTNESS (every `gpu` test): EXCLUSIVITY and enough FREE VRAM. The
   fixture takes the card's lock -- `flock` on a descriptor this process holds,
   at devtools/config.sh's GPU_LOCK_PATH -- for the session, so two pytest runs
-  serialise instead of both launching, and the waiting one says whom it waits
-  for. The kernel drops the lock when that descriptor closes, which every exit
-  does (Ctrl-C and SIGKILL included), so a dead run never strands the next. A
-  harness that splices in VRAM_PROBE (below) is run once in probe mode first
-  (`run_device_binary(..., vram=backend)`), and reports its launch's own
-  requirement -- its buffers, plus the largest per-thread stack of its kernels
-  times every thread the device can keep resident, which is what the driver
-  reserves -- against the free memory its own context sees. Short, and the
-  test FAILS with both figures and whatever the vendor tool lists on the card,
-  instead of the launch running out of memory. Utilisation is deliberately NOT
-  a reason to refuse: a correct answer does not care how fast it arrives, and
-  a gate on it would make every correctness test hostage to an outside
-  process.
+  on one card serialise instead of both launching, and the waiting one says
+  whom it waits for. The lock is PER CARD: the card is the one this run
+  launches on (card_index, from CUDA_VISIBLE_DEVICES / HIP_VISIBLE_DEVICES;
+  card 0 when neither is set), so runs on different cards of one box do not
+  wait for each other. The kernel drops the lock when that descriptor closes,
+  which every exit does (Ctrl-C and SIGKILL included), so a dead run never
+  strands the next. A harness that splices in VRAM_PROBE (below) is run once
+  in probe mode first (`run_device_binary(..., vram=backend)`), and reports
+  its launch's own requirement -- its buffers, plus the largest per-thread
+  stack of its kernels times every thread the device can keep resident, which
+  is what the driver reserves -- against the free memory its own context sees.
+  Short, and the test FAILS with both figures and whatever the vendor tool
+  lists on the card, instead of the launch running out of memory. Utilisation
+  is deliberately NOT a reason to refuse: a correct answer does not care how
+  fast it arrives, and a gate on it would make every correctness test hostage
+  to an outside process.
 - TIMING (every sweep under measure/, run by devtools/measure.sh -- the
   wall-clock sweeps, the counter sweep, the ceiling probes' recording run):
   the same lock, plus the utilisation wait of `felizjueves.performance.gate` (#109; it
@@ -127,6 +130,43 @@ def _iterdir(d: Path) -> list[Path]:
         return []
 
 
+# Which card a run launches on: device 0 of what its runtime can see, named by
+# the variable that narrows that view. devtools/lib.sh's gpu_card_index is the
+# shell twin, and test/test_card_lock.py runs both over the same environments;
+# that function's comment has the rule in full.
+CARD_ENV = {"cuda": ("CUDA_VISIBLE_DEVICES", None),
+            "hip": ("HIP_VISIBLE_DEVICES", "ROCR_VISIBLE_DEVICES")}
+
+
+def card_index(backend: str, env: dict[str, str] | None = None) -> str:
+    """The physical card this process launches on, as a lock-name token.
+
+    The first entry of the backend's *_VISIBLE_DEVICES (0 when unset or
+    empty); for hip read through ROCR_VISIBLE_DEVICES, which ROCr applies
+    first. An entry that is not an index (a UUID) is kept, made safe for a
+    file name.
+    """
+    env = os.environ if env is None else env
+    own, outer_name = CARD_ENV[backend]
+    sel = re.sub(r"\s", "", env.get(own, ""))
+    outer = re.sub(r"\s", "", env.get(outer_name, "")) if outer_name else ""
+    first = sel.split(",")[0] or "0"
+    if outer and re.fullmatch(r"[0-9]+", first):
+        entries = outer.split(",")
+        if int(first) < len(entries) and entries[int(first)]:
+            first = entries[int(first)]
+    return re.sub(r"[^A-Za-z0-9-]", "_", first)
+
+
+def _selected_among(count: int, backend: str) -> bool:
+    """Is the selected card one of `count` enumerated ones? An index past the
+    last is no card, as it is to the runtime; a UUID entry is taken on trust."""
+    if count == 0:
+        return False
+    index = card_index(backend)
+    return not re.fullmatch(r"[0-9]+", index) or int(index) < count
+
+
 def _nvidia_enumerated() -> bool:
     # An ENUMERATED GPU, not `/dev/nvidiactl` exists -- which is what this
     # asked before, and it is #431's bug with the vendors swapped. That node is
@@ -142,10 +182,13 @@ def _nvidia_enumerated() -> bool:
     # the same property that makes amdkfd's topology the right probe for AMD.
     # This is the question lib.sh's nvidia_enumerated asks, which is the point:
     # the shell tiers and the fixtures must not disagree about what is here.
-    for entry in _iterdir(NVIDIA_GPUS):
-        if entry.is_dir():
-            return True
-    # The same fallback lib.sh's nvidia_enumerated carries, for a container
+    #
+    # Since cards are told apart, the SELECTED card (card_index) must be among
+    # those counted, which is lib.sh's gpu_card_count + gpu_card_enumerated.
+    count = sum(1 for entry in _iterdir(NVIDIA_GPUS) if entry.is_dir())
+    if count:
+        return _selected_among(count, "cuda")
+    # The same fallback lib.sh's gpu_card_count carries, for a container
     # handed the tool but not that procfs view. Only reached when the view is
     # empty, which on a device-less box is a `which` that finds nothing.
     tool = shutil.which("nvidia-smi")
@@ -156,7 +199,8 @@ def _nvidia_enumerated() -> bool:
                              timeout=30).stdout
     except (OSError, subprocess.TimeoutExpired):
         return False
-    return any(ln.startswith("GPU ") for ln in out.splitlines())
+    return _selected_among(
+        sum(1 for ln in out.splitlines() if re.match(r"GPU [0-9]", ln)), "cuda")
 
 
 KFD_NODES = Path("/sys/class/kfd/kfd/topology/nodes")
@@ -179,10 +223,14 @@ def _amd_enumerated() -> bool:
     # answer needs no ROCm installed and is identical on the host and inside a
     # container given --device=/dev/kfd -- the same reason _nvidia_enumerated
     # reads the driver's procfs instead of calling nvidia-smi.
+    #
+    # Counted, and the selected card (card_index, the HIP device read through
+    # ROCR_VISIBLE_DEVICES) must be among them -- lib.sh's gpu_card_count.
     try:
         nodes = sorted(KFD_NODES.iterdir())
     except OSError:
         return False
+    count = 0
     for node in nodes:
         try:
             props = (node / "properties").read_text()
@@ -192,9 +240,9 @@ def _amd_enumerated() -> bool:
             field, _, value = line.partition(" ")
             if field == "gfx_target_version":
                 if value.strip() not in ("", "0"):
-                    return True
+                    count += 1
                 break
-    return False
+    return _selected_among(count, "hip")
 
 
 @pytest.fixture(scope="session")
@@ -259,6 +307,25 @@ def _amd_render_nodes() -> list[str]:
     return nodes
 
 
+def _card_nodes(backend: str) -> list[str]:
+    """GPU_NODE_GLOBS's nodes, narrowed to the SELECTED card's /dev/nvidiaN.
+
+    lib.sh's gpu_nodes, which has the why: the CUDA index is taken as the
+    device minor, and when that node is not here (a container handed one
+    card; a UUID entry) every card node is kept. hip is not narrowed.
+    """
+    nodes = [n for pattern in GPU_NODE_GLOBS[backend]
+             for n in sorted(glob.glob(pattern))]
+    if backend != "cuda":
+        return nodes
+    index = card_index("cuda")
+    one = f"/dev/nvidia{int(index)}" if re.fullmatch(r"[0-9]+", index) else None
+    if one is None or one not in nodes or not Path(one).is_char_device():
+        return nodes
+    return [n for n in nodes
+            if n in ("/dev/nvidiactl", "/dev/nvidia-uvm") or n == one]
+
+
 def _denied_nodes(backend: str) -> list[str]:
     """The nodes this process may not open -- empty when the card is usable.
 
@@ -281,8 +348,7 @@ def _denied_nodes(backend: str) -> list[str]:
     The Python half of devtools/lib.sh's gpu_denied_nodes, and
     test_device_grant.py holds the two to the same node list.
     """
-    nodes = [n for pattern in GPU_NODE_GLOBS[backend]
-             for n in sorted(glob.glob(pattern))]
+    nodes = _card_nodes(backend)
     if backend == "hip":
         nodes += _amd_render_nodes()
     denied = []
@@ -342,14 +408,17 @@ LOCK_REPORT_EVERY_S = 60.0
 @cache
 def lock_path(backend: str) -> Path:
     """The card's lock file: devtools/config.sh's GPU_LOCK_PATH with
-    `{backend}` replaced -- read by sourcing config.sh, so the environment
-    still wins, as it does for every other setting there."""
+    `{backend}` and `{index}` (card_index: the card this run launches on)
+    replaced -- read by sourcing config.sh, so the environment still wins, as
+    it does for every other setting there. lib.sh's gpu_lock_path is the same
+    substitution."""
     done = subprocess.run(
         ["bash", "-c", '. devtools/config.sh && printf %s "$GPU_LOCK_PATH"'],
         cwd=REPO, capture_output=True, text=True, check=True)
     spelled = done.stdout.strip()
     assert spelled, "GPU_LOCK_PATH is empty in devtools/config.sh"
-    return Path(spelled.replace("{backend}", backend))
+    return Path(spelled.replace("{backend}", backend)
+                .replace("{index}", card_index(backend)))
 
 
 def _cmdline(pid: int) -> str:
@@ -589,6 +658,9 @@ def card_processes(backend: str) -> str:
     if backend == "cuda":
         cmd = ["nvidia-smi", "--query-compute-apps=pid,process_name,used_memory",
                "--format=csv,noheader"]
+        index = card_index("cuda")
+        if re.fullmatch(r"[0-9]+", index):  # the card this run is on, not all
+            cmd += ["-i", str(int(index))]
     else:
         cmd = ["rocm-smi", "--showpids"]
     try:

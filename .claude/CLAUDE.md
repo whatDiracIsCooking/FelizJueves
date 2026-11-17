@@ -201,14 +201,23 @@ pinned; a second still rides on `--gpus all`.
   markers, so the gate cannot start invoking a device compiler — which it
   otherwise would, inside a container where both are present — and `slow`
   and `oracle` too.
-- **The card is locked by the tests, not by a wrapper.** Every `gpu` test's
-  device fixture (`test/conftest.py`, #91) takes an exclusive `flock` on the
-  card at `GPU_LOCK_PATH` in `devtools/config.sh` (`/tmp/fj-gpu-{backend}.lock`)
-  — under xdist the controller holds it — and a harness that carries the
-  VRAM probe checks free memory before its launch, failing with both figures
-  rather than running out of memory. Two
-  runs on one card serialise; an outer `flock` on the same path is recognised
-  as an ancestor and is redundant, not harmful.
+- **The card is locked by the tests, not by a wrapper, one lock per card.**
+  Every `gpu` test's device fixture (`test/conftest.py`, #91) takes an
+  exclusive `flock` on the card at `GPU_LOCK_PATH` in `devtools/config.sh`
+  (`/tmp/fj-gpu-{backend}.{index}.lock`) — under xdist the controller holds
+  it — and a harness that carries the VRAM probe checks free memory on that
+  card (device 0 of what the run sees) before its launch, failing with both
+  figures rather than running out of memory. `{index}` is the physical card
+  the run launches on: the first entry of `CUDA_VISIBLE_DEVICES`, or of
+  `HIP_VISIBLE_DEVICES` read through `ROCR_VISIBLE_DEVICES`; card 0 when
+  none is set (`lib.sh`'s `gpu_card_index`, conftest's `card_index`). So
+  two runs on one card serialise and runs on different cards of a
+  multi-card box do not; `kernel-tier.sh`, `measure.sh` and `gate.sh` take
+  `--device N|auto` to choose (auto: the first card whose lock is free), and
+  the presence probes and `doctor.sh`'s card-state row ask about that card.
+  `GPU_LOCK_PATH` set in the environment wins as-is. An outer `flock` on the
+  same path is recognised as an ancestor and is redundant, not harmful — it
+  must name the card's path, `/tmp/fj-gpu-cuda.2.lock` for card 2.
 - **A PR from a session without both cards may merge, labelled** (#651):
   after `devtools/gate.sh` is green there (lint, fast, compile sample), carrying `unverified-on-card` and naming
   the backend(s) no card ran. `lib.sh`'s `card_present` / `card_absent` decide

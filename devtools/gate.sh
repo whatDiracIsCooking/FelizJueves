@@ -3,7 +3,8 @@
 # box has. The `pr` skill runs it before merging and pastes its summary into
 # the PR body.
 #
-#   devtools/gate.sh [--seed S] [--no-gpu] [-j N] [--report DIR]
+#   devtools/gate.sh [--seed S] [--no-gpu] [--device N|auto] [-j N]
+#                    [--report DIR]
 #
 # PHASES, in order, stopping at the first that fails:
 #
@@ -23,6 +24,10 @@
 #              --backend <b> with KERNEL_TEST_ARGS=GATE_GPU_TEST_ARGS and
 #              `--fj-sample` -- generate, compile, then the gpu sample on
 #              that card. Skipped, and SAID, for a backend with no card.
+#              --device N|auto is handed to kernel-tier.sh: the sample runs
+#              on (and locks) card N of each backend, or the first card whose
+#              lock is free; without it, the card *_VISIBLE_DEVICES names,
+#              card 0 when unset.
 #
 # BY ENVIRONMENT. Both cards enumerated: every phase, the gpu sample on both
 # cards. No card (a Claude cloud container): lint + fast + compile, exit 0,
@@ -66,11 +71,13 @@ cd "$REPO_ROOT"
 usage() { usage_from_header "${BASH_SOURCE[0]}"; }
 
 no_gpu=
+device=
 report=
 while [ $# -gt 0 ]; do
   case $1 in
     --seed)   export FJ_SAMPLE_SEED=${2:?--seed needs a value}; shift 2 ;;
     --no-gpu) no_gpu=1; shift ;;
+    --device) device=${2:?--device needs a card index or auto}; shift 2 ;;
     -j)       JOBS=${2:?-j needs a number}; shift 2 ;;
     --report) report=${2:?--report needs a directory}; shift 2 ;;
     -h|--help) usage; exit 0 ;;
@@ -97,6 +104,12 @@ now() { date +%s; }
 # preflight
 # ---------------------------------------------------------------------------
 phase preflight
+# A numeric --device is exported here too, so the preflight's verdict is about
+# the card the gpu phase will run on; `auto` is resolved per backend by
+# kernel-tier.sh, and until then the verdict is about the default card.
+if [ -n "$device" ] && [ "$device" != auto ]; then
+  for b in cuda hip; do select_card "$b" "$device" || exit $?; done
+fi
 present=$(card_present || true)
 absent=$(card_absent)
 note "cards enumerated: ${present:-none}; absent: ${absent:-none}"
@@ -232,7 +245,8 @@ for b in cuda hip; do
   set +e
   KERNEL_TEST_ARGS=$GATE_GPU_TEST_ARGS \
     FJ_SAMPLE_REPORT=$(rel "$report/sample-gpu-$b.json") \
-    devtools/kernel-tier.sh --backend "$b" --report "$report" -- --fj-sample \
+    devtools/kernel-tier.sh --backend "$b" ${device:+--device "$device"} \
+      --report "$report" -- --fj-sample \
     2>&1 | tee "$report/gpu-$b.log"
   rc=${PIPESTATUS[0]}
   set -e

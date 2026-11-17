@@ -479,16 +479,29 @@ shellcheck:the devtools/ and docker/ lint pass (pre-commit brings its own on the
 # because this box has one of each, and a generated kernel has to satisfy both.
 DOCTOR_GPU_VENDORS=${DOCTOR_GPU_VENDORS:-"nvidia amd"}
 
-# The card's lock: one file per backend, `{backend}` replaced by `cuda` or
-# `hip`. test/conftest.py's device fixtures take it -- `flock` on a descriptor
-# the kernel closes when the run exits, Ctrl-C included -- so every `gpu` test
-# of one pytest run is exclusive on its card and a second run waits, saying for
-# whom; doctor.sh's card-state row reports whether it is held. It is only as
-# shared as the directory: /tmp inside a container is not the host's /tmp, so
-# runs on the two sides of a container boundary do not see each other's lock.
+# The card's lock: one file per CARD, `{backend}` replaced by `cuda` or `hip`
+# and `{index}` by the physical card the run launches on -- lib.sh's
+# gpu_card_index (and conftest's card_index, its Python twin): the first entry
+# of CUDA_VISIBLE_DEVICES for cuda; for hip, the first of HIP_VISIBLE_DEVICES
+# read through ROCR_VISIBLE_DEVICES when that is set; 0 when none is set, which
+# is the default device every run here launches on. So a box with several
+# cards of one vendor runs one tier per card, each on its own lock, instead of
+# all of them queueing on one file for device 0. kernel-tier.sh, measure.sh
+# and gate.sh take `--device N|auto` to set that variable for you.
+#
+# test/conftest.py's device fixtures take it -- `flock` on a descriptor the
+# kernel closes when the run exits, Ctrl-C included -- so every `gpu` test of
+# one pytest run is exclusive on its card and a second run on the SAME card
+# waits, saying for whom; doctor.sh's card-state row reports whether it is
+# held. It is only as shared as the directory: /tmp inside a container is not
+# the host's /tmp, so runs on the two sides of a container boundary do not see
+# each other's lock.
+#
+# Set in the environment it wins as-is: a path with neither placeholder is one
+# lock for every card (the old per-backend behaviour, if you want it).
 # Single quotes load-bearing, as for KERNEL_TEST_ARGS: unquoted, the `}` of
 # `{backend}` closes the ${...}.
-GPU_LOCK_PATH=${GPU_LOCK_PATH:-'/tmp/fj-gpu-{backend}.lock'}
+GPU_LOCK_PATH=${GPU_LOCK_PATH:-'/tmp/fj-gpu-{backend}.{index}.lock'}
 
 # Paths that must exist for some slice of the suite to run, one
 # `path:what skips without it` per line. A RELATIVE path is resolved against

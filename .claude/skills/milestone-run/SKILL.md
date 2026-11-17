@@ -227,11 +227,12 @@ these overrides:
   both-cards rule. Nothing else verifies the other backend, so say in the PR
   which one you did not run. Siblings share the card; the tier compiles
   unlocked, and its device phase takes the card's lock itself (test/conftest.py,
-  #91, at GPU_LOCK_PATH in devtools/config.sh), so siblings serialise only on
-  the launch:
-    devtools/kernel-tier.sh --backend <card> -j <J> -- -k '<pattern>'
-  (An outer `flock /tmp/fj-gpu-<card>.lock …` is redundant now — conftest
-  recognises an ancestor holding the lock — but harmless.)
+  #91, at GPU_LOCK_PATH in devtools/config.sh, one lock per physical card), so
+  siblings serialise only on the launch, and only on the same card:
+    devtools/kernel-tier.sh --backend <card> [--device N] -j <J> -- -k '<pattern>'
+  (On a box with several cards of one vendor, give each sibling its own
+  `--device N`. An outer `flock /tmp/fj-gpu-<backend>.<N>.lock …` is redundant
+  now — conftest recognises an ancestor holding the lock — but harmless.)
   If your card is down (nvidia-smi -L / rocminfo), use the other one and say
   so in the PR. A VRAM-probe failure names the free memory and what the vendor
   tool lists on the card. Other pytest runs queue on the lock, so the holder
