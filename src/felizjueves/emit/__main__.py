@@ -69,6 +69,16 @@ for CUDA, `.hip` for HIP):
   path: LMAX = 2 is (dd|dd) at L = 8. It ADDS units beside the J ladders
   and is NEVER in the no-flag default.
 
+- the dense-ERI ladder, `--dense-eri-l [LMAX]`: for every ORDERED quartet
+  class `(la lb|lc ld)`, each `l <= LMAX` (1 when the flag is given bare,
+  accepted 0..`ERI_L_MAX` = 2), `kernel_dense.build_dense_kernel` in both
+  layouts (`eri_dj_{la}{lb}{lc}{ld}`, `M_J[(m,n), (l,s)] = (mn|ls)`, and
+  `eri_dk_...`, `M_K[(m,n), (l,s)] = (ml|ns)`, `Target.ERI_DENSE`): the
+  dense AO ERI with no symmetry, a row range per launch, one thread per
+  ordered shell quartet (`eri/full_eri`). Bare: 16 classes x 2 layouts; at
+  LMAX = 2, 81 x 2. It ADDS units beside the J ladders and is NEVER in the
+  no-flag default.
+
 - the cross-basis overlap ladder, `--sx-l [LMAX]`: for every ORDERED pair
   class `(la, lb)`, `la, lb <= LMAX` (2 when the flag is given bare,
   accepted 0..`ONE_E_L_MAX`), `kernel_sx.build_sx_kernel` (`sx_{la}{lb}`,
@@ -695,6 +705,7 @@ Exit status: 0 written, 2 could not run (bad arguments) -- the tier's rule.
 from __future__ import annotations
 
 import argparse
+import itertools
 import os
 import sys
 from collections.abc import Callable, Sequence
@@ -719,6 +730,8 @@ from felizjueves.eri.density_fit.kernel_rmetric import (
 )
 from felizjueves.eri.fock.kernel_f import build_f_kernel, f_class_spec
 from felizjueves.eri.fock.kernel_frys import build_frys_kernel
+from felizjueves.eri.full_eri.kernel_dense import LAYOUTS as DENSE_LAYOUTS
+from felizjueves.eri.full_eri.kernel_dense import build_dense_kernel
 from felizjueves.eri.full_eri.kernel_eri import build_eri_kernel
 from felizjueves.eri.full_eri.kernel_gemv import build_gemv_kernel
 from felizjueves.eri.full_eri.kernel_kperm import build_kperm_kernel
@@ -804,6 +817,7 @@ DEFAULT_SCHWARZ_L = 2  # `--schwarz-l` given bare: (ss) through (dd), 6 units
 SCHWARZ_L_MAX = 4  # (gg|gg) at L = 16, the [p|q] ladder's top
 DEFAULT_ERI_L = 1  # `--eri-l` given bare: s and p, 6 classes + permute + GEMV
 ERI_L_MAX = 2  # (dd|dd) at L = 8: the full ERI is a small-system path
+DEFAULT_DENSE_ERI_L = 1  # `--dense-eri-l` given bare: s and p, 16 x 2 units
 DEFAULT_SX_L = 2  # `--sx-l` given bare: every ordered class through d, 9 units
 DEFAULT_METRIC_L = 4  # `--metric-l` given bare: lP <= lQ, lP + lQ <= 4, 9 units
 DEFAULT_ERI3_L = 4  # `--eri3-l` given bare: la <= lb, la + lb + lP <= 4, 22 units
@@ -1065,6 +1079,24 @@ def eri3_classes(lmax: int) -> list[tuple[int, int, int]]:
     return [(la, lb, lp) for la in range(lmax // 2 + 1)
             for lb in range(la, lmax - la + 1)
             for lp in range(lmax - la - lb + 1)]
+
+
+def dense_eri_classes(lmax: int) -> list[tuple[int, int, int, int]]:
+    """Every ORDERED quartet class, each `l` in `0..lmax`, `lmax` in
+    `0..ERI_L_MAX`."""
+    if type(lmax) is not int or not 0 <= lmax <= ERI_L_MAX:
+        raise ValueError(f"--dense-eri-l {lmax!r} is outside 0..{ERI_L_MAX}")
+    return list(itertools.product(range(lmax + 1), repeat=4))
+
+
+def generate_dense_eri(backend: str, arch: Arch, out: Path,
+                       lmax: int) -> list[Path]:
+    """Emit the dense-ERI unit of every ordered class through `lmax`, in
+    both layouts, into `out`; return the paths."""
+    kernels = [build_dense_kernel(c, lay) for lay in DENSE_LAYOUTS
+               for c in dense_eri_classes(lmax)]
+    out.mkdir(parents=True, exist_ok=True)
+    return [_write(backend, arch, out, k) for k in kernels]
 
 
 def generate_eri3(backend: str, arch: Arch, out: Path,
@@ -2130,6 +2162,7 @@ def _main_hgp(args: argparse.Namespace, other_path: bool) -> int:
     if (other_path or args.Ls is not None or args.pair_l is not None
             or args.one_e_l is not None or args.schwarz_l is not None
             or args.eri_l is not None
+            or args.dense_eri_l is not None
             or args.sx_l is not None or args.metric_l is not None
             or args.eri3_l is not None or args.mu_l is not None
             or args.quad_l is not None
@@ -2159,6 +2192,7 @@ def _main_hgp(args: argparse.Namespace, other_path: bool) -> int:
             or _hgp_df(args)):
         print("emit: --hgp-j-l / --hgp-k-l / --hgp-class (and --ordered) is a "
               "separate path from --L / --pair-l / --one-e-l / --schwarz-l / --eri-l / "
+              "--dense-eri-l / "
               "--sx-l / --metric-l / --eri3-l / --hgp-metric-l / "
               "--hgp-eri3-l / --hgp-grad-eri3-l / --hgp-grad-metric-l / "
               "--hgp-hess-eri3-l / --hgp-hess-metric-l / "
@@ -2231,6 +2265,9 @@ def main(argv: Sequence[str] | None = None) -> int:
                     const=DEFAULT_SCHWARZ_L, default=None, metavar="LMAX")
     ap.add_argument("--eri-l", dest="eri_l", type=int, nargs="?",
                     const=DEFAULT_ERI_L, default=None, metavar="LMAX")
+    ap.add_argument("--dense-eri-l", dest="dense_eri_l", type=int,
+                    nargs="?", const=DEFAULT_DENSE_ERI_L, default=None,
+                    metavar="LMAX")
     ap.add_argument("--sx-l", dest="sx_l", type=int, nargs="?",
                     const=DEFAULT_SX_L, default=None, metavar="LMAX")
     ap.add_argument("--metric-l", dest="metric_l", type=int, nargs="?",
@@ -2387,6 +2424,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     if fock and (selector or args.Ls is not None or args.pair_l is not None
                  or args.one_e_l is not None or args.schwarz_l is not None
             or args.eri_l is not None
+            or args.dense_eri_l is not None
                  or args.sx_l is not None or args.metric_l is not None
                  or args.eri3_l is not None or args.mu_l is not None
             or args.quad_l is not None
@@ -2416,6 +2454,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                  or ladder_levers):
         print("emit: --fock-l / --fock-class (and an F lever flag) is a "
               "separate path from --L / --pair-l / --one-e-l / --schwarz-l / --eri-l / "
+              "--dense-eri-l / "
               "--sx-l / --metric-l / --eri3-l / --hgp-metric-l / "
               "--hgp-eri3-l / --hgp-grad-eri3-l / --hgp-grad-metric-l / "
               "--hgp-hess-eri3-l / --hgp-hess-metric-l / "
@@ -2451,6 +2490,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     if selector and (args.Ls is not None or args.pair_l is not None
                      or args.one_e_l is not None or args.schwarz_l is not None
             or args.eri_l is not None
+            or args.dense_eri_l is not None
                      or args.sx_l is not None or args.metric_l is not None
                      or args.eri3_l is not None or args.mu_l is not None
             or args.quad_l is not None
@@ -2478,7 +2518,8 @@ def main(argv: Sequence[str] | None = None) -> int:
                  or args.hgp_hess_mu_l is not None
                  or args.hgp_hess_l is not None
                      or ladder_levers):
-        print("emit: --L / --pair-l / --one-e-l / --schwarz-l / --eri-l / --sx-l / "
+        print("emit: --L / --pair-l / --one-e-l / --schwarz-l / --eri-l / "
+              "--dense-eri-l / --sx-l / "
               "--metric-l / --eri3-l / --hgp-metric-l / --hgp-eri3-l / "
               "--rys-metric-l / --rys-eri3-l / "
               "--mu-l / --quad-l / --grad-l / --grad-mu-l / --grad-k-l / "
@@ -2515,6 +2556,11 @@ def main(argv: Sequence[str] | None = None) -> int:
     if args.eri_l is not None and not 0 <= args.eri_l <= ERI_L_MAX:
         print(f"emit: --eri-l {args.eri_l} is outside 0..{ERI_L_MAX}",
               file=sys.stderr)
+        return 2
+    if (args.dense_eri_l is not None
+            and not 0 <= args.dense_eri_l <= ERI_L_MAX):
+        print(f"emit: --dense-eri-l {args.dense_eri_l} is outside "
+              f"0..{ERI_L_MAX}", file=sys.stderr)
         return 2
     if args.sx_l is not None and not 0 <= args.sx_l <= ONE_E_L_MAX:
         print(f"emit: --sx-l {args.sx_l} is outside 0..{ONE_E_L_MAX}",
@@ -2766,6 +2812,9 @@ def main(argv: Sequence[str] | None = None) -> int:
                                     args.schwarz_l)
     if args.eri_l is not None:  # beside the J chain, never by default
         written += generate_eri(args.backend, arch, args.out, args.eri_l)
+    if args.dense_eri_l is not None:  # beside the J chain, never by default
+        written += generate_dense_eri(args.backend, arch, args.out,
+                                      args.dense_eri_l)
     if args.sx_l is not None:  # beside the J chain, never by default
         written += generate_sx(args.backend, arch, args.out, args.sx_l)
     if args.metric_l is not None:  # beside the J chain, never by default

@@ -5,6 +5,8 @@
     quartet_spec(cls)                         -> Spec     the Target.J quartet
     eri_plan(cls)                             -> (dag, order)
     launch_shape(n_task, threads)             -> (grid, block)
+    contraction(am) / launch(head, per_task) / input_params(scalars)
+                                              the pieces `kernel_dense` shares
 
 `kernel_schwarz`'s kernel, widened from the diagonal of one pair against
 itself to the whole block of a bra shell pair against a ket shell pair, by
@@ -179,14 +181,18 @@ def _reach(row, ts) -> list[tuple[int, tuple[int, int, int]]]:
             if all(t[d] <= a[d] + b[d] for d in range(3))]
 
 
-def build_eri_kernel(cls: Spec | tuple[int, int, int, int], *,
-                     name: str | None = None) -> Kernel:
-    """The full-ERI kernel of one quartet class (module docstring)."""
-    spec = _spec(cls)
-    if spec.levers:
-        raise ValueError(f"{spec.key()}: the full ERI kernel takes no levers")
-    la, lb, lc, ld = spec.am
-    dag, order = eri_plan(spec)
+def contraction(am: tuple[int, int, int, int]) -> tuple[Stmt, ...]:
+    """One task's statements up to its scatter: the task's pair indices,
+    record ranges and AO offsets (`tb tk b0 b1 k0 k1 oa ob oc od`), the
+    accumulators `acc{r}_{c}` of the block `(ab|cd)` (`r` over
+    `e_fragment.block_rows(la, lb)`, `c` over `block_rows(lc, ld)`, zeroed),
+    and the bra-record loop that fills them (module docstring, THE
+    CONTRACTION). `am` is any AO-order quartet: the plan is the `Target.J`
+    quartet's with that `am`. Shared with `kernel_dense`, whose scatter
+    differs."""
+    la, lb, lc, ld = am
+    (dag,) = plan(Spec(Operator.COULOMB, 0, am, Target.J)).dags
+    order = schedule(dag)
     fbra, fket = ef.block_fragment(la, lb), ef.block_fragment(lc, ld)
     rows, cols = ef.block_rows(la, lb), ef.block_rows(lc, ld)
     tp, tq = hermite_targets(la + lb), hermite_targets(lc + ld)
@@ -264,6 +270,70 @@ def build_eri_kernel(cls: Spec | tuple[int, int, int, int], *,
         For(KET, Var("k0"), Var("k1"), Lit(1), ket_body),
     )
 
+    return (
+        Decl("tb", Scalar.I32, init=Index("task_bra", (task,))),
+        Decl("tk", Scalar.I32, init=Index("task_ket", (task,))),
+        Decl("b0", Scalar.I32, init=Index("brec0", (Var("tb"),))),
+        Decl("b1", Scalar.I32, init=Index("brec1", (Var("tb"),))),
+        Decl("k0", Scalar.I32, init=Index("krec0", (Var("tk"),))),
+        Decl("k1", Scalar.I32, init=Index("krec1", (Var("tk"),))),
+        Decl("oa", Scalar.I32, init=Index("off_a", (Var("tb"),))),
+        Decl("ob", Scalar.I32, init=Index("off_b", (Var("tb"),))),
+        Decl("oc", Scalar.I32, init=Index("off_c", (Var("tk"),))),
+        Decl("od", Scalar.I32, init=Index("off_d", (Var("tk"),))),
+        *(Decl(f"acc{r}_{kc}", Scalar.F64, init=Lit(0.0))
+          for r in range(len(rows)) for kc in range(len(cols))),
+        Note("the bra records of the task's bra shell pair, serially"),
+        For(BRA, Var("b0"), Var("b1"), Lit(1), bra_body),
+    )
+
+
+def launch(head: tuple[Stmt, ...], per_task: tuple[Stmt, ...]
+           ) -> tuple[Stmt, ...]:
+    """A kernel body: `head`'s notes, the task index, and `per_task` under
+    `task < n_task`."""
+    return (
+        *head,
+        Note("launch: one thread per (bra shell pair, ket shell pair) task"),
+        Decl(TASK, Scalar.I32, init=_c(Fn.ADD, Call(Fn.THREAD_X), _c(
+            Fn.MUL, Call(Fn.BLOCK_X), Call(Fn.BLOCK_DIM_X)))),
+        If(_c(Fn.LT, Var(TASK), Var("n_task")), per_task),
+    )
+
+
+def input_params(scalars: tuple[str, ...]) -> tuple[Param, ...]:
+    """`scalars` (I32), then the record and pair arrays and the task list,
+    in `kernel_eri`'s order -- everything up to its `pidx`."""
+    def f64(n: str, shape: tuple[Expr, ...]) -> Param:
+        return Param(n, Scalar.F64, array=True, shape=shape)
+
+    def i32(n: str, shape: tuple[Expr, ...]) -> Param:
+        return Param(n, Scalar.I32, array=True, shape=shape)
+
+    nbr, nkr = Var("n_brec"), Var("n_krec")
+    nbp, nkp, ntask = Var("n_bpair"), Var("n_kpair"), Var("n_task")
+    return (
+        *(Param(n, Scalar.I32) for n in scalars),
+        f64("zeta_ab", (nbr,)), f64("P", (nbr, Lit(3))),
+        f64("XPA", (nbr, Lit(3))), f64("XPB", (nbr, Lit(3))),
+        f64("s_ab", (nbr,)),
+        f64("zeta_cd", (nkr,)), f64("Q", (nkr, Lit(3))),
+        f64("XQC", (nkr, Lit(3))), f64("XQD", (nkr, Lit(3))),
+        f64("s_cd", (nkr,)),
+        *(i32(n, (nbp,)) for n in INDEX_ARRAYS[:4]),
+        *(i32(n, (nkp,)) for n in INDEX_ARRAYS[4:8]),
+        i32("task_bra", (ntask,)), i32("task_ket", (ntask,)),
+    )
+
+
+def build_eri_kernel(cls: Spec | tuple[int, int, int, int], *,
+                     name: str | None = None) -> Kernel:
+    """The full-ERI kernel of one quartet class (module docstring)."""
+    spec = _spec(cls)
+    if spec.levers:
+        raise ValueError(f"{spec.key()}: the full ERI kernel takes no levers")
+    la, lb, lc, ld = spec.am
+
     # --- the scatter --------------------------------------------------------
     nb, nd = len(ef.cartesians(lb)), len(ef.cartesians(ld))
 
@@ -312,20 +382,7 @@ def build_eri_kernel(cls: Spec | tuple[int, int, int, int], *,
         plus("oc", kc // nd), plus("od", kc % nd)))) for kc in all_c]
 
     per_task: tuple[Stmt, ...] = (
-        Decl("tb", Scalar.I32, init=Index("task_bra", (task,))),
-        Decl("tk", Scalar.I32, init=Index("task_ket", (task,))),
-        Decl("b0", Scalar.I32, init=Index("brec0", (Var("tb"),))),
-        Decl("b1", Scalar.I32, init=Index("brec1", (Var("tb"),))),
-        Decl("k0", Scalar.I32, init=Index("krec0", (Var("tk"),))),
-        Decl("k1", Scalar.I32, init=Index("krec1", (Var("tk"),))),
-        Decl("oa", Scalar.I32, init=Index("off_a", (Var("tb"),))),
-        Decl("ob", Scalar.I32, init=Index("off_b", (Var("tb"),))),
-        Decl("oc", Scalar.I32, init=Index("off_c", (Var("tk"),))),
-        Decl("od", Scalar.I32, init=Index("off_d", (Var("tk"),))),
-        *(Decl(f"acc{r}_{kc}", Scalar.F64, init=Lit(0.0))
-          for r in range(len(rows)) for kc in range(len(cols))),
-        Note("the bra records of the task's bra shell pair, serially"),
-        For(BRA, Var("b0"), Var("b1"), Lit(1), bra_body),
+        *contraction(spec.am),
         Note("the packed pair index of every row and column"),
         *row_idx,
         *col_idx,
@@ -333,37 +390,14 @@ def build_eri_kernel(cls: Spec | tuple[int, int, int, int], *,
              "no atomics -- each element belongs to one task"),
         *scatter,
     )
-    body: tuple[Stmt, ...] = (
-        Note(f"full ERI, class ({la},{lb}|{lc},{ld}) at L = "
-             f"{la + lb + lc + ld}: eri[pidx(m,n), pidx(l,s)] = (mn|ls) "
-             "(eri/full_eri/packed.py, eri/eri.py)"),
-        Note("launch: one thread per (bra shell pair, ket shell pair) task"),
-        Decl(TASK, Scalar.I32, init=_c(Fn.ADD, Call(Fn.THREAD_X), _c(
-            Fn.MUL, Call(Fn.BLOCK_X), Call(Fn.BLOCK_DIM_X)))),
-        If(_c(Fn.LT, task, Var("n_task")), per_task),
-    )
-
-    def f64(n: str, shape: tuple[Expr, ...]) -> Param:
-        return Param(n, Scalar.F64, array=True, shape=shape)
-
-    def i32(n: str, shape: tuple[Expr, ...]) -> Param:
-        return Param(n, Scalar.I32, array=True, shape=shape)
-
-    nbr, nkr = Var("n_brec"), Var("n_krec")
-    nbp, nkp, ntask = Var("n_bpair"), Var("n_kpair"), Var("n_task")
+    body = launch((Note(f"full ERI, class ({la},{lb}|{lc},{ld}) at L = "
+                        f"{la + lb + lc + ld}: eri[pidx(m,n), pidx(l,s)] = "
+                        "(mn|ls) (eri/full_eri/packed.py, eri/eri.py)"),),
+                  per_task)
     nao, npp = Var("n_ao"), Var("n_pp")
     params = (
-        *(Param(n, Scalar.I32) for n in SCALARS),
-        f64("zeta_ab", (nbr,)), f64("P", (nbr, Lit(3))),
-        f64("XPA", (nbr, Lit(3))), f64("XPB", (nbr, Lit(3))),
-        f64("s_ab", (nbr,)),
-        f64("zeta_cd", (nkr,)), f64("Q", (nkr, Lit(3))),
-        f64("XQC", (nkr, Lit(3))), f64("XQD", (nkr, Lit(3))),
-        f64("s_cd", (nkr,)),
-        *(i32(n, (nbp,)) for n in INDEX_ARRAYS[:4]),
-        *(i32(n, (nkp,)) for n in INDEX_ARRAYS[4:8]),
-        i32("task_bra", (ntask,)), i32("task_ket", (ntask,)),
-        i32("pidx", (nao, nao)),
+        *input_params(SCALARS),
+        Param("pidx", Scalar.I32, array=True, shape=(nao, nao)),
         Param(OUT, Scalar.F64, array=True, intent=Intent.OUT,
               shape=(npp, npp)),
     )

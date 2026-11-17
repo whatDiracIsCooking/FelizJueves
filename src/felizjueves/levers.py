@@ -69,7 +69,8 @@ __all__ = [
 TARGET_SLOTS: tuple[str, ...] = ("j", "dq", "jab", "k", "s", "t", "v", "f",
                                  "schwarz", "sx", "metric", "eri3",
                                  "pair_bound", "record_bound", "dipole",
-                                 "quadrupole", "kx1", "kxc", "jx", "eri")
+                                 "quadrupole", "kx1", "kxc", "jx", "eri",
+                                 "eri_dense")
 
 # THE ENGINE SLOTS (#401). A target built on a recurrence other than its
 # native one keys as `<target>.<engine>` (`spec.Spec.target_slot`), and the
@@ -196,6 +197,11 @@ DEFAULT_REFUSALS: Mapping[str, str] = MappingProxyType({
         "the full ERI kernel has the J recurrence but no option surface: it "
         "is one thread per shell-pair quartet, one batch, by decision, and a "
         "full-ERI lever is a follow-up nobody has declared"
+    ),
+    "eri_dense": (
+        "the dense ERI kernel has the J recurrence but no option surface: "
+        "it is one thread per ordered shell quartet, one batch, by decision, "
+        "and a dense-ERI lever is a follow-up nobody has declared"
     ),
     "j.hgp": (
         "no kernel-body lever is admitted on an HGP Target.J unless its "
