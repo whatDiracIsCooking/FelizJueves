@@ -46,6 +46,7 @@ list is each family's "RTX 3080 only" in the tree-state files.
 | Family | Where it stands | Reference |
 |---|---|---|
 | `J` chain (`[p\|q]`, `DQ`, `JAB`, launch plan) | generated and run on both cards; `J` witnessed against libcint; low-stack `DQ`/`JAB` at (ff); one batch and the **literal** plan by decision | `j-chain.md` |
+| packed full ERI, `J` by GEMV (`Target.ERI`) | small systems (`n_ao <= 150`); generated, interpreted against the host and PySCF's `vj` at L <= 4, nvcc- and hipcc-compiled, on no card | `j-chain.md` |
 | one-electron `S`, `T`, `V` | generated, run on both cards through (ff); low-stack `V` at (ff); not scored, not measured | `j-chain.md` |
 | exchange `K` (milestone 10, **open**) | `kernel_k` on cards at L ≤ 2 only; block forms `kb` / `kbr` / `kbrc` (through d `kb`, at f `kbr`, at g `kbrc`); `kbd`, `kbrt` measured and not chosen | `k-exchange.md` |
 | HGP engine, fused `F`, split HGP `J`/`K` | `F` on both cards and timed; split HGP on the RTX 3080 only; nothing above L = 4; `F`'s gradient `gf_` interpreted and compiled, not on a card (`gradients.md`) | `fock-hgp.md` |

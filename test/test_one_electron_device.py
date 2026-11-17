@@ -642,6 +642,9 @@ def test_the_staged_data_through_the_interpreter_is_the_host(target) -> None:
         grid, block = (-(-nr // 8), (8, 1))
         out = Interpreter(k, launch=Launch(grid, block, 1), boys=boys).run(
             **args, **{mat: out})[mat]
+    # the kernels write the lower triangle only (6e240ad); the caller
+    # mirrors it onto the upper once, after the last launch
+    out = np.tril(out) + np.tril(out, -1).T
     tol, _, _, _, _ = _bound(name, target, None)
     err = np.abs(out - _host_cached(name, target, None))
     assert np.all(err <= tol), _ratio(err, tol)

@@ -123,3 +123,25 @@ interpreted, at every class through (ff). At (ff) the `sm_86` frames are
 71,456 B. Below L = 6 the text is byte-identical, pinned by digest in
 `test_kernel_dq.py` / `test_kernel_jab.py`. The numbers and a hand timing
 are in `j_engine.md`, "The low-stack `DQ` and `JAB` at f".
+**The packed full ERI and `J` by GEMV** (`Target.ERI`, `eri/full_eri/`) are
+a small-system path (`n_ao <= packed.N_AO_MAX = 150`, about 1 GB of doubles
+there): `kernel_eri.build_eri_kernel((la, lb, lc, ld))` writes every
+`(mn|ls)` of a class into one symmetric `n_pp x n_pp` matrix packed by AO
+pair (`n_pp = n_ao (n_ao + 1) / 2`), one thread per (bra shell pair, ket
+shell pair) task, the Schwarz kernel's skeleton widened to a whole block on
+the `Target.J` quartet's plan, plain stores, no atomics, so bit-reproducible
+and exactly symmetric; `kernel_gemv.build_gemv_kernel()` (`eri_jgemv`) is
+`J_pp = ERI_pp Dp`, one thread per packed pair reading the column
+(coalesced). The staging (`packed.eri_classes`) reuses
+`eri.schwarz.schwarz_classes`' pair classes and owns the eight-fold symmetry:
+every unordered pair of shell pairs is one task. The packing of `D` and the
+unpacking of `J` are host-side. Emitted by the opt-in `--eri-l [LMAX]`
+ladder (bare: s and p, 6 classes plus the GEMV; at most d, (dd|dd)).
+**Interpreted** every class at L <= 4 (`test_kernel_eri_full.py`): within
+16 eps of the host's `eri.eri` scale, every element written once, and `J`
+from the interpreted GEMV over H2 and H2O/STO-3G within 1e-12 of PySCF's
+`vj` (6e-15 absolute on H2O). **Compiled by nvcc and hipcc** (the programs of
+`test_eri_full_device.py`); **on no card yet** -- its `gpu` tests (every
+class at L <= 4 against the host, H2 and H2O/STO-3G's `J` against PySCF)
+were written in a cloud session without one, so both backends are owed.
+Nothing is measured.

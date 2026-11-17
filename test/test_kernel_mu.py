@@ -59,6 +59,7 @@ import pytest
 from oracle import basis as ob
 from oracle import manifest
 from test_kernel_s import _launch as _s_launch
+from test_kernel_s import _mirror as _s_mirror
 from test_kernel_v import _records
 from tiers import split_by_l
 
@@ -309,7 +310,8 @@ def test_the_overlap_component_is_kernel_s_bitwise(cls) -> None:
     n = basis.n_ao
     got = _launch(cls, basis, pairs, _zeros(basis, True), d.origin,
                   with_overlap=True)
-    S = _s_launch(cls, basis, pairs, np.zeros((n, n)))
+    # kernel_s writes the lower triangle only (6e240ad); the caller mirrors
+    S = _s_mirror(_s_launch(cls, basis, pairs, np.zeros((n, n))))
     assert np.array_equal(got[0], S)
     plain = _launch(cls, basis, pairs, _zeros(basis), d.origin)
     assert np.array_equal(got[1:], plain)
@@ -437,8 +439,8 @@ def test_at_f_the_overlap_component_is_kernel_s_bitwise(cls) -> None:
     n = basis.n_ao
     got = _launch(cls, basis, pairs, _zeros(basis, True), d.origin,
                   with_overlap=True)
-    assert np.array_equal(got[0], _s_launch(cls, basis, pairs,
-                                            np.zeros((n, n))))
+    assert np.array_equal(got[0], _s_mirror(_s_launch(cls, basis, pairs,
+                                                      np.zeros((n, n)))))
     plain = _launch(cls, basis, pairs, _zeros(basis), d.origin)
     assert np.array_equal(got[1:], plain)
 

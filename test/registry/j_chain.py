@@ -25,7 +25,12 @@ CASES = [
     *(case for q in "stv" for case in ladder(
         "mmd", q, 0, compile=range(5), gpu=range(7),
         cards=dict.fromkeys(BOTH, range(7)))),
+    # The packed full ERI (`Target.ERI`) and J by GEMV: every class at
+    # L <= 4 interpreted, compiled by nvcc and hipcc, on no card yet.
+    *ladder("mmd", "eri", 0, compile=range(5), gpu=range(5)),
 ]
+
+_ERI = span("mmd", "eri", 0, range(5))
 
 _ONE_E_DD = {q.upper(): span("mmd", q, 0, range(5)) for q in "stv"}
 _ONE_E_FF = {q.upper(): span("mmd", q, 0, range(7)) for q in "stv"}
@@ -40,9 +45,19 @@ PATHS = (
     "src/felizjueves/one_electron/",
     "test/one_electron_driver.py",
     "test/plan_driver.py",
+    "src/felizjueves/eri/full_eri/",
+    "test/eri_full_driver.py",
 )
 
 TESTS = {
+    # The packed full ERI and J by GEMV.
+    "test/test_eri_full_device.py::test_X_every_eri_class_through_l4_matches_the_host":
+        _ERI,
+    "test/test_eri_full_device.py::test_X_j_by_gemv_matches_pyscf":
+        Allow(MOLECULE),
+    "test/test_eri_full_device.py::test_X_eri_programs_compile": ById({
+        "synthetic": _ERI, "h2_sto3g_j": Allow(MOLECULE),
+        "h2o_sto3g_j": Allow(MOLECULE)}),
     # [p|q], one batch and split.
     "test/test_emit_X.py::test_it_compiles": Classes("mmd", "j"),
     "test/test_any_wavefront_device.py::test_X_any_wavefront_j_p_matches_the_reference":

@@ -121,6 +121,19 @@ matrix `sqrt((mn|mn))` over every AO pair `(m, n)`, the Schwarz factor of
 table row, and the plan is asked for the `Target.J` quartet, never for this
 key (`kernel_schwarz.schwarz_plan`).
 
+A FULL-ERI CLASS IS A QUARTET THAT WRITES EVERY ELEMENT. `Target.ERI` is the
+whole Cartesian AO tensor `(mn|ls)`, packed by AO pair (`m >= n`, `l >= s`)
+into one symmetric `n_pp x n_pp` matrix, `n_pp = n_ao (n_ao + 1) / 2`, so that
+`J` is one matrix-vector product with the packed density (`eri/full_eri`).
+Its class is the AO-order quartet `(la, lb | lc, ld)` of two staged shell
+pairs (`la <= lb`, `lc <= ld`, the bra pair class not after the ket's), key
+``coulomb/d0/(0,1|1,1)/b1/eri/literal``; the recurrence it runs is the
+`Target.J` quartet with the same `am`, and the plan is asked for THAT spec,
+never for this key (`kernel_eri.eri_plan`). So `total_am` is L of the quartet
+but indexes no [JEngine] table row. Unbatched by decision
+(`_ERI_BATCH_REFUSAL`). It is a small-system path by construction: memory is
+`n_pp^2` doubles, about 1 GB at `n_ao = 150`.
+
 A CROSS-OVERLAP CLASS IS AN ORDERED PAIR ACROSS TWO BASES. `Target.SX` is
 the rectangular overlap `S_{B1,B2}[m, n] = <m|n>` with `m` an AO of one
 basis and `n` of another (the same molecule in two basis sets, or two
@@ -497,6 +510,12 @@ class Target(StrEnum):
     # back-transform differentiated and scattered into (m, n)
     # (hessian.kernel_jx; module docstring "A JX CLASS").
     JX = "jx"
+    # The full Cartesian AO ERI tensor (ab|cd), packed by AO pair, a QUARTET
+    # class in AO order (la, lb | lc, ld) whose kernel runs the Target.J
+    # quartet's recurrence and writes every element once; for small systems
+    # (n_ao <= 150), where J = (mn|ls) D_ls is one GEMV (eri/full_eri,
+    # module docstring "A FULL-ERI CLASS").
+    ERI = "eri"
 
 
 class Engine(StrEnum):
@@ -521,7 +540,7 @@ AM_LENGTH: dict[Target, int] = {
     Target.S: 2, Target.T: 2, Target.V: 2, Target.SCHWARZ: 2,
     Target.SX: 2, Target.METRIC: 2, Target.ERI3: 3, Target.PAIR_BOUND: 2,
     Target.RECORD_BOUND: 2, Target.DIPOLE: 2, Target.QUADRUPOLE: 2,
-    Target.KX1: 4, Target.KXC: 4, Target.JX: 2,
+    Target.KX1: 4, Target.KXC: 4, Target.JX: 2, Target.ERI: 4,
 }
 
 
@@ -539,7 +558,7 @@ OPERATOR_OF: dict[Target, Operator] = {
     Target.PAIR_BOUND: Operator.COULOMB, Target.RECORD_BOUND: Operator.COULOMB,
     Target.DIPOLE: Operator.DIPOLE, Target.QUADRUPOLE: Operator.QUADRUPOLE,
     Target.KX1: Operator.COULOMB, Target.KXC: Operator.COULOMB,
-    Target.JX: Operator.COULOMB,
+    Target.JX: Operator.COULOMB, Target.ERI: Operator.COULOMB,
 }
 
 
@@ -618,6 +637,8 @@ _ENGINE_REFUSAL: dict[tuple[Target, Engine], str] = {
         "nobody has declared"
     ) for t in (Target.KX1, Target.KXC)},
     (Target.JX, Engine.HGP): _NO_HGP_PAIR,
+    (Target.ERI, Engine.HGP): _mmd_only(
+        "the full ERI kernel (la lb|lc ld)"),
     (Target.F, Engine.MMD): (
         "the fused F is built on HGP only ([Fock] §3.2); a fused MMD F is "
         "#326, not yet built"
@@ -674,6 +695,16 @@ _PAIR_BATCH_REFUSAL: dict[Target, str] = {
 
 # The word a validator message uses for a class of `n` shells.
 _SHAPE: dict[int, str] = {2: "pair", 3: "triple", 4: "quartet"}
+
+
+# Why `Target.ERI` refuses `n_batches > 1` (module docstring, "A FULL-ERI
+# CLASS"): a decision, not a structural fact.
+_ERI_BATCH_REFUSAL = (
+    "unbatched by decision -- the full ERI class runs the quartet's "
+    "recurrence, whose Hermite targets could be partitioned, but the kernel "
+    "is one thread per shell-pair quartet writing each element once, and a "
+    "batched full-ERI kernel is a follow-up nobody has declared"
+)
 
 
 # Why `Target.F` refuses `n_batches > 1` (#272, module docstring): its own
@@ -931,6 +962,11 @@ class Spec:
             raise ValueError(
                 f"n_batches {self.n_batches!r} for target {self.target}: "
                 f"{_F_BATCH_REFUSAL}"
+            )
+        if self.target is Target.ERI and self.n_batches != 1:
+            raise ValueError(
+                f"n_batches {self.n_batches!r} for target {self.target}: "
+                f"{_ERI_BATCH_REFUSAL}"
             )
         if want in (2, 3) and self.n_batches != 1:
             raise ValueError(
