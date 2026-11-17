@@ -401,16 +401,17 @@ def _ids(c) -> str:
     return "".join(map(str, c))
 
 
-def test_the_dense_low_stack_rule_and_the_d_text():
+def test_the_dense_low_stack_rule_and_the_sp_text():
     assert len(F_ORDERED) == 256
     assert {c for c in F_ORDERED if kernel_eri.eri_lowstack(
-        kernel_dense.dense_spec(*c))} == {c for c in F_ORDERED if 3 in c}
+        kernel_dense.dense_spec(*c))} == {c for c in F_ORDERED
+                                          if max(c) >= 2}
     for c in (*SYNTHETIC_CLASSES, (3, 0, 0, 0), (0, 1, 3, 2)):
         for lay in LAYOUTS:
             k = kernel_dense.build_dense_kernel(c, lay)
             assert k.name == f"eri_d{lay}_" + _ids(c)
             assert k == kernel_dense.build_dense_kernel(
-                c, lay, lowstack=3 in c)
+                c, lay, lowstack=max(c) >= 2)
     assert kernel_dense.launch_shape(5, 4, rows=3) == (4, (4, 1))
 
 
@@ -434,7 +435,7 @@ def test_the_forced_low_stack_form_through_l4_agrees_with_the_host(
 def test_every_ordered_class_through_ff_ff_low_stack_agrees_with_the_host(
         cls, layout):
     """Every ordering of the s-to-f basis in the low-stack form (the
-    default with an f shell, forced below), both layouts, against
+    default with a d or f shell, forced below), both layouts, against
     `eri.eri` placed by the kernel's rule, within the analytic bound."""
     classes = [c for c in dense_classes(F_BASIS) if c.am == cls]
     n = F_BASIS.n_ao

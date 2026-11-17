@@ -54,7 +54,7 @@ writes outside the block, so only the staging's tasks may be launched.
 `m0` is the range's first AO `m` (`off[sh0]`), `n_col = n_ao^2`. Elements of
 classes not launched are untouched: the caller zeroes first.
 
-THE LOW-STACK FORM, every class with an f shell (`kernel_eri.eri_lowstack`,
+THE LOW-STACK FORM, every class with a d or f shell (`kernel_eri.eri_lowstack`,
 the same rule; `lowstack=True` forces it at any class): `kernel_eri`'s
 module docstring has it -- `kernel_eri.lowstack_body` unchanged, one thread
 per (task, bra Cartesian `a`) -- its `n_b` rows serially, where the packed

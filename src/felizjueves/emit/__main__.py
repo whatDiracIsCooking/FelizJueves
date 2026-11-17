@@ -62,9 +62,9 @@ for CUDA, `.hip` for HIP):
   pair class not after the ket's (1 when the flag is given bare, accepted
   0..`ERI_L_MAX` = 3), `kernel_eri.build_eri_kernel` (`eri_{la}{lb}{lc}{ld}`,
   `Target.ERI`): the packed AO ERI tensor, one thread per shell-pair
-  quartet -- or, in the low-stack form every class with an f shell takes
-  (`kernel_eri.eri_lowstack`), `n_a` threads per quartet; and, once each,
-  `kernel_kperm.build_kperm_kernel` (`eri_kperm`, the exchange-ordered
+  quartet -- or, in the low-stack form every class with a d or f shell
+  takes (`kernel_eri.eri_lowstack`), `n_a n_b` threads per quartet; and,
+  once each, `kernel_kperm.build_kperm_kernel` (`eri_kperm`, the exchange-ordered
   matrix gathered from it) and
   `kernel_gemv.build_gemv_kernel` (`eri_jgemv`), `J` -- and `K`, over
   `eri_kperm`'s output -- as one GEMV (`eri/full_eri`). A small-system

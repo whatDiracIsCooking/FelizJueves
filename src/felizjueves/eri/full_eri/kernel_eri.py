@@ -65,7 +65,7 @@ symmetric -- which `kernel_gemv` relies on.
 
 Elements of tasks not launched are untouched: the caller zeroes first.
 
-THE LOW-STACK FORM (every class with an f shell, `eri_lowstack`; forced by
+THE LOW-STACK FORM (every class with a d or f shell, `eri_lowstack`; forced by
 `lowstack=True` at any class). The form above holds the whole `n_ab x
 n_cd` block in accumulators and the bra and ket `E` blocks and every
 `I_c[p]` in locals: an `sm_86` frame of 43.9 KB at (dd|dd), all of it
@@ -483,16 +483,18 @@ R_ARRAY = "R"  # [t]^(0), hermite_targets(L) order
 G_ARRAY = "G"  # G[q] = SUM_p E^{ab}_p [p+q]^(0), hermite_targets(lc+ld)
 BRA_ARRAYS = ("Ebx", "Eby", "Ebz")  # the bra's per-axis E tables
 KET_ARRAYS = ("Ekx", "Eky", "Ekz")  # the ket's, from the negated X
-LOWSTACK_MIN_L = 3  # the low-stack form needs a shell with l >= 3 (f)
+LOWSTACK_MIN_L = 2  # the low-stack form takes every class with l >= 2 (d)
 ER_ARRAY = "Er"  # the row's E^{ab}_p over its reach
 
 
 def eri_lowstack(cls: Spec | tuple[int, int, int, int]) -> bool:
     """THE SELECTION RULE: True when the class has a shell with
-    `l >= LOWSTACK_MIN_L` (f), where `build_eri_kernel` and
+    `l >= LOWSTACK_MIN_L` (d), where `build_eri_kernel` and
     `kernel_dense.build_dense_kernel` emit the low-stack form by default.
-    Every class through (dd|dd) keeps the one-thread-per-task form and its
-    text. Takes a `Target.ERI` or `Target.ERI_DENSE` key, or `am`."""
+    Only the s and p classes, through (pp|pp), keep the one-thread-per-task
+    form: from d it spills (`eri_1112` up; 43.9 KB at (dd|dd) against the
+    low-stack 3.9 KB, and faster in 5 of 6 measured (dd|dd) shapes).
+    Takes a `Target.ERI` or `Target.ERI_DENSE` key, or `am`."""
     am = cls.am if isinstance(cls, Spec) else tuple(cls)
     return max(am) >= LOWSTACK_MIN_L
 

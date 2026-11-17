@@ -162,7 +162,8 @@ def test_hip_a_union_of_row_ranges_is_the_whole_matrix(
 
 
 # Both layouts of every ordering at L <= 4 is ~600 s of cold nvcc on this
-# box's A6000 host (the d units unrolled): `slow`, so the compile sample's
+# box's A6000 host (measured with the d units unrolled, before they took the
+# low-stack form; not re-measured): `slow`, so the compile sample's
 # dense case is H2/STO-3G's.
 COMPILE_SYNTHETIC = pytest.param("synthetic", marks=pytest.mark.slow,
                                  id="synthetic")
