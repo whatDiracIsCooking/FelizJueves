@@ -291,18 +291,22 @@ def test_the_eri_ladder_pairs_the_staged_pair_classes():
             emit_cli.eri_classes(bad)
 
 
-def test_eri_l_bare_adds_s_and_p_and_the_gemv(tmp_path):
+def test_eri_l_bare_adds_s_and_p_the_permute_and_the_gemv(tmp_path):
     from felizjueves.eri.full_eri.kernel_eri import build_eri_kernel
     from felizjueves.eri.full_eri.kernel_gemv import build_gemv_kernel
+    from felizjueves.eri.full_eri.kernel_kperm import build_kperm_kernel
 
     assert _run(tmp_path, "cuda", "--L", "0", "--eri-l") == 0
-    assert _names(tmp_path) == {"pq_L0_p0_q0.cu", "eri_jgemv.cu"} | {
+    assert _names(tmp_path) == {"pq_L0_p0_q0.cu", "eri_jgemv.cu",
+                                "eri_kperm.cu"} | {
         "eri_" + "".join(map(str, c)) + ".cu" for c in emit_cli.eri_classes(1)}
     emit, arch, _ = BACKEND["cuda"]
     assert (tmp_path / "eri_0111.cu").read_text() == emit(
         build_eri_kernel((0, 1, 1, 1)), arch)
     assert (tmp_path / "eri_jgemv.cu").read_text() == emit(
         build_gemv_kernel(), arch)
+    assert (tmp_path / "eri_kperm.cu").read_text() == emit(
+        build_kperm_kernel(), arch)
 
 
 def test_an_eri_l_past_the_cap_is_a_2(tmp_path):

@@ -62,10 +62,12 @@ for CUDA, `.hip` for HIP):
   pair class not after the ket's (1 when the flag is given bare, accepted
   0..`ERI_L_MAX` = 2), `kernel_eri.build_eri_kernel` (`eri_{la}{lb}{lc}{ld}`,
   `Target.ERI`): the packed AO ERI tensor, one thread per shell-pair
-  quartet; and, once, `kernel_gemv.build_gemv_kernel` (`eri_jgemv`), `J` as
-  one GEMV over it (`eri/full_eri`). A small-system path: LMAX = 2 is
-  (dd|dd) at L = 8. It ADDS units beside the J ladders and is NEVER in the
-  no-flag default.
+  quartet; and, once each, `kernel_kperm.build_kperm_kernel` (`eri_kperm`,
+  the exchange-ordered matrix gathered from it) and
+  `kernel_gemv.build_gemv_kernel` (`eri_jgemv`), `J` -- and `K`, over
+  `eri_kperm`'s output -- as one GEMV (`eri/full_eri`). A small-system
+  path: LMAX = 2 is (dd|dd) at L = 8. It ADDS units beside the J ladders
+  and is NEVER in the no-flag default.
 
 - the cross-basis overlap ladder, `--sx-l [LMAX]`: for every ORDERED pair
   class `(la, lb)`, `la, lb <= LMAX` (2 when the flag is given bare,
@@ -719,6 +721,7 @@ from felizjueves.eri.fock.kernel_f import build_f_kernel, f_class_spec
 from felizjueves.eri.fock.kernel_frys import build_frys_kernel
 from felizjueves.eri.full_eri.kernel_eri import build_eri_kernel
 from felizjueves.eri.full_eri.kernel_gemv import build_gemv_kernel
+from felizjueves.eri.full_eri.kernel_kperm import build_kperm_kernel
 from felizjueves.eri.hjk.kernel_hj import build_hj_kernel, hj_class_spec, hj_name
 from felizjueves.eri.hjk.kernel_hj import built_class as hj_built_class
 from felizjueves.eri.hjk.kernel_hk import build_hk_kernel, hk_class_spec, hk_name
@@ -799,7 +802,7 @@ DEFAULT_ONE_E_L = 3  # `--one-e-l` given bare: (ss) through (ff), 30 units
 ONE_E_L_MAX = PAIR_L_MAX  # the range the pair ladder accepts
 DEFAULT_SCHWARZ_L = 2  # `--schwarz-l` given bare: (ss) through (dd), 6 units
 SCHWARZ_L_MAX = 4  # (gg|gg) at L = 16, the [p|q] ladder's top
-DEFAULT_ERI_L = 1  # `--eri-l` given bare: s and p shells, 6 classes + GEMV
+DEFAULT_ERI_L = 1  # `--eri-l` given bare: s and p, 6 classes + permute + GEMV
 ERI_L_MAX = 2  # (dd|dd) at L = 8: the full ERI is a small-system path
 DEFAULT_SX_L = 2  # `--sx-l` given bare: every ordered class through d, 9 units
 DEFAULT_METRIC_L = 4  # `--metric-l` given bare: lP <= lQ, lP + lQ <= 4, 9 units
@@ -996,10 +999,10 @@ def eri_classes(lmax: int) -> list[tuple[int, int, int, int]]:
 
 def generate_eri(backend: str, arch: Arch, out: Path,
                  lmax: int) -> list[Path]:
-    """Emit the full-ERI unit of every class through `lmax`, and the GEMV
-    unit, into `out`; return the paths."""
+    """Emit the full-ERI unit of every class through `lmax`, the exchange
+    permute's and the GEMV's, into `out`; return the paths."""
     kernels = [build_eri_kernel(c) for c in eri_classes(lmax)]
-    kernels.append(build_gemv_kernel())
+    kernels += [build_kperm_kernel(), build_gemv_kernel()]
     out.mkdir(parents=True, exist_ok=True)
     return [_write(backend, arch, out, k) for k in kernels]
 

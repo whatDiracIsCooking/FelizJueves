@@ -145,3 +145,18 @@ from the interpreted GEMV over H2 and H2O/STO-3G within 1e-12 of PySCF's
 class at L <= 4 against the host, H2 and H2O/STO-3G's `J` against PySCF)
 were written in a cloud session without one, so both backends are owed.
 Nothing is measured.
+
+**`K` by GEMV over the same tensor** (`kernel_kperm.build_kperm_kernel()`,
+`eri_kperm`): for a symmetric `D`, `K_pp = X_pp Dp` with the Coulomb GEMV's
+own `Dp`, `X_pp[pidx(l,s), pidx(m,n)] = 0.5 ((ml|ns) + (ms|nl))` -- one more
+symmetric `n_pp x n_pp` matrix (so ~2 GB for the pair at the cap), gathered
+from `ERI_pp` once per geometry, one thread per packed column, plain stores,
+bitwise the host's `packed.exchange_packed` and exactly symmetric; `K` is
+then `eri_jgemv` over `X_pp`, unchanged. Emitted beside the GEMV by
+`--eri-l`. **Interpreted** (`test_kernel_eri_full.py`): `X_pp` `==` the host
+and its transpose; the host's packed `K` within 2e-16 of a dense `einsum`
+over the unpacked tensor (s/p synthetic basis, random symmetric `D`); `K`
+from the interpreted chain over H2 and H2O/STO-3G within 3e-15 / 6e-16
+(relative to max |vk|) of PySCF's `vk`. **Compiled by nvcc and hipcc**
+(`test_X_eri_programs_compile`, cloud session, 2026-11-17); **on no card**
+-- `test_X_k_by_gemv_matches_pyscf` on both backends is owed. Nothing is measured.

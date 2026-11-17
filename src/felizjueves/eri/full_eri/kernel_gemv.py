@@ -1,4 +1,5 @@
-"""The Coulomb GEMV over the packed ERI: `J_pp = ERI_pp Dp`.
+"""The GEMV over a packed symmetric matrix: `J_pp = ERI_pp Dp`, and
+`K_pp = X_pp Dp` over `kernel_kperm`'s exchange-ordered `X_pp`.
 
     build_gemv_kernel(name="eri_jgemv") -> Kernel
     launch_shape(n_pp, threads)         -> (grid, block)
@@ -17,6 +18,11 @@ So the product is `ERI_pp Dp` bit for bit with the row form's fold order.
 `full_eri.packed` (`pack_density`, `unpack`): the packing is host-side.
 
     params  n_pp (I32)  eri[n_pp, n_pp]  Dp[n_pp]  Jp[n_pp] (OUT)
+
+THE SAME KERNEL IS `K`. `kernel_kperm`'s `X_pp` is exactly symmetric too,
+and `K_pp = X_pp Dp` with the same `Dp` (`full_eri.packed`), so passing `X`
+as `eri` and reading `Jp` as `Kp` is the exchange GEMV, unchanged. The
+parameter names stay the Coulomb ones so its emitted text does not move.
 
 A builder: vendor-neutral IR; no class, so no `Spec`.
 """

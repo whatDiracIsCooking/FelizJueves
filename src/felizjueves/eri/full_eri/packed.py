@@ -6,6 +6,9 @@
     packed_eri_and_scale(basis, *, pq) -> (ERI_pp, its |.| scale)
     pack_density(D) / unpack(Jp, n_ao)
     coulomb_from_packed(eri, D)    -> J[m][n] = SUM_ls (mn|ls) D_ls
+    pair_of(n_ao)                  -> (pm, pn), the AO pair of each index
+    exchange_packed(eri)           -> X_pp, the exchange-ordered matrix
+    exchange_from_packed(X, D)     -> K[m][n] = SUM_ls (ml|ns) D_ls
 
 THE PACKING. AO pairs `m >= n` are numbered `pidx(m, n) = m (m + 1) / 2 + n`,
 and `pidx` is symmetric (`pidx[m][n] == pidx[n][m]`), so the eight-fold
@@ -21,6 +24,14 @@ orders of an off-diagonal pair carry one integral, so
 
 and `J_mn = J_pp[pidx(m, n)]`. For a non-symmetric `D` the same sum is `J` of
 its symmetric part, which is what `(mn|ls)`'s symmetry makes `J` anyway.
+
+THE EXCHANGE GEMV. For a symmetric `D`, `K_mn = SUM_ls (ml|ns) D_ls` is
+
+    K_pp = X_pp Dp,   X_pp[pidx(l, s), pidx(m, n)] = 0.5 ((ml|ns) + (ms|nl)),
+
+with the same `Dp`; `X_pp` is a symmetric `n_pp x n_pp` matrix gathered from
+`ERI_pp` once (`kernel_kperm`), so `K` is the Coulomb GEMV over it. A
+non-symmetric `D` is out of scope (RHF).
 
 THE STAGING (`eri_classes`) reuses `eri.schwarz.schwarz_classes`' pair
 classes unchanged: every shell pair `i <= j` once, staged `l_A <= l_B`, its
@@ -44,6 +55,7 @@ type) up to `n_ao ~ 300`. `eri_classes` refuses a larger basis.
 
 from __future__ import annotations
 
+import math
 from collections.abc import Sequence
 from dataclasses import dataclass
 
@@ -202,3 +214,38 @@ def coulomb_from_packed(eri: Sequence[Sequence[float]],
     Dp = pack_density(D)
     Jp = [sum(e * d for e, d in zip(row, Dp, strict=True)) for row in eri]
     return unpack(Jp, len(D))
+
+
+def pair_of(n_ao: int) -> tuple[list[int], list[int]]:
+    """`(pm, pn)`: packed index `i` is the AO pair `m = pm[i] >= n = pn[i]`,
+    the inverse of `pair_index`."""
+    pm = [m for m in range(n_ao) for _ in range(m + 1)]
+    pn = [k for m in range(n_ao) for k in range(m + 1)]
+    return pm, pn
+
+
+def exchange_packed(eri: Sequence[Sequence[float]]) -> Matrix:
+    """`X_pp[pidx(l, s)][pidx(m, n)] = 0.5 * ((ml|ns) + (ms|nl))`, read from
+    `ERI_pp` in `kernel_kperm`'s order, so bitwise the kernel's."""
+    n_pp = len(eri)
+    n_ao = (math.isqrt(8 * n_pp + 1) - 1) // 2
+    if n_packed(n_ao) != n_pp:
+        raise ValueError(f"{n_pp} is not n_ao (n_ao + 1) / 2")
+    pidx = pair_index(n_ao)
+    pm, pn = pair_of(n_ao)
+    out = [[0.0] * n_pp for _ in range(n_pp)]
+    for i in range(n_pp):
+        m, n = pm[i], pn[i]
+        for j in range(n_pp):
+            ll, s = pm[j], pn[j]
+            a = eri[pidx[m][ll]][pidx[n][s]]
+            b = eri[pidx[m][s]][pidx[n][ll]]
+            out[j][i] = 0.5 * (a + b)
+    return out
+
+
+def exchange_from_packed(X: Sequence[Sequence[float]],
+                         D: Sequence[Sequence[float]]) -> Matrix:
+    """`K = unpack(X_pp @ pack_density(D))`, the GEMV on the host, for a
+    symmetric `D`."""
+    return coulomb_from_packed(X, D)
