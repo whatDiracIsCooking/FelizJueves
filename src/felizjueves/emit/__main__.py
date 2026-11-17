@@ -57,6 +57,16 @@ for CUDA, `.hip` for HIP):
   ladders, as `--one-e-l` does, and is NEVER in the no-flag default. Only
   `la <= lb`: `eri.schwarz.schwarz_classes` stages every shell pair that way.
 
+- the full-ERI ladder, `--eri-l [LMAX]`: for every quartet of staged pair
+  classes `(la lb|lc ld)`, `la <= lb <= LMAX`, `lc <= ld <= LMAX`, the bra
+  pair class not after the ket's (1 when the flag is given bare, accepted
+  0..`ERI_L_MAX` = 2), `kernel_eri.build_eri_kernel` (`eri_{la}{lb}{lc}{ld}`,
+  `Target.ERI`): the packed AO ERI tensor, one thread per shell-pair
+  quartet; and, once, `kernel_gemv.build_gemv_kernel` (`eri_jgemv`), `J` as
+  one GEMV over it (`eri/full_eri`). A small-system path: LMAX = 2 is
+  (dd|dd) at L = 8. It ADDS units beside the J ladders and is NEVER in the
+  no-flag default.
+
 - the cross-basis overlap ladder, `--sx-l [LMAX]`: for every ORDERED pair
   class `(la, lb)`, `la, lb <= LMAX` (2 when the flag is given bare,
   accepted 0..`ONE_E_L_MAX`), `kernel_sx.build_sx_kernel` (`sx_{la}{lb}`,
@@ -707,6 +717,8 @@ from felizjueves.eri.density_fit.kernel_rmetric import (
 )
 from felizjueves.eri.fock.kernel_f import build_f_kernel, f_class_spec
 from felizjueves.eri.fock.kernel_frys import build_frys_kernel
+from felizjueves.eri.full_eri.kernel_eri import build_eri_kernel
+from felizjueves.eri.full_eri.kernel_gemv import build_gemv_kernel
 from felizjueves.eri.hjk.kernel_hj import build_hj_kernel, hj_class_spec, hj_name
 from felizjueves.eri.hjk.kernel_hj import built_class as hj_built_class
 from felizjueves.eri.hjk.kernel_hk import build_hk_kernel, hk_class_spec, hk_name
@@ -787,6 +799,8 @@ DEFAULT_ONE_E_L = 3  # `--one-e-l` given bare: (ss) through (ff), 30 units
 ONE_E_L_MAX = PAIR_L_MAX  # the range the pair ladder accepts
 DEFAULT_SCHWARZ_L = 2  # `--schwarz-l` given bare: (ss) through (dd), 6 units
 SCHWARZ_L_MAX = 4  # (gg|gg) at L = 16, the [p|q] ladder's top
+DEFAULT_ERI_L = 1  # `--eri-l` given bare: s and p shells, 6 classes + GEMV
+ERI_L_MAX = 2  # (dd|dd) at L = 8: the full ERI is a small-system path
 DEFAULT_SX_L = 2  # `--sx-l` given bare: every ordered class through d, 9 units
 DEFAULT_METRIC_L = 4  # `--metric-l` given bare: lP <= lQ, lP + lQ <= 4, 9 units
 DEFAULT_ERI3_L = 4  # `--eri3-l` given bare: la <= lb, la + lb + lP <= 4, 22 units
@@ -962,6 +976,30 @@ def generate_schwarz(backend: str, arch: Arch, out: Path,
     """Emit the Schwarz unit of every pair class through `lmax` into `out`;
     return the paths."""
     kernels = [build_schwarz_kernel(c) for c in schwarz_classes(lmax)]
+    out.mkdir(parents=True, exist_ok=True)
+    return [_write(backend, arch, out, k) for k in kernels]
+
+
+# ---------------------------------------------------------------------------
+# The full-ERI ladder
+# ---------------------------------------------------------------------------
+
+
+def eri_classes(lmax: int) -> list[tuple[int, int, int, int]]:
+    """Every full-ERI class over the pair classes `la <= lb <= lmax`, bra
+    pair class not after the ket's, over `0..ERI_L_MAX`."""
+    if type(lmax) is not int or not 0 <= lmax <= ERI_L_MAX:
+        raise ValueError(f"--eri-l {lmax!r} is outside 0..{ERI_L_MAX}")
+    pcs = [(la, lb) for la in range(lmax + 1) for lb in range(la, lmax + 1)]
+    return [(*x, *y) for i, x in enumerate(pcs) for y in pcs[i:]]
+
+
+def generate_eri(backend: str, arch: Arch, out: Path,
+                 lmax: int) -> list[Path]:
+    """Emit the full-ERI unit of every class through `lmax`, and the GEMV
+    unit, into `out`; return the paths."""
+    kernels = [build_eri_kernel(c) for c in eri_classes(lmax)]
+    kernels.append(build_gemv_kernel())
     out.mkdir(parents=True, exist_ok=True)
     return [_write(backend, arch, out, k) for k in kernels]
 
@@ -2088,6 +2126,7 @@ def _main_hgp(args: argparse.Namespace, other_path: bool) -> int:
     path's flag, then writes."""
     if (other_path or args.Ls is not None or args.pair_l is not None
             or args.one_e_l is not None or args.schwarz_l is not None
+            or args.eri_l is not None
             or args.sx_l is not None or args.metric_l is not None
             or args.eri3_l is not None or args.mu_l is not None
             or args.quad_l is not None
@@ -2116,7 +2155,7 @@ def _main_hgp(args: argparse.Namespace, other_path: bool) -> int:
             or args.hgp_hess_l is not None
             or _hgp_df(args)):
         print("emit: --hgp-j-l / --hgp-k-l / --hgp-class (and --ordered) is a "
-              "separate path from --L / --pair-l / --one-e-l / --schwarz-l / "
+              "separate path from --L / --pair-l / --one-e-l / --schwarz-l / --eri-l / "
               "--sx-l / --metric-l / --eri3-l / --hgp-metric-l / "
               "--hgp-eri3-l / --hgp-grad-eri3-l / --hgp-grad-metric-l / "
               "--hgp-hess-eri3-l / --hgp-hess-metric-l / "
@@ -2187,6 +2226,8 @@ def main(argv: Sequence[str] | None = None) -> int:
                     const=DEFAULT_ONE_E_L, default=None, metavar="LMAX")
     ap.add_argument("--schwarz-l", dest="schwarz_l", type=int, nargs="?",
                     const=DEFAULT_SCHWARZ_L, default=None, metavar="LMAX")
+    ap.add_argument("--eri-l", dest="eri_l", type=int, nargs="?",
+                    const=DEFAULT_ERI_L, default=None, metavar="LMAX")
     ap.add_argument("--sx-l", dest="sx_l", type=int, nargs="?",
                     const=DEFAULT_SX_L, default=None, metavar="LMAX")
     ap.add_argument("--metric-l", dest="metric_l", type=int, nargs="?",
@@ -2342,6 +2383,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         return _main_hgp(args, bool(given or selector or fock))
     if fock and (selector or args.Ls is not None or args.pair_l is not None
                  or args.one_e_l is not None or args.schwarz_l is not None
+            or args.eri_l is not None
                  or args.sx_l is not None or args.metric_l is not None
                  or args.eri3_l is not None or args.mu_l is not None
             or args.quad_l is not None
@@ -2370,7 +2412,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                  or args.hgp_hess_l is not None
                  or ladder_levers):
         print("emit: --fock-l / --fock-class (and an F lever flag) is a "
-              "separate path from --L / --pair-l / --one-e-l / --schwarz-l / "
+              "separate path from --L / --pair-l / --one-e-l / --schwarz-l / --eri-l / "
               "--sx-l / --metric-l / --eri3-l / --hgp-metric-l / "
               "--hgp-eri3-l / --hgp-grad-eri3-l / --hgp-grad-metric-l / "
               "--hgp-hess-eri3-l / --hgp-hess-metric-l / "
@@ -2405,6 +2447,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             return 2
     if selector and (args.Ls is not None or args.pair_l is not None
                      or args.one_e_l is not None or args.schwarz_l is not None
+            or args.eri_l is not None
                      or args.sx_l is not None or args.metric_l is not None
                      or args.eri3_l is not None or args.mu_l is not None
             or args.quad_l is not None
@@ -2432,7 +2475,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                  or args.hgp_hess_mu_l is not None
                  or args.hgp_hess_l is not None
                      or ladder_levers):
-        print("emit: --L / --pair-l / --one-e-l / --schwarz-l / --sx-l / "
+        print("emit: --L / --pair-l / --one-e-l / --schwarz-l / --eri-l / --sx-l / "
               "--metric-l / --eri3-l / --hgp-metric-l / --hgp-eri3-l / "
               "--rys-metric-l / --rys-eri3-l / "
               "--mu-l / --quad-l / --grad-l / --grad-mu-l / --grad-k-l / "
@@ -2465,6 +2508,10 @@ def main(argv: Sequence[str] | None = None) -> int:
             and not 0 <= args.schwarz_l <= SCHWARZ_L_MAX):
         print(f"emit: --schwarz-l {args.schwarz_l} is outside "
               f"0..{SCHWARZ_L_MAX}", file=sys.stderr)
+        return 2
+    if args.eri_l is not None and not 0 <= args.eri_l <= ERI_L_MAX:
+        print(f"emit: --eri-l {args.eri_l} is outside 0..{ERI_L_MAX}",
+              file=sys.stderr)
         return 2
     if args.sx_l is not None and not 0 <= args.sx_l <= ONE_E_L_MAX:
         print(f"emit: --sx-l {args.sx_l} is outside 0..{ONE_E_L_MAX}",
@@ -2714,6 +2761,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     if args.schwarz_l is not None:  # beside the J chain, never by default
         written += generate_schwarz(args.backend, arch, args.out,
                                     args.schwarz_l)
+    if args.eri_l is not None:  # beside the J chain, never by default
+        written += generate_eri(args.backend, arch, args.out, args.eri_l)
     if args.sx_l is not None:  # beside the J chain, never by default
         written += generate_sx(args.backend, arch, args.out, args.sx_l)
     if args.metric_l is not None:  # beside the J chain, never by default

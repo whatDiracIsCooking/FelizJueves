@@ -276,6 +276,40 @@ def test_schwarz_l_adds_its_units_beside_the_ladder_flags(tmp_path):
         build_schwarz_kernel((0, 1)), arch)
 
 
+# --- the full-ERI ladder ------------------------------------------------------
+
+
+def test_the_eri_ladder_pairs_the_staged_pair_classes():
+    assert emit_cli.eri_classes(0) == [(0, 0, 0, 0)]
+    assert emit_cli.eri_classes(1) == [
+        (0, 0, 0, 0), (0, 0, 0, 1), (0, 0, 1, 1), (0, 1, 0, 1), (0, 1, 1, 1),
+        (1, 1, 1, 1)]
+    assert len(emit_cli.eri_classes(emit_cli.ERI_L_MAX)) == 21
+    assert emit_cli.DEFAULT_ERI_L == 1
+    for bad in (-1, emit_cli.ERI_L_MAX + 1, True):
+        with pytest.raises(ValueError):
+            emit_cli.eri_classes(bad)
+
+
+def test_eri_l_bare_adds_s_and_p_and_the_gemv(tmp_path):
+    from felizjueves.eri.full_eri.kernel_eri import build_eri_kernel
+    from felizjueves.eri.full_eri.kernel_gemv import build_gemv_kernel
+
+    assert _run(tmp_path, "cuda", "--L", "0", "--eri-l") == 0
+    assert _names(tmp_path) == {"pq_L0_p0_q0.cu", "eri_jgemv.cu"} | {
+        "eri_" + "".join(map(str, c)) + ".cu" for c in emit_cli.eri_classes(1)}
+    emit, arch, _ = BACKEND["cuda"]
+    assert (tmp_path / "eri_0111.cu").read_text() == emit(
+        build_eri_kernel((0, 1, 1, 1)), arch)
+    assert (tmp_path / "eri_jgemv.cu").read_text() == emit(
+        build_gemv_kernel(), arch)
+
+
+def test_an_eri_l_past_the_cap_is_a_2(tmp_path):
+    assert _run(tmp_path / "out", "cuda", "--eri-l", "3") == 2
+    assert not (tmp_path / "out").exists()
+
+
 @pytest.mark.slow  # bare `--schwarz-l` is through (dd), (dd|dd) at L = 8
 def test_schwarz_l_bare_is_through_dd(tmp_path):
     assert _run(tmp_path, "hip", "--pair-l", "0", "--schwarz-l") == 0

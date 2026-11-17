@@ -5560,6 +5560,79 @@ def test_the_hgp2_builder_reaches_neither_its_witness_nor_a_machine() -> None:
         assert not hit, f"kernel_hgp2 reaches {hit}"
 
 
+# ---------------------------------------------------------------------------
+# The packed full ERI and J by GEMV (`eri/full_eri/`): the host staging and
+# reference (`packed`, under the `ao` rule, `pq` injected, reusing
+# `eri.schwarz`'s pair classes) and the two builders (`kernel_eri`, the
+# Schwarz builder's skeleton -- its liveness helpers imported, not copied --
+# widened to a quartet; `kernel_gemv`, IR only). The generator CLI writes
+# their ladder (`--eri-l`), so the driver composes them.
+# ---------------------------------------------------------------------------
+
+RULES |= {
+    "eri_full_eri_package": _rule(
+        "eri/full_eri/__init__.py: the packed full ERI's package marker, a "
+        "docstring and no code",
+        (),
+        reference=_GROUND_TRUTH),
+    "full_eri_builder": _rule(
+        "kernel_eri.py / kernel_gemv.py: the full-ERI kernel, `Target.ERI` "
+        "-- key -> IR, with the plan layer's DAG and schedule for the J "
+        "quartet (`plan`), the J engine's prelude and recurrence statements "
+        "(`recurrence`), the `E` block fragment inlined twice "
+        "(`e_fragment`) and `kernel_schwarz`'s liveness pass -- and the "
+        "GEMV over its output",
+        ("spec", "=ir", "mmd.e_fragment", "plan", "mmd.recurrence",
+         "eri.kernel_schwarz"),
+        ao="`eri.full_eri.packed` (through `eri.eri`) is the witness the "
+           "kernel is interpreted against: importing it shares ancestry "
+           "with it (#20)",
+        **{"ir.interp":
+            "the builder is checked by the interpreter, never built on it"},
+        emit="nothing in the produced `Kernel` may be CUDA- or HIP-specific",
+        **{"performance.device":
+            "the `Kernel` is arch-neutral; the arch enters at emission"},
+        reference=_GROUND_TRUTH),
+}
+RULE_OF |= {
+    "eri.full_eri": "eri_full_eri_package",
+    "eri.full_eri.packed": "ao",
+    "eri.full_eri.kernel_eri": "full_eri_builder",
+    "eri.full_eri.kernel_gemv": "full_eri_builder",
+}
+EDGES |= {k: frozenset(v) for k, v in {
+    "eri.full_eri": (),
+    "eri.full_eri.packed": ("ao.shell", "eri.eri", "eri.schwarz"),
+    "eri.full_eri.kernel_eri": ("eri.kernel_schwarz", "ir", "mmd.e_fragment",
+                                "mmd.recurrence", "plan.dag", "plan.pipeline",
+                                "plan.schedule", "plan.targets", "spec"),
+    "eri.full_eri.kernel_gemv": ("ir",),
+}.items()}
+_FULL_ERI_BUILDERS = ("eri.full_eri.kernel_eri", "eri.full_eri.kernel_gemv")
+RULES["driver"] = Rule(RULES["driver"].why + ", and the full-ERI ladder "
+                       "through `kernel_eri` and `kernel_gemv`",
+                       RULES["driver"].may | frozenset(_FULL_ERI_BUILDERS),
+                       RULES["driver"].must_not)
+EDGES["emit.__main__"] = EDGES["emit.__main__"] | frozenset(_FULL_ERI_BUILDERS)
+
+
+def test_the_full_eri_builders_reach_neither_their_witness_nor_a_machine(
+        ) -> None:
+    graph = _graph()
+    for start in _FULL_ERI_BUILDERS:
+        seen: set[str] = set()
+        todo = [start]
+        while todo:
+            for e in graph.get(todo.pop(), set()):
+                if e not in seen:
+                    seen.add(e)
+                    todo.append(e)
+        for banned in (_REF, "ao", *_LEFT_AO, "eri.full_eri.packed",
+                       "ir.interp", "emit", "performance.device"):
+            hit = sorted(e for e in seen if _under(e, banned))
+            assert not hit, f"{start} reaches {hit}"
+
+
 if __name__ == "__main__":
     import sys
 

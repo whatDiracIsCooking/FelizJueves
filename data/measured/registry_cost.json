@@ -13,11 +13,11 @@
  },
  "counts": {
   "compile/cuda/measured": 119,
-  "compile/cuda/modelled": 462,
+  "compile/cuda/modelled": 467,
   "compile/hip/measured": 119,
-  "compile/hip/modelled": 462,
-  "gpu/cuda/modelled": 581,
-  "gpu/hip/modelled": 581
+  "compile/hip/modelled": 467,
+  "gpu/cuda/modelled": 586,
+  "gpu/hip/modelled": 586
  },
  "held_out": {
   "compile/cuda": {
@@ -8258,6 +8258,161 @@
     },
     "hip": {
      "s": 12.084,
+     "basis": "modelled",
+     "source": "compile"
+    }
+   }
+  },
+  {
+   "engine": "mmd",
+   "quantity": "eri",
+   "deriv": 0,
+   "L": 0,
+   "family": "j-chain",
+   "compile": {
+    "cuda": {
+     "s": 0.782,
+     "basis": "modelled",
+     "source": "fit:j-chain"
+    },
+    "hip": {
+     "s": 2.121,
+     "basis": "modelled",
+     "source": "fit:j-chain"
+    }
+   },
+   "gpu": {
+    "cuda": {
+     "s": 0.782,
+     "basis": "modelled",
+     "source": "compile"
+    },
+    "hip": {
+     "s": 2.121,
+     "basis": "modelled",
+     "source": "compile"
+    }
+   }
+  },
+  {
+   "engine": "mmd",
+   "quantity": "eri",
+   "deriv": 0,
+   "L": 1,
+   "family": "j-chain",
+   "compile": {
+    "cuda": {
+     "s": 0.877,
+     "basis": "modelled",
+     "source": "fit:j-chain"
+    },
+    "hip": {
+     "s": 2.313,
+     "basis": "modelled",
+     "source": "fit:j-chain"
+    }
+   },
+   "gpu": {
+    "cuda": {
+     "s": 0.877,
+     "basis": "modelled",
+     "source": "compile"
+    },
+    "hip": {
+     "s": 2.313,
+     "basis": "modelled",
+     "source": "compile"
+    }
+   }
+  },
+  {
+   "engine": "mmd",
+   "quantity": "eri",
+   "deriv": 0,
+   "L": 2,
+   "family": "j-chain",
+   "compile": {
+    "cuda": {
+     "s": 0.984,
+     "basis": "modelled",
+     "source": "fit:j-chain"
+    },
+    "hip": {
+     "s": 2.522,
+     "basis": "modelled",
+     "source": "fit:j-chain"
+    }
+   },
+   "gpu": {
+    "cuda": {
+     "s": 0.984,
+     "basis": "modelled",
+     "source": "compile"
+    },
+    "hip": {
+     "s": 2.522,
+     "basis": "modelled",
+     "source": "compile"
+    }
+   }
+  },
+  {
+   "engine": "mmd",
+   "quantity": "eri",
+   "deriv": 0,
+   "L": 3,
+   "family": "j-chain",
+   "compile": {
+    "cuda": {
+     "s": 1.104,
+     "basis": "modelled",
+     "source": "fit:j-chain"
+    },
+    "hip": {
+     "s": 2.75,
+     "basis": "modelled",
+     "source": "fit:j-chain"
+    }
+   },
+   "gpu": {
+    "cuda": {
+     "s": 1.104,
+     "basis": "modelled",
+     "source": "compile"
+    },
+    "hip": {
+     "s": 2.75,
+     "basis": "modelled",
+     "source": "compile"
+    }
+   }
+  },
+  {
+   "engine": "mmd",
+   "quantity": "eri",
+   "deriv": 0,
+   "L": 4,
+   "family": "j-chain",
+   "compile": {
+    "cuda": {
+     "s": 1.239,
+     "basis": "modelled",
+     "source": "fit:j-chain"
+    },
+    "hip": {
+     "s": 2.999,
+     "basis": "modelled",
+     "source": "fit:j-chain"
+    }
+   },
+   "gpu": {
+    "cuda": {
+     "s": 1.239,
+     "basis": "modelled",
+     "source": "compile"
+    },
+    "hip": {
+     "s": 2.999,
      "basis": "modelled",
      "source": "compile"
     }
