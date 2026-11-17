@@ -1,4 +1,4 @@
-"""`full_eri`: the packed full ERI (`Target.ERI`) and `J` by GEMV, interpreted.
+"""`full_eri`: the packed full ERI (`Target.ERI`), `J` and `K` by GEMV, interpreted.
 
 THE WITNESS is `eri.full_eri.packed` (`eri.eri.eri_block` with
 `reference.pq.pq` injected, placed by the kernel's scatter), and through the
@@ -9,6 +9,12 @@ ROUND-OFF, NOT BITWISE, for the ERI (`kernel_eri`'s module docstring): per
 element `|ERI - host| <= TOL_ULPS * eps * scale`, `scale` being `eri.eri`'s
 absolute-value twin of the same sum, `TOL_ULPS = 16` as test_kernel_schwarz's.
 The GEMV is bitwise a left fold, so it is held `==` to one.
+
+`K` BY GEMV: `kernel_kperm` gathers the exchange-ordered `X_pp` from
+`ERI_pp`, held `==` to the host's `exchange_packed` (the same two loads, one
+add, one exact halving) and bitwise symmetric; `K` is then the same GEMV
+kernel over `X_pp`, held to PySCF's `vk` at `J_TOL`, and the host's packed
+`K` to a dense `einsum` over the unpacked tensor for a random symmetric `D`.
 
 COVERAGE: every element must be written. The output starts as NaN, and an
 element no launched task owns must come back NaN, every owned one finite.
@@ -25,21 +31,24 @@ from functools import cache
 
 import numpy as np
 import pytest
-from eri_full_driver import interpret, interpret_gemv
+from eri_full_driver import interpret, interpret_gemv, interpret_kperm
 from oracle import basis as ob
 from oracle import manifest
 
 from felizjueves.ao.shell import Basis, Shell
-from felizjueves.eri.full_eri import kernel_eri, kernel_gemv
+from felizjueves.eri.full_eri import kernel_eri, kernel_gemv, kernel_kperm
 from felizjueves.eri.full_eri.packed import (
     N_AO_MAX,
     coulomb_from_packed,
     eri_classes,
+    exchange_from_packed,
+    exchange_packed,
     n_packed,
     owned,
     pack_density,
     packed_eri_and_scale,
     pair_index,
+    pair_of,
     unpack,
 )
 from felizjueves.ir import AtomicAdd, Decl, Inline, walk
@@ -71,6 +80,9 @@ SYNTHETIC = Basis((
 SYNTHETIC_CLASSES = sorted(c.am for c in eri_classes(SYNTHETIC)
                            if sum(c.am) <= L_MAX)
 MOLECULES = ("h2_sto3g_j", "h2o_sto3g_j")
+K_MOLECULES = ("h2_sto3g_k", "h2o_sto3g_k")
+# SYNTHETIC without its d shell: every class at L <= 4, the whole tensor
+SP = Basis(tuple(s for s in SYNTHETIC.shells if s.l < 2))
 
 
 @cache
@@ -198,6 +210,71 @@ def test_the_gemv_is_a_left_fold_by_column():
 
 
 # ---------------------------------------------------------------------------
+# K by GEMV: the exchange-ordered matrix, and K over it
+# ---------------------------------------------------------------------------
+
+
+def _dense(eri: np.ndarray, n_ao: int) -> np.ndarray:
+    """`(mn|ls)` as an `n_ao^4` tensor from `ERI_pp`."""
+    pidx = np.array(pair_index(n_ao))
+    return eri[pidx[:, :, None, None], pidx[None, None, :, :]]
+
+
+def test_pair_of_inverts_the_packing():
+    pidx = pair_index(5)
+    pm, pn = pair_of(5)
+    assert [pidx[m][n] for m, n in zip(pm, pn, strict=True)] == list(
+        range(n_packed(5)))
+    assert all(m >= n for m, n in zip(pm, pn, strict=True))
+
+
+def test_k_by_the_packed_gemv_is_the_dense_exchange():
+    eri = np.array(packed_eri_and_scale(SP, pq=pq)[0])
+    rng = np.random.default_rng(11)
+    D = rng.standard_normal((SP.n_ao, SP.n_ao))
+    D = D + D.T
+    X = np.array(exchange_packed(eri.tolist()))
+    assert np.array_equal(X, X.T)
+    K = np.array(exchange_from_packed(X.tolist(), D.tolist()))
+    want = np.einsum("mlns,ls->mn", _dense(eri, SP.n_ao), D)
+    err = float(np.max(np.abs(K - want)) / np.max(np.abs(want)))
+    print(f"\nSP basis: max |K_gemv - K_dense| / max |K| = {err:.2e}")
+    assert err < 1e-14
+    assert np.array_equal(K, K.T)
+    # and J's packed GEMV over the same tensor is the dense Coulomb sum
+    J = np.array(coulomb_from_packed(eri.tolist(), D.tolist()))
+    wj = np.einsum("mnls,ls->mn", _dense(eri, SP.n_ao), D)
+    assert np.max(np.abs(J - wj)) < 1e-14 * np.max(np.abs(wj))
+
+
+def test_the_permute_is_the_host_bitwise_and_exactly_symmetric():
+    eri = np.array(packed_eri_and_scale(SP, pq=pq)[0])
+    X = interpret_kperm(eri)
+    assert np.array_equal(X, np.array(exchange_packed(eri.tolist())))
+    assert np.array_equal(X, X.T)
+
+
+@pytest.mark.parametrize("name", K_MOLECULES)
+def test_k_by_gemv_against_pyscf(name):
+    fx = _fixture(name)
+    basis = ob.from_fixture(fx)
+    classes = eri_classes(basis)
+    assert max(sum(c.am) for c in classes) <= L_MAX
+    eri = interpret(classes, basis.n_ao, init=_nan(basis.n_ao))
+    _check(eri, basis, None, name)
+    X = interpret_kperm(eri)
+    assert np.array_equal(X, np.array(exchange_packed(eri.tolist())))
+    K = interpret_gemv(X, fx.density)
+    host = np.array(exchange_from_packed(X.tolist(), fx.density))
+    assert np.array_equal(K, host)
+    ref = fx.arrays[manifest.K_ARRAY]
+    rel = float(np.max(np.abs(K - ref)) / np.max(np.abs(ref)))
+    print(f"{name}: max |K_gemv - vk| / max |vk| = {rel:.2e}")
+    assert rel < J_TOL
+    assert np.array_equal(K, K.T)
+
+
+# ---------------------------------------------------------------------------
 # What the kernel is built from, and its key
 # ---------------------------------------------------------------------------
 
@@ -238,3 +315,8 @@ def test_the_key_and_its_refusals():
         kernel_eri.launch_shape(0)
     with pytest.raises(ValueError):
         kernel_gemv.launch_shape(0)
+    with pytest.raises(ValueError):
+        kernel_kperm.launch_shape(0)
+    with pytest.raises(ValueError, match="n_ao"):
+        exchange_packed([[0.0] * 2] * 2)
+    assert kernel_kperm.build_kperm_kernel().name == "eri_kperm"

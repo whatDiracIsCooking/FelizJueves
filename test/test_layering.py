@@ -5561,12 +5561,12 @@ def test_the_hgp2_builder_reaches_neither_its_witness_nor_a_machine() -> None:
 
 
 # ---------------------------------------------------------------------------
-# The packed full ERI and J by GEMV (`eri/full_eri/`): the host staging and
-# reference (`packed`, under the `ao` rule, `pq` injected, reusing
-# `eri.schwarz`'s pair classes) and the two builders (`kernel_eri`, the
+# The packed full ERI, J and K by GEMV (`eri/full_eri/`): the host staging
+# and reference (`packed`, under the `ao` rule, `pq` injected, reusing
+# `eri.schwarz`'s pair classes) and the three builders (`kernel_eri`, the
 # Schwarz builder's skeleton -- its liveness helpers imported, not copied --
-# widened to a quartet; `kernel_gemv`, IR only). The generator CLI writes
-# their ladder (`--eri-l`), so the driver composes them.
+# widened to a quartet; `kernel_kperm` and `kernel_gemv`, IR only). The
+# generator CLI writes their ladder (`--eri-l`), so the driver composes them.
 # ---------------------------------------------------------------------------
 
 RULES |= {
@@ -5576,12 +5576,13 @@ RULES |= {
         (),
         reference=_GROUND_TRUTH),
     "full_eri_builder": _rule(
-        "kernel_eri.py / kernel_gemv.py: the full-ERI kernel, `Target.ERI` "
+        "kernel_eri.py / kernel_kperm.py / kernel_gemv.py: the full-ERI "
+        "kernel, `Target.ERI` "
         "-- key -> IR, with the plan layer's DAG and schedule for the J "
         "quartet (`plan`), the J engine's prelude and recurrence statements "
         "(`recurrence`), the `E` block fragment inlined twice "
-        "(`e_fragment`) and `kernel_schwarz`'s liveness pass -- and the "
-        "GEMV over its output",
+        "(`e_fragment`) and `kernel_schwarz`'s liveness pass -- the "
+        "exchange-ordered gather from its output, and the GEMV over either",
         ("spec", "=ir", "mmd.e_fragment", "plan", "mmd.recurrence",
          "eri.kernel_schwarz"),
         ao="`eri.full_eri.packed` (through `eri.eri`) is the witness the "
@@ -5599,6 +5600,7 @@ RULE_OF |= {
     "eri.full_eri.packed": "ao",
     "eri.full_eri.kernel_eri": "full_eri_builder",
     "eri.full_eri.kernel_gemv": "full_eri_builder",
+    "eri.full_eri.kernel_kperm": "full_eri_builder",
 }
 EDGES |= {k: frozenset(v) for k, v in {
     "eri.full_eri": (),
@@ -5607,10 +5609,12 @@ EDGES |= {k: frozenset(v) for k, v in {
                                 "mmd.recurrence", "plan.dag", "plan.pipeline",
                                 "plan.schedule", "plan.targets", "spec"),
     "eri.full_eri.kernel_gemv": ("ir",),
+    "eri.full_eri.kernel_kperm": ("ir",),
 }.items()}
-_FULL_ERI_BUILDERS = ("eri.full_eri.kernel_eri", "eri.full_eri.kernel_gemv")
+_FULL_ERI_BUILDERS = ("eri.full_eri.kernel_eri", "eri.full_eri.kernel_gemv",
+                      "eri.full_eri.kernel_kperm")
 RULES["driver"] = Rule(RULES["driver"].why + ", and the full-ERI ladder "
-                       "through `kernel_eri` and `kernel_gemv`",
+                       "through `kernel_eri`, `kernel_kperm` and `kernel_gemv`",
                        RULES["driver"].may | frozenset(_FULL_ERI_BUILDERS),
                        RULES["driver"].must_not)
 EDGES["emit.__main__"] = EDGES["emit.__main__"] | frozenset(_FULL_ERI_BUILDERS)

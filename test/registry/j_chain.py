@@ -25,7 +25,7 @@ CASES = [
     *(case for q in "stv" for case in ladder(
         "mmd", q, 0, compile=range(5), gpu=range(7),
         cards=dict.fromkeys(BOTH, range(7)))),
-    # The packed full ERI (`Target.ERI`) and J by GEMV: every class at
+    # The packed full ERI (`Target.ERI`), J and K by GEMV: every class at
     # L <= 4 interpreted, compiled by nvcc and hipcc, on no card yet.
     *ladder("mmd", "eri", 0, compile=range(5), gpu=range(5)),
 ]
@@ -50,10 +50,12 @@ PATHS = (
 )
 
 TESTS = {
-    # The packed full ERI and J by GEMV.
+    # The packed full ERI, J and K by GEMV.
     "test/test_eri_full_device.py::test_X_every_eri_class_through_l4_matches_the_host":
         _ERI,
     "test/test_eri_full_device.py::test_X_j_by_gemv_matches_pyscf":
+        Allow(MOLECULE),
+    "test/test_eri_full_device.py::test_X_k_by_gemv_matches_pyscf":
         Allow(MOLECULE),
     "test/test_eri_full_device.py::test_X_eri_programs_compile": ById({
         "synthetic": _ERI, "h2_sto3g_j": Allow(MOLECULE),

@@ -1,5 +1,5 @@
-"""The packed full ERI and `J` by GEMV on the card: every class at L <= 4
-against the host, and H2O/STO-3G's `J` against the host and PySCF.
+"""The packed full ERI, `J` and `K` by GEMV on the card: every class at
+L <= 4 against the host, and H2 and H2O/STO-3G's `J` and `K` against PySCF.
 
 THE BUILD is `eri_full_driver.build_on_card`, on the shared runner (#649):
 one runner per class's unit (`kernel_eri`), compiled with devtools/config.sh's
@@ -32,6 +32,11 @@ contraction only removes roundings. `delta = BOYS_REL` (1e-13).
 `J` is then held to PySCF at test_kernel_eri_full's `J_TOL` (1e-12 of
 max |vj|), the same bar as the interpreted chain.
 
+PART 3, `K`: the card's packed ERI, then `kernel_kperm` on the card into
+`X_pp` -- held `==` to the host's `exchange_packed` of that same card ERI
+(two loads, one add, one exact halving) and bitwise symmetric -- then the GEMV
+over `X_pp`, `K` held to PySCF's `vk` at `J_TOL`.
+
 THE RUN-TO-RUN WITNESS: plain stores, one owner per element, and a GEMV of one
 thread per row -- the runner fails unless every run is bit-identical.
 """
@@ -44,7 +49,14 @@ from pathlib import Path
 
 import numpy as np
 import pytest
-from eri_full_driver import build_on_card, coulomb_on_card, eri_steps, gemv_step
+from eri_full_driver import (
+    build_on_card,
+    coulomb_on_card,
+    eri_steps,
+    exchange_on_card,
+    gemv_step,
+    kperm_step,
+)
 from harness_driver import build_steps
 from oracle import basis as ob
 from oracle import manifest
@@ -53,6 +65,7 @@ from test_kernel_eri_full import J_TOL, L_MAX, SYNTHETIC
 
 from felizjueves.eri.full_eri.packed import (
     eri_classes,
+    exchange_packed,
     n_packed,
     owned,
     packed_eri_and_scale,
@@ -62,6 +75,7 @@ from felizjueves.reference.pq import pq
 
 U = 2.0 ** -53
 MOLECULES = ("h2_sto3g_j", "h2o_sto3g_j")
+K_MOLECULES = ("h2_sto3g_k", "h2o_sto3g_k")
 
 
 def _gamma(n: int) -> float:
@@ -195,6 +209,42 @@ def test_hip_j_by_gemv_matches_pyscf(name, request, tmp_path):
 
 
 # ---------------------------------------------------------------------------
+# Part 3: K by GEMV over the exchange-ordered matrix, against PySCF
+# ---------------------------------------------------------------------------
+
+
+def _part3(backend: str, name: str, request, tmp_path: Path) -> None:
+    basis = _basis(name)
+    assert len(_classes(basis)) == len(eri_classes(basis))
+    eri = _run(backend, name, request, tmp_path)
+    fx = _fixture(name)
+    X, K = exchange_on_card(eri, fx.density, backend,
+                            _toolchain(backend, request), tmp_path)
+    assert np.array_equal(X, np.array(exchange_packed(eri.tolist())))
+    assert np.array_equal(X, X.T)
+    ref = fx.arrays[manifest.K_ARRAY]
+    rel = float(np.max(np.abs(K - ref)) / np.max(np.abs(ref)))
+    print(f"{backend} {name}: X_pp bitwise the host's; max |K_gemv - vk| / "
+          f"max |vk| = {rel:.2e} (tol {J_TOL:g})")
+    assert rel < J_TOL
+    assert np.array_equal(K, K.T)
+
+
+@pytest.mark.cuda
+@pytest.mark.gpu
+@pytest.mark.parametrize("name", K_MOLECULES)
+def test_cuda_k_by_gemv_matches_pyscf(name, request, tmp_path):
+    _part3("cuda", name, request, tmp_path)
+
+
+@pytest.mark.hip
+@pytest.mark.gpu
+@pytest.mark.parametrize("name", K_MOLECULES)
+def test_hip_k_by_gemv_matches_pyscf(name, request, tmp_path):
+    _part3("hip", name, request, tmp_path)
+
+
+# ---------------------------------------------------------------------------
 # Compile-only companions (`cuda` / `hip`, no `gpu`) and the fast-tier pieces
 # ---------------------------------------------------------------------------
 
@@ -203,7 +253,8 @@ def _programs(name: str):
     basis = _basis(name)
     n_pp = n_packed(basis.n_ao)
     return [*eri_steps(_classes(basis), basis.n_ao),
-            gemv_step(n_pp, np.zeros((n_pp, n_pp)), np.zeros(n_pp))]
+            gemv_step(n_pp, np.zeros((n_pp, n_pp)), np.zeros(n_pp)),
+            kperm_step(np.zeros((n_pp, n_pp)))]
 
 
 @pytest.mark.cuda
