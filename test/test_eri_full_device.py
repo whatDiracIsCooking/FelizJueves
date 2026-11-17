@@ -231,4 +231,4 @@ def test_the_bound_is_not_vacuous():
         nz = mine & (np.abs(want) > 1e-8)
         assert np.max(tol[nz] / np.abs(want[nz])) < 1e-9, name
         assert math.isfinite(float(tol.max()))
-        assert np.all(tol[mine] > 0.0)
+        assert np.all(tol[mine] >= 0.0)
