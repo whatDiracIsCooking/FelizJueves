@@ -171,6 +171,18 @@ killed and recorded `over_budget`.
     libcint, on the RTX 3080 / RX 9060 XT.
   - Those sessions also ran Parts 1 and 2, the first RX 9060 XT run of
     either DF kernel: 10 passed per card.
+**`(mn|P)` has a packed-output form** (FreeBreakfast#1680;
+`three_center.md`, "The packed output"): `build_eri3_kernel(cls,
+packed=True)`, `peri3_{la}{lb}{lP}`, the same records, cells and
+arithmetic in either form, each cell's whole staged block stored at a
+destination offset `dst` read from the cell table (element `(a, b, q)` at
+`dst + n_aux (a nB + b) + q`, aux fastest), a diagonal pair (`diag`) its
+full square block. Held **bitwise** to the square kernel: interpreted at
+L <= 4 in both forms (`test_kernel_eri3_packed.py`), and on CUDA only, an
+RTX A6000, every class at L <= 4 in both forms and all 70 classes through
+(ff|i) on the aux-i set in the default form plus the low-stack form of
+every class unrolled by default (`test_eri3_packed_device.py`). HIP: not
+compiled, no card. The square `eri3_*` kernels are unchanged.
 **Both DF targets also have an HGP twin, for s and p shells, interpreted
 only** (`docs/implementation/hgp_df.md` is the one place with the detail):
 `eri/density_fit/kernel_hgp.py`'s `build_hmetric_kernel` (`hmetric_{lP}{lQ}`)

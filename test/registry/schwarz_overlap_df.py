@@ -86,6 +86,13 @@ TESTS = {
     "test/test_eri3_device.py::test_X_eri3_programs_compile": ById({
         "synthetic": span("mmd", "eri3", 0, range(5)),
         "fixture": Allow(PROGRAM)}),
+    # The packed (mn|P) (FreeBreakfast#1680), bitwise the square kernel.
+    "test/test_eri3_packed_device.py::test_X_packed_eri3_through_l4_is_the_square_bitwise":
+        span("mmd", "eri3", 0, range(5)),
+    "test/test_eri3_packed_device.py::test_X_packed_eri3_through_ff_i_is_the_square_bitwise":
+        span("mmd", "eri3", 0, range(13)),
+    "test/test_eri3_packed_device.py::test_X_packed_eri3_program_compiles":
+        span("mmd", "eri3", 0, range(5)),
     # The HGP twins.
     "test/test_emit_hgp_df.py::test_X_compiles_the_hgp_df_unit":
         Classes("hgp", "metric"),

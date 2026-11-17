@@ -210,6 +210,7 @@ __all__ = [
     "CELL",
     "KET",
     "OUT",
+    "PACKED_CELL_ARRAYS",
     "PARAM_OF",
     "build_eri3_kernel",
     "E_DOUBLES_MAX",
@@ -230,20 +231,29 @@ OUT = "eri3"
 S_AUX = "s_aux"  # the aux record's scale: `s` is a prelude local
 # `Eri3Class.arrays()` key -> this kernel's param name, where they differ
 PARAM_OF = {"s": S_AUX}
+# THE PACKED FORM's cell arrays (`packed=True`), in parameter order: the two
+# record ranges, the cell's destination offset into the packed output and its
+# diagonal flag (`eri.density_fit.eri3.packed_cells`' keys)
+PACKED_CELL_ARRAYS = ("ab_rec0", "ab_rec1", "p_rec0", "p_rec1", "dst",
+                      "diag")
 
 _DIAGONAL = (
     "diagonal AO shell pair (off_a == off_b): a >= b only, each mirrored "
     "once -- kernel_jab's diagonal rule, so (mn|P) and (nm|P) are one value")
+_PACKED_DIAGONAL = (
+    "diagonal AO shell pair (diag): a >= b formed, each mirrored once into "
+    "the full square block -- the square kernel's values, bitwise")
 
 
-def eri3_name(cls: Spec | tuple[int, int, int]) -> str:
+def eri3_name(cls: Spec | tuple[int, int, int], *,
+              packed: bool = False) -> str:
     """The kernel name of a class: `eri3_` and its three `l`s, run
     together while every `l <= 9` (`eri3_220`) and `_`-separated once any
     is two digits (`eri3_0_11_0`), so `(0, 11, 0)` and `(0, 1, 10)` never
-    share a name (#445)."""
+    share a name (#445). The packed form's is `peri3_` (`peri3_220`)."""
     am = cls.am if isinstance(cls, Spec) else tuple(cls)
     sep = "_" if max(am) > 9 else ""
-    return "eri3_" + sep.join(map(str, am))
+    return ("peri3_" if packed else "eri3_") + sep.join(map(str, am))
 
 
 def eri3_spec(la: int, lb: int, lP: int) -> Spec:
@@ -392,19 +402,22 @@ def _u(i: int, q: int) -> str:
 
 def build_eri3_kernel(cls: Spec | tuple[int, int, int], *,
                       name: str | None = None,
-                      lowstack: bool | None = None) -> Kernel:
+                      lowstack: bool | None = None,
+                      packed: bool = False) -> Kernel:
     """The three-center kernel of one class (module docstring).
 
     `cls` is a `Target.ERI3` `Spec` or `(la, lb, lP)`; any class the
     fragments and the plan accept is built. `lowstack` picks the form:
     `None` (the default) is `eri3_lowstack(cls)` (THE LOW-STACK FORM),
     `True` / `False` force either at any class. Both have the same name,
-    parameters, launch and output contract."""
+    parameters, launch and output contract. `packed` writes each cell's
+    whole block at its table's destination offset instead (THE PACKED
+    OUTPUT): the same arithmetic in either form, named `peri3_`."""
     spec = _spec(cls)
     if lowstack is None:
         lowstack = eri3_lowstack(spec)
     if lowstack:
-        return _build_lowstack(spec, name)
+        return _build_lowstack(spec, name, packed)
     la, lb, lP = spec.am
     Lab = la + lb
     dag, order = eri3_plan(spec)
@@ -493,6 +506,11 @@ def build_eri3_kernel(cls: Spec | tuple[int, int, int], *,
     )
 
     # --- the scatter --------------------------------------------------------
+    if packed:
+        return _packed_kernel(spec, name, bra_body, (nA, nB, nP), tuple(
+            Decl(_acc(a, b, q), Scalar.F64, init=Lit(0.0))
+            for a in range(nA) for b in range(nB) for q in range(nP)))
+
     def at(m: Expr, n: Expr, q: int) -> Index:
         return Index(OUT, (m, n, plus("op", q)))
 
@@ -551,8 +569,89 @@ def build_eri3_kernel(cls: Spec | tuple[int, int, int], *,
     return Kernel(name or eri3_name(spec), _params(), body)
 
 
-def _params() -> tuple[Param, ...]:
-    """The parameter block (module docstring), one for both forms."""
+def _packed_at(c: Expr, q: Expr) -> Index:
+    """The packed output's element `q` of block column `c` of the cell
+    whose destination offset is the local `od`: `od + n_aux c + q`, the
+    aux index fastest (THE PACKED OUTPUT)."""
+    return Index(OUT, (_c(Fn.ADD, Var("od"), _c(Fn.ADD, _c(
+        Fn.MUL, Var("n_aux"), c), q)),))
+
+
+def _cell_ranges(cell: Var) -> tuple[Stmt, ...]:
+    return (Decl("b0", Scalar.I32, init=Index("ab_rec0", (cell,))),
+            Decl("b1", Scalar.I32, init=Index("ab_rec1", (cell,))),
+            Decl("p0", Scalar.I32, init=Index("p_rec0", (cell,))),
+            Decl("p1", Scalar.I32, init=Index("p_rec1", (cell,))))
+
+
+def _packed_kernel(spec: Spec, name: str | None, bra_body: tuple[Stmt, ...],
+                   n: tuple[int, int, int],
+                   accs: tuple[Stmt, ...]) -> Kernel:
+    """The unrolled form's packed kernel (THE PACKED OUTPUT): its
+    accumulators and bra loop unchanged, the scatter one plain store per
+    element of the cell's whole block at `dst`; a diagonal pair (`diag`,
+    read only where `la == lb`) stores `a >= b` and its mirror, the square
+    kernel's values."""
+    la, lb, lP = spec.am
+    nA, nB, nP = n
+    cell = Var(CELL)
+
+    def at(a: int, b: int, q: int) -> Index:
+        return _packed_at(Lit(a * nB + b), Lit(q))
+
+    whole: list[Stmt] = [Assign(at(a, b, q), Var(_acc(a, b, q)))
+                         for a in range(nA) for b in range(nB)
+                         for q in range(nP)]
+    flag: tuple[Stmt, ...] = ()
+    scatter: tuple[Stmt, ...] = tuple(whole)
+    if la == lb:
+        diag: list[Stmt] = [Note(_PACKED_DIAGONAL)]
+        for a in range(nA):
+            for b in range(a + 1):
+                for q in range(nP):
+                    v = Var(_acc(a, b, q))
+                    diag.append(Assign(at(a, b, q), v))
+                    if a != b:
+                        diag.append(Assign(at(b, a, q), v))
+        flag = (Decl("dg", Scalar.I32, init=Index("diag", (cell,))),)
+        scatter = (If(_c(Fn.LT, Var("dg"), Lit(1)), tuple(whole),
+                      tuple(diag)),)
+    per_cell: tuple[Stmt, ...] = (
+        *_cell_ranges(cell),
+        Decl("od", Scalar.I32, init=Index("dst", (cell,))),
+        *flag,
+        *accs,
+        Note("the bra records of the cell's shell pair, serially"),
+        For(BRA, Var("b0"), Var("b1"), Lit(1), bra_body),
+        Note("scatter: the cell's whole block at its destination offset, "
+             "one plain store per element, no atomics -- each element "
+             "belongs to one cell"),
+        *scatter,
+    )
+    return Kernel(name or eri3_name(spec, packed=True), _params(True),
+                  _packed_body(spec, False, per_cell))
+
+
+def _packed_body(spec: Spec, lowstack: bool,
+                 per_cell: tuple[Stmt, ...]) -> tuple[Stmt, ...]:
+    la, lb, lP = spec.am
+    cell = Var(CELL)
+    return (
+        Note(f"three-center DF integral, class (la, lb, lP) = ({la}, {lb}, "
+             f"{lP}){', LOW-STACK (#606)' if lowstack else ''}, PACKED: "
+             f"(mn|P) by the quartet ({la},{lb}|{lP},0)'s recurrence at L = "
+             f"{la + lb + lP} (ao/eri3.py), each cell's whole block at its "
+             "destination offset"),
+        Note("launch: one thread per (AO shell pair, aux shell) cell"),
+        Decl(CELL, Scalar.I32, init=_c(Fn.ADD, Call(Fn.THREAD_X), _c(
+            Fn.MUL, Call(Fn.BLOCK_X), Call(Fn.BLOCK_DIM_X)))),
+        If(_c(Fn.LT, cell, Var("n_cell")), per_cell),
+    )
+
+
+def _params(packed: bool = False) -> tuple[Param, ...]:
+    """The parameter block (module docstring), one for both forms; the
+    packed one's (THE PACKED OUTPUT) when `packed`."""
     def f64(n: str, shape: tuple[Expr, ...]) -> Param:
         return Param(n, Scalar.F64, array=True, shape=shape)
 
@@ -561,11 +660,15 @@ def _params() -> tuple[Param, ...]:
 
     ncell, nbra, naux_rec = Var("n_cell"), Var("n_bra_rec"), Var("n_aux_rec")
     nao, naux = Var("n_ao"), Var("n_aux")
+    ncol = Var("n_col")
+    cells = (PACKED_CELL_ARRAYS if packed else
+             ("ab_rec0", "ab_rec1", "p_rec0", "p_rec1", "off_a", "off_b",
+              "off_p"))
     return (
         Param("n_cell", Scalar.I32),
         Param("n_bra_rec", Scalar.I32),
         Param("n_aux_rec", Scalar.I32),
-        Param("n_ao", Scalar.I32),
+        Param("n_col" if packed else "n_ao", Scalar.I32),
         Param("n_aux", Scalar.I32),
         f64("zeta_ab", (nbra,)),
         f64("P", (nbra, Lit(3))),
@@ -575,10 +678,10 @@ def _params() -> tuple[Param, ...]:
         f64("A", (naux_rec, Lit(3))),
         f64("alpha", (naux_rec,)),
         f64(S_AUX, (naux_rec,)),
-        *(i32(n, (ncell,)) for n in ("ab_rec0", "ab_rec1", "p_rec0",
-                                     "p_rec1", "off_a", "off_b", "off_p")),
+        *(i32(n, (ncell,)) for n in cells),
         Param(OUT, Scalar.F64, array=True, intent=Intent.OUT,
-              shape=(nao, nao, naux)),
+              shape=((_c(Fn.MUL, ncol, naux),) if packed
+                     else (nao, nao, naux))),
     )
 
 
@@ -627,10 +730,12 @@ def _iadd(x: Expr, y: Expr) -> Expr:
     return _c(Fn.ADD, x, y)
 
 
-def _build_lowstack(spec: Spec, name: str | None) -> Kernel:
+def _build_lowstack(spec: Spec, name: str | None,
+                    packed: bool = False) -> Kernel:
     """`build_eri3_kernel`'s kernel with no `E` block and no accumulators
     (module docstring, THE LOW-STACK FORM): the same parameters, launch and
-    output."""
+    output. `packed`: the packed output's (THE PACKED OUTPUT), each element
+    accumulated in its packed slot by the same operations."""
     la, lb, lP = spec.am
     Lab, L = la + lb, la + lb + lP
     dag, order = eri3_plan(spec)
@@ -647,6 +752,9 @@ def _build_lowstack(spec: Spec, name: str | None) -> Kernel:
         targets, L, R_ARRAY)
 
     def out_at(i: Expr, j: Expr, k: Expr, mirror: bool = False) -> Index:
+        if packed:  # block (i, j), or (j, i) for the mirror, at `od`
+            r, c = (j, i) if mirror else (i, j)
+            return _packed_at(_iadd(_c(Fn.MUL, r, Lit(nB)), c), k)
         m, n = _iadd(Var("oa"), i), _iadd(Var("ob"), j)
         return Index(OUT, (n, m, _iadd(Var("op"), k)) if mirror
                      else (m, n, _iadd(Var("op"), k)))
@@ -747,6 +855,30 @@ def _build_lowstack(spec: Spec, name: str | None) -> Kernel:
             For("k", Lit(0), Lit(nP), Lit(1), body),)),))
 
     zero = nest(Lit(nA), Lit(nB), (Assign(out_at(i, j, k), Lit(0.0)),))
+    if packed:
+        cell_body: tuple[Stmt, ...] = (
+            *_cell_ranges(cell),
+            Decl("od", Scalar.I32, init=Index("dst", (cell,))),
+            *((Decl("dg", Scalar.I32, init=Index("diag", (cell,))),
+               Decl("differ", Scalar.I32, init=_c(Fn.LT, Var("dg"),
+                                                  Lit(1))))
+              if la == lb else ()),
+            Note(LOWSTACK_NOTE.replace(
+                "own eri3 slots, mirrored at the end",
+                "own packed slots, a diagonal pair's mirrored at the end")),
+            Note("the cell's own elements, zeroed: no other cell writes them"),
+            zero,
+            *(Decl(n, Scalar.F64, (Lit(len(hermite_targets(x))),))
+              for n, x in ((R_ARRAY, L), (U_ARRAY, Lab))),
+            Note("the bra records of the cell's shell pair, serially"),
+            For(BRA, Var("b0"), Var("b1"), Lit(1), bra_body),
+            *((Note(_PACKED_DIAGONAL), If(
+                _c(Fn.LT, Lit(0), Var("dg")), (nest(Lit(nA), i, (Assign(
+                    out_at(i, j, k, mirror=True), out_at(i, j, k)),)),)))
+              if la == lb else ()),
+        )
+        return Kernel(name or eri3_name(spec, packed=True), _params(True),
+                      _packed_body(spec, True, cell_body))
     off_diag = (nest(Lit(nA), Lit(nB), (
         Assign(out_at(i, j, k, mirror=True), out_at(i, j, k)),)),)
     scatter: Stmt
