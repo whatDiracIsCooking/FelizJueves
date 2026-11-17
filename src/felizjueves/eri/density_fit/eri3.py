@@ -7,6 +7,8 @@
     eri3_classes(basis, aux)                -> the staging, per class (la, lb, lP)
     class_block(cls, k, *, pq)              -> staged cell k's block, from records
     place_staged(cls, k, block, out)        -> the scatter, transposing a swap
+    packed_columns(classes, keep=None)      -> each pair's packed column, count
+    packed_cells(cls, columns, n_aux)       -> the packed kernel's cell arrays
 
 `(mn|P) = INT INT m(r1) n(r1) P(r2) / r12` (#443; `Target.ERI3`, spec.py):
 `m`, `n` AOs of an ordinary basis, `P` a function of an auxiliary basis, both
@@ -78,6 +80,25 @@ them, `[ab_rec0, ab_rec1)` and `[p_rec0, p_rec1)`, and three offsets.
 `p - B`, and `0 - (-x) = x` exactly, so this is `primitive_pairs`' dressed
 block bitwise (`s_ab` is `dress`'s factor and `dress` forms `factor * E`), and
 `class_block` is `eri3_block` of the staged shells bitwise.
+
+THE PACKED OUTPUT (FreeBreakfast#1680; `kernel_eri3`'s `packed=True`). The
+same cells and records, with each cell's whole staged block stored at one
+DESTINATION OFFSET read from the cell table, not at its shells' AO offsets:
+block element `(a, b, q)` of cell `k` at
+
+    dst[k] + n_aux (a nB + b) + q,       nB = len(cartesians(lb)),
+
+the aux index fastest, so the output is `n_col` columns of `n_aux` (the
+column length, the kernel's `n_aux`), a staged pair's block `nA nB`
+consecutive columns, `a` outer. A DIAGONAL shell pair (`diag[k] = 1`, read
+only where `la == lb`) stores its FULL SQUARE block -- `a >= b` formed and
+mirrored, so every element is the square kernel's `[off_a + a][off_b +
+b][off_p + q]` bitwise -- where `place_staged` keeps the triangle.
+`packed_columns` lays the pairs out in class order (the `(la, lb)` classes
+sorted, each one's pairs contiguous, in first-touch order) from column 0 and
+`packed_cells` forms `dst = column n_aux + off_p`; a caller with its own
+layout (a batch of pairs, its columns counted from the batch's first) forms
+its own `dst`, which is all the kernel reads.
 
 Plain tuples and floats, like the rest of `ao/`: `src/felizjueves` has no
 runtime dependencies.
@@ -400,3 +421,40 @@ def place_staged(cls: Eri3Class, k: int,
             for q, v in enumerate(row):
                 out[m][n][op + q] = v
                 out[n][m][op + q] = v
+
+
+def packed_columns(classes: Sequence[Eri3Class],
+                   keep: Callable[[tuple[int, int]], bool] | None = None
+                   ) -> tuple[dict[tuple[int, int], int], int]:
+    """Each staged AO shell pair's first column in the packed output
+    (module docstring, THE PACKED OUTPUT), and the column count: the pairs
+    `keep` admits (every one when None) in class order, each `(la, lb)`
+    class's pairs contiguous in first-touch order, a pair `nA nB` columns,
+    from column 0."""
+    col: dict[tuple[int, int], int] = {}
+    n = 0
+    for cls in sorted(classes, key=lambda c: (c.la, c.lb, c.lP)):
+        nab = len(cartesians(cls.la)) * len(cartesians(cls.lb))
+        for a, b, _ in cls.cells:
+            if (a, b) not in col and (keep is None or keep((a, b))):
+                col[(a, b)] = n
+                n += nab
+    return col, n
+
+
+def packed_cells(cls: Eri3Class, columns: dict[tuple[int, int], int],
+                 n_aux: int) -> dict[str, tuple[int, ...]]:
+    """The packed kernel's cell arrays (`kernel_eri3.PACKED_CELL_ARRAYS`)
+    for the cells of `cls` whose pair has a column in `columns`, in cell
+    order: the two record ranges, `dst = columns[pair] n_aux + off_p` and
+    `diag` (1 for a diagonal shell pair, else 0)."""
+    out: dict[str, list[int]] = {k: [] for k in (
+        "ab_rec0", "ab_rec1", "p_rec0", "p_rec1", "dst", "diag")}
+    for k, (a, b, _) in enumerate(cls.cells):
+        if (a, b) not in columns:
+            continue
+        for name in ("ab_rec0", "ab_rec1", "p_rec0", "p_rec1"):
+            out[name].append(getattr(cls, name)[k])
+        out["dst"].append(columns[(a, b)] * n_aux + cls.off_p[k])
+        out["diag"].append(int(a == b))
+    return {k: tuple(v) for k, v in out.items()}

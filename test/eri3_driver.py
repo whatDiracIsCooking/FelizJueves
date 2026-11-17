@@ -5,6 +5,9 @@
     eri3_steps(classes, n_ao, n_aux, kernels)         -> (buffers, [Step])
     build_on_card(classes, n_ao, n_aux, backend, tc, workdir) -> T
     compile_timed / run_timed                         -> measure_df_lowstack's clock
+    packed_layout(classes, n_aux)                     -> (cells per class, n_col)
+    gather_packed(T, classes, cells, n_col, n_aux)    -> the square T's blocks, packed
+    build_packed_on_card(classes, cells, n_col, n_aux, backend, tc, workdir) -> B
 
 The records are `eri.density_fit.eri3.eri3_classes`' (every AO shell pair `i <= j`
 staged `la <= lb`, swapped when the basis order has the higher `l` first,
@@ -32,6 +35,14 @@ the runner fails unless every run is bit-identical.
 THE FORM (#606): `lowstack=` reaches `build_eri3_kernel` unchanged (None,
 the default, is the gate's choice); `timeout=` bounds the runner's compile.
 
+THE PACKED OUTPUT (FreeBreakfast#1680, `build_eri3_kernel(..., packed=
+True)`): `build_packed_on_card` runs the packed units of `classes` over
+`packed_layout`'s cells (`eri.density_fit.eri3.packed_columns` /
+`packed_cells`: every pair once, class order, from column 0) into one
+`n_col x n_aux` output, flat, that starts NaN, so an element no cell
+stores is seen; `gather_packed` reads the same blocks out of the square
+kernels' `T` for the bitwise comparison.
+
 TIMED (#606, measure/measure_df_lowstack.py): one class, `warmup + reps`
 runs of its one launch on the runner's clock, `{"0": [ns per timed run]}`
 (`metric_driver.run_timed`'s shape).
@@ -47,9 +58,15 @@ from conftest import Toolchain
 from harness_driver import Step, Zeros, build_runner, run_sequence, units_runner
 from plan_driver import RUNS, Program, _unit
 
-from felizjueves.eri.density_fit.eri3 import Eri3Class
+from felizjueves.ao.shell import cartesians
+from felizjueves.eri.density_fit.eri3 import (
+    Eri3Class,
+    packed_cells,
+    packed_columns,
+)
 from felizjueves.eri.density_fit.kernel_eri3 import (
     OUT,
+    PACKED_CELL_ARRAYS,
     PARAM_OF,
     build_eri3_kernel,
     launch_shape,
@@ -168,3 +185,111 @@ def run_timed(binary: Path, classes: Sequence[Eri3Class], n_ao: int,
                        runs=reps, warmup=warmup)
     (T,) = ran.load(OUT)
     return T, {"0": ran.events_ns}
+
+
+PACKED_SIZES = ("n_cell", "n_bra_rec", "n_aux_rec", "n_col", "n_aux")
+
+
+def packed_kernel(cls: Eri3Class, lowstack: bool | None = None) -> Kernel:
+    """The class's packed kernel, its signature checked against the
+    records and the packed cell arrays."""
+    kern = build_eri3_kernel((cls.la, cls.lb, cls.lP), lowstack=lowstack,
+                             packed=True)
+    names = [p.name for p in kern.params]
+    want = [*PACKED_SIZES,
+            *(_param(n) for n in (*Eri3Class.BRA_ARRAYS,
+                                  *Eri3Class.AUX_ARRAYS)),
+            *PACKED_CELL_ARRAYS, OUT]
+    if names != want or kern.params[-1].intent is not Intent.OUT:
+        raise ValueError(f"{kern.name}: signature {names}, the records "
+                         f"want {want}")
+    return kern
+
+
+def packed_layout(classes: Sequence[Eri3Class], n_aux: int
+                  ) -> tuple[list[dict[str, tuple[int, ...]]], int]:
+    """Every pair once, in class order from column 0: each class's packed
+    cell arrays (`packed_cells`) and the column count."""
+    columns, n_col = packed_columns(classes)
+    return [packed_cells(c, columns, n_aux) for c in classes], n_col
+
+
+def gather_packed(T: np.ndarray, classes: Sequence[Eri3Class],
+                  cells: Sequence[dict[str, tuple[int, ...]]], n_col: int,
+                  n_aux: int) -> np.ndarray:
+    """The packed output the square tensor `T` implies: each cell's staged
+    block `T[off_a + a, off_b + b, off_p + q]` at `dst + n_aux (a nB + b)
+    + q`, `(n_col, n_aux)`. Elements no cell owns are NaN."""
+    out = np.full(n_col * n_aux, np.nan)
+    for cls, cl in zip(classes, cells, strict=True):
+        nA, nB = len(cartesians(cls.la)), len(cartesians(cls.lb))
+        nP = len(cartesians(cls.lP))
+        assert len(cl["dst"]) == cls.n_cell  # every cell is laid out
+        for k in range(cls.n_cell):
+            oa, ob, op = cls.off_a[k], cls.off_b[k], cls.off_p[k]
+            blk = T[oa:oa + nA, ob:ob + nB, op:op + nP]  # [a][b][q]
+            idx = (cl["dst"][k] + n_aux * np.arange(nA * nB)[:, None]
+                   + np.arange(nP)[None, :])
+            out[idx] = blk.reshape(nA * nB, nP)
+    return out.reshape(n_col, n_aux)
+
+
+def packed_program(classes: Sequence[Eri3Class], backend: str,
+                   workdir: Path, *, lowstack: bool | None = None,
+                   name: str = "peri3_runner") -> Program:
+    """The runner over every class's packed unit, emitted into `workdir`."""
+    workdir.mkdir(parents=True, exist_ok=True)
+    units = []
+    for cls in classes:
+        kern = packed_kernel(cls, lowstack)
+        units.append((_unit(kern, backend, workdir, None), [kern.name]))
+    return units_runner(backend, units, workdir, name)
+
+
+def packed_steps(classes: Sequence[Eri3Class],
+                 cells: Sequence[dict[str, tuple[int, ...]]], n_col: int,
+                 n_aux: int, kernels: Sequence[Kernel]
+                 ) -> tuple[dict, list[Step]]:
+    """The sequence's buffers and its launches, one per class, into the
+    packed output, which starts NaN (module docstring)."""
+    buffers: dict = {OUT: np.full(n_col * n_aux, np.nan)}
+    steps = []
+    for c, (cls, cl, kern) in enumerate(zip(classes, cells, kernels,
+                                            strict=True)):
+        arr = cls.arrays()
+        n_cell = len(cl["dst"])
+        args: dict = {"n_cell": n_cell, "n_bra_rec": cls.n_bra_rec,
+                      "n_aux_rec": cls.n_aux_rec, "n_col": n_col,
+                      "n_aux": n_aux, OUT: OUT}
+        for name in (*Eri3Class.BRA_ARRAYS, *Eri3Class.AUX_ARRAYS):
+            buf = f"c{c}.{_param(name)}"
+            buffers[buf] = np.asarray(arr[name], dtype=np.float64)
+            args[_param(name)] = buf
+        for name in PACKED_CELL_ARRAYS:
+            buf = f"c{c}.{name}"
+            buffers[buf] = np.asarray(cl[name], dtype=np.int32)
+            args[name] = buf
+        grid, block = launch_shape(n_cell, THREADS)
+        steps.append(Step(kern, grid, block, args))
+    return buffers, steps
+
+
+def build_packed_on_card(classes: Sequence[Eri3Class],
+                         cells: Sequence[dict[str, tuple[int, ...]]],
+                         n_col: int, n_aux: int, backend: str,
+                         tc: Toolchain, workdir: Path, *,
+                         lowstack: bool | None = None,
+                         timeout: float = 1800.0) -> np.ndarray:
+    """The packed `(mn|P)` of `classes` built on the card over `cells`
+    (`packed_layout`'s, or a subset's of one layout), `(n_col, n_aux)`,
+    NaN where no launched cell stores, the sequence run `RUNS` times
+    bit-identically. The caller holds the card."""
+    prog = packed_program(classes, backend, workdir, lowstack=lowstack)
+    binary = build_runner(tc, prog, workdir / "peri3_bin", timeout=timeout)
+    kernels = [packed_kernel(c, lowstack) for c in classes]
+    buffers, steps = packed_steps(classes, cells, n_col, n_aux, kernels)
+    ran = run_sequence(binary, workdir / "case", buffers, steps, outs=[OUT],
+                       runs=RUNS)
+    (B,) = ran.load(OUT)
+    assert B.shape == (n_col * n_aux,), (B.shape, n_col, n_aux)
+    return B.reshape(n_col, n_aux)

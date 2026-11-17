@@ -540,6 +540,66 @@ own, set by the low classes.
 The same session ran Parts 1 and 2 (L ≤ 4) on the RX 9060 XT too. That
 is the card's first `(mn|P)` run; it was #431's.
 
+## The packed output (FreeBreakfast#1680)
+
+FreeBreakfast's rebuilt density fitting stores `B` packed by kept shell
+pair, the pairs' blocks side by side in class order, and streams it from
+the host in aux batches. `build_eri3_kernel(cls, packed=True)` is the
+kernel that writes that layout directly: `peri3_{la}{lb}{lP}`, the same
+records, the same cells, the same arithmetic in either form (unrolled or
+low-stack, the same `eri3_lowstack` rule), only the stores moved. The
+square `eri3_*` kernels are unchanged, text and all.
+
+**The contract.** The parameters are the square kernel's with `n_ao`
+replaced by `n_col` and the three cell offsets `off_a`, `off_b`, `off_p`
+replaced by two cell arrays, `dst` and `diag`
+(`kernel_eri3.PACKED_CELL_ARRAYS`: `ab_rec0 ab_rec1 p_rec0 p_rec1 dst
+diag`), and the output is flat, `n_col · n_aux` doubles:
+
+    block element (a, b, q) of cell k  ->  eri3[dst[k] + n_aux (a nB + b) + q]
+
+`a` over the staged first shell (`la <= lb`, as the square kernel stages
+it), `nB = len(cartesians(lb))`, `q` over the aux shell's Cartesians. The
+aux index is fastest: the output is `n_col` columns of `n_aux`, a pair's
+block `nA nB` consecutive columns, so `dst = column · n_aux + off_p` for a
+pair whose block opens at `column`. Everything about the layout is table
+contents: the kernel reads `dst` and nothing else, so a batch of pairs
+laid out from its own column 0 is just another `dst`.
+
+**A diagonal shell pair writes its full square block** (`diag[k] = 1`,
+read only where `la == lb`): `a >= b` is formed, as in the square kernel,
+and each element is stored at `(a, b)` and its mirror `(b, a)`. That is
+the square kernel's `[off_a + a][off_b + b][off_p + q]` bitwise, where
+the square kernel, `kernel_schwarz` and the full ERI keep only the
+triangle meaningful; the per-class batched spherical transform downstream
+needs complete blocks. An off-diagonal pair stores its block once, with
+no `(m, n)` mirror.
+
+**Host side.** `eri.density_fit.eri3.packed_columns(classes, keep=None)`
+lays the pairs out in class order from column 0 (`keep` admits a subset,
+for a batch) and `packed_cells(cls, columns, n_aux)` forms the cell
+arrays; `eri3_drive.launch_packed` runs the kernel interpreted.
+
+**The witness is the square kernel, bitwise.** Every store is plain and
+the arithmetic is the same statements in the same order, so there is no
+rounding to bound: `test_kernel_eri3_packed.py` (interpreted, every class
+at L ≤ 4 in both forms, a two-batch split with batch-relative offsets,
+diagonal blocks symmetric) and `test_eri3_packed_device.py` (on a card:
+Part 1 every class at L ≤ 4 in both forms; Part 2, `slow` + `high_l`,
+all 70 classes through (ff|i) on the aux-i set in the default form and
+the low-stack form wherever the default is unrolled) compare the packed
+output with `gather_packed` of the square kernel's tensor using
+`np.array_equal`. The square kernel's own witnesses (host, libcint) carry
+through that equality.
+
+**Where it ran:** CUDA only, on an RTX A6000 (`sm_86`, CUDA 13.0): Parts
+1 and 2 bitwise (FreeBreakfast#1680's PR). HIP was not run: no AMD card
+on that machine, and hipcc was not invoked. Every unit of the ladder
+FreeBreakfast emits (the 70 classes in the default form, plus the 45
+default-unrolled classes in the low-stack form) compiles alone under nvcc
+(`sm_86`, the tier's `NVCC_FLAGS`, no cache) with no warning, the slowest
+in 10.6 s (`peri3_134`), against the 300 s per-file budget.
+
 ## What is not done
 
 - **Spherical comparison.** #606 asks for agreement with spherical

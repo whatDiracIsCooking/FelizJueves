@@ -3,6 +3,7 @@
     eri3_kernel(la, lb, lP)                        -> Kernel (memoised)
     launch_class(cls, out, *, boys, threads=32)    -> out with cls's elements
     eri3_tensor_kernel(basis, aux, *, boys, classes=None, threads=32) -> Run
+    launch_packed(cls, cells, out, *, boys, threads=32) -> out, packed blocks
 
 The `eri/density_fit/metric_drive.py` pattern for `Target.ERI3`: `kernel_eri3.
 build_eri3_kernel((la, lb, lP))` run in `interp.Interpreter` over
@@ -20,6 +21,11 @@ output, so nothing else here changes. `engine=Engine.RYS` runs
 `kernel_reri3.build_reri3_kernel` (the Rys twin), the same again; its
 `ir.Rys` rule is injected as `rys=` (`rys.roots.roots_weights`), as Boys is.
 
+THE PACKED OUTPUT (`build_eri3_kernel(..., packed=True)`, `eri.density_fit.
+eri3`'s module docstring): `launch_packed` runs it over the cell arrays
+`eri.density_fit.eri3.packed_cells` formed (or any subset a caller forms),
+into a flat output of `n_col n_aux` doubles.
+
 BOYS IS INJECTED (`boys=`), as the interpreter requires; nothing here imports
 `reference/`. Kernels are memoised per class (building is pure); results are
 not. Its own layering rule (test/test_layering.py, `eri3_adapter`): the
@@ -28,7 +34,7 @@ builder, `interp`, `ir` and `ao`, never `reference/` nor a backend.
 
 from __future__ import annotations
 
-from collections.abc import Callable, Iterable
+from collections.abc import Callable, Iterable, Sequence
 from dataclasses import dataclass
 from functools import cache
 
@@ -38,6 +44,7 @@ from felizjueves.ao.shell import Basis
 from felizjueves.eri.density_fit.eri3 import Eri3Class, eri3_classes
 from felizjueves.eri.density_fit.kernel_eri3 import (
     OUT,
+    PACKED_CELL_ARRAYS,
     PARAM_OF,
     build_eri3_kernel,
     launch_shape,
@@ -115,3 +122,31 @@ def eri3_tensor_kernel(basis: Basis, aux: Basis, *, boys: Boys,
                              engine=engine, lowstack=lowstack, rys=rys)
             ran.append((cls.la, cls.lb, cls.lP))
     return Run(T, tuple(ran))
+
+
+@cache
+def packed_kernel(la: int, lb: int, lP: int,
+                  lowstack: bool | None = None) -> Kernel:
+    """`build_eri3_kernel((la, lb, lP), packed=True)`, built once."""
+    return build_eri3_kernel((la, lb, lP), lowstack=lowstack, packed=True)
+
+
+def launch_packed(cls: Eri3Class, cells: dict[str, Sequence[int]],
+                  out: np.ndarray, *, boys: Boys, threads: int = 32,
+                  lowstack: bool | None = None) -> np.ndarray:
+    """One interpreted launch of `cls`'s packed kernel over the cells
+    `cells` names (`PACKED_CELL_ARRAYS`, `packed_cells`' arrays), writing
+    into (a copy of) `out`, `(n_col, n_aux)`, which is returned."""
+    n_col, naux = out.shape
+    n_cell = len(cells["dst"])
+    grid, block = launch_shape(n_cell, threads)
+    records = {PARAM_OF.get(k, k): np.array(v, dtype=float)
+               for k, v in cls.arrays().items()
+               if k in (*cls.BRA_ARRAYS, *cls.AUX_ARRAYS)}
+    flat = Interpreter(packed_kernel(cls.la, cls.lb, cls.lP, lowstack),
+                       launch=Launch(grid, block, 1), boys=boys).run(
+        n_cell=n_cell, n_bra_rec=cls.n_bra_rec, n_aux_rec=cls.n_aux_rec,
+        n_col=n_col, n_aux=naux, **{OUT: out.reshape(-1)}, **records,
+        **{k: np.array(cells[k], dtype=np.int32)
+           for k in PACKED_CELL_ARRAYS})[OUT]
+    return np.asarray(flat).reshape(n_col, naux)
