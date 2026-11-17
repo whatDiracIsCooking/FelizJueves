@@ -298,7 +298,12 @@ if [ -n "${DOCTOR_GPU_VENDORS// /}" ]; then
   }
 
   # THE CARD-STATE ROW (#91): utilisation, free VRAM, and whether the card's
-  # lock (GPU_LOCK_PATH, taken by test/conftest.py's device fixtures) is held
+  # lock (GPU_LOCK_PATH, taken by test/conftest.py's device fixtures) is held.
+  # It is about ONE card, the one a run from this shell would launch on --
+  # lib.sh's gpu_card_index, from CUDA_VISIBLE_DEVICES / HIP_VISIBLE_DEVICES,
+  # card 0 when unset -- and the lock is that card's; set the variable to ask
+  # about another. A box with several cards of a vendor also gets one note
+  # naming each card's lock state
   # -- so a process outside this container holding the card is diagnosed
   # BEFORE a run, not inferred from an out-of-memory error after one. A reading
   # the tool cannot give is UNKNOWN, never idle: NVML says "Unknown Error"
@@ -400,7 +405,7 @@ if [ -n "${DOCTOR_GPU_VENDORS// /}" ]; then
   #   card_state <vendor> <backend> <util%|""> <free MiB|""> <total MiB|"">
   card_state() {
     local vendor=$1 backend=$2 util=$3 free=$4 total=$5 lock state holder
-    lock=${GPU_LOCK_PATH//\{backend\}/$backend}
+    lock=$(gpu_lock_path "$backend")
     [[ $util =~ ^[0-9]+$ ]] && util="$util%" || util="unknown"
     if [[ $free =~ ^[0-9]+$ && $total =~ ^[0-9]+$ ]]; then
       free="$free / $total MiB free"
@@ -426,7 +431,9 @@ if [ -n "${DOCTOR_GPU_VENDORS// /}" ]; then
         fi
       done < <(awk -v k="$key" '$2 == "FLOCK" && $6 == k {print $5}' /proc/locks)
     fi
-    local row="$vendor card state: utilisation $util, $free, lock $lock $state"
+    local card row
+    card=$(gpu_card_index "$backend")
+    row="$vendor card $card state: utilisation $util, $free, lock $lock $state"
     if [ "$state" = HELD ]; then
       warn "$row"
       note "held by ${holder:-a holder /proc/locks does not show} -- the next \`gpu\` run waits behind it"
@@ -435,6 +442,20 @@ if [ -n "${DOCTOR_GPU_VENDORS// /}" ]; then
       note "an unreadable reading is unknown, not idle -- re-run, or read the card's own SMI"
     else
       ok "$row"
+    fi
+    # The other cards' locks, so a free one is visible without re-running.
+    local n i var others=() p
+    n=$(gpu_card_count "$backend")
+    if [ "$n" -gt 1 ]; then
+      case $backend in cuda) var=CUDA_VISIBLE_DEVICES ;; *) var=HIP_VISIBLE_DEVICES ;; esac
+      for ((i = 0; i < n; i++)); do
+        p=$(export "$var=$i"; gpu_lock_path "$backend")
+        if [ ! -e "$p" ] || flock -n "$p" true 2>/dev/null; then
+          others+=("$i free"); else others+=("$i HELD"); fi
+      done
+      local listed
+      listed=$(IFS=,; echo "${others[*]}")
+      note "$n $vendor cards, locks: ${listed//,/, } -- pick one with $var=N or --device N"
     fi
   }
 
@@ -502,7 +523,11 @@ if [ -n "${DOCTOR_GPU_VENDORS// /}" ]; then
         fi
         if [ "$nv_listed" -gt 0 ]; then
           gpus_found=$((gpus_found+nv_listed))
-          IFS=', ' read -r nv_util nv_free nv_total < <(nvidia-smi \
+          # -i: the selected card's reading, not whichever card lists first.
+          nv_sel=()
+          nv_card=$(gpu_card_index cuda)
+          [[ $nv_card =~ ^[0-9]+$ ]] && nv_sel=(-i "$((10#$nv_card))")
+          IFS=', ' read -r nv_util nv_free nv_total < <(nvidia-smi "${nv_sel[@]}" \
             --query-gpu=utilization.gpu,memory.free,memory.total \
             --format=csv,noheader,nounits 2>/dev/null | head -1)
           # Before card_state: a denied node makes every reading above

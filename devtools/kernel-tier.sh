@@ -2,9 +2,9 @@
 # Generate the kernels, compile them with the real device compiler, run them on
 # a real card, and report what each phase actually proved.
 #
-#   devtools/kernel-tier.sh [--backend cuda|hip] [--full] [--fresh]
-#                           [--no-cache] [--no-test] [-j N] [--report DIR]
-#                           [-- <pytest args>]
+#   devtools/kernel-tier.sh [--backend cuda|hip] [--device N|auto] [--full]
+#                           [--fresh] [--no-cache] [--no-test] [-j N]
+#                           [--report DIR] [-- <pytest args>]
 #
 # THIS IS THE ONLY PLACE A NUMERICAL CLAIM CAN BE MADE. No hosted CI runner has
 # a GPU, so CI can lint the generator and diff it against its golden files and
@@ -47,6 +47,13 @@
 #              #186), from a content-addressed directory under
 #              KERNEL_BUILD_DIR, so a warm re-run recompiles only what
 #              changed.
+#
+# THE CARD. --device N runs the device phase on card N of the backend (it
+# exports CUDA_VISIBLE_DEVICES or HIP_VISIBLE_DEVICES=N); --device auto picks
+# the first card whose lock is free (card 0 when all are held). Without it the
+# card is whatever that variable already says, card 0 when unset. The preflight
+# probes that card, the device suite locks it (GPU_LOCK_PATH, one lock per
+# card) and the result block names both on its `device` line.
 #
 # THE CACHE. --no-cache drops sccache from the compile phase AND exports
 # KERNEL_NO_CACHE (config.sh) so the device suite compiles cold too; setting
@@ -91,6 +98,7 @@ cd "$REPO_ROOT"
 usage() { usage_from_header "${BASH_SOURCE[0]}"; }
 
 backend=$KERNEL_BACKEND
+device=
 fresh=
 no_cache=$KERNEL_NO_CACHE
 run_tests=1
@@ -104,6 +112,7 @@ while [ $# -gt 0 ]; do
     --backend) backend=${2:?--backend needs cuda or hip}; shift 2 ;;
     --cuda)    backend=cuda; shift ;;
     --hip)     backend=hip;  shift ;;
+    --device)  device=${2:?--device needs a card index or auto}; shift 2 ;;
     --full)    test_args=$KERNEL_FULL_TEST_ARGS
                # the whole ladder, L = 9..16 compiled too, unless the
                # caller chose a KERNEL_GEN_CMD (config.sh)
@@ -144,6 +153,14 @@ case $backend in
   *) echo "kernel-tier: --backend must be cuda or hip, not '$backend'" >&2; exit 64 ;;
 esac
 
+# Before anything probes or locks: the card is read from the environment
+# (lib.sh's gpu_card_index), so --device only has to set it.
+if [ -n "$device" ]; then
+  select_card "$backend" "$device" || exit $?
+fi
+card=$(gpu_card_index "$backend")
+card_lock=$(gpu_lock_path "$backend")
+
 ts=$(date +%Y%m%d-%H%M%S)
 case "$report" in /*) report_dir="$report/$backend-$ts" ;; *) report_dir="$REPO_ROOT/$report/$backend-$ts" ;; esac
 mkdir -p "$report_dir"
@@ -172,6 +189,11 @@ if ! compiler_path=$(find_tool "$compiler"); then
     note "no $compiler on this host -- re-running inside $ROCM_IMAGE"
     docker_args=(--rm -v "$REPO_ROOT:/workspace" -w /workspace
                  -u "$(id -u):$(id -g)" -e FJ_IN_CONTAINER=1)
+    # The card selection crosses the boundary (bare `-e NAME` passes this
+    # side's value); the lock does not -- /tmp inside is not this /tmp.
+    for v in HIP_VISIBLE_DEVICES ROCR_VISIBLE_DEVICES GPU_LOCK_PATH; do
+      [ -z "${!v+x}" ] || docker_args+=(-e "$v")
+    done
     while IFS= read -r dev; do
       [ -n "$dev" ] || continue
       [ -e "$dev" ] || cannot "device node $dev does not exist on this host"
@@ -236,9 +258,9 @@ case $backend in
   hip)  amd_gpu_present && device_present=1 ;;
 esac
 if [ "$device_present" = 1 ]; then
-  note "device: present"
+  note "device: present -- card $card, lock $card_lock"
 else
-  note "device: ABSENT -- the compile phase still runs and proves nothing about"
+  note "device: ABSENT (card $card) -- the compile phase still runs and proves nothing about"
   note "        a number; every \`gpu\` test will SKIP, not fail."
   # Which KIND of absent, because the three send you to different places.
   if card_revoked "$backend"; then
@@ -501,7 +523,7 @@ fi
 
 phase "result"
 note "backend   $backend ($target_desc)"
-note "device    $([ "$device_present" = 1 ] && echo present || echo ABSENT -- numbers unproven)"
+note "device    $([ "$device_present" = 1 ] && echo present || echo ABSENT -- numbers unproven), card $card, lock $card_lock"
 note "generated $([ -n "$KERNEL_GEN_CMD" ] && echo "$KERNEL_GEN_CMD" || echo "nothing (KERNEL_GEN_CMD empty)")"
 note "compiled  ${#sources[@]} translation unit(s) from ${src_dir#"$REPO_ROOT"/}"
 note "tests     ${test_args//\{backend\}/$backend}$([ "$run_tests" = 1 ] || echo ' (NOT RUN: --no-test)')"

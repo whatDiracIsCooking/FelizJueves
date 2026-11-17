@@ -42,9 +42,20 @@ import re
 from pathlib import Path
 
 import conftest
+import pytest
 
 REPO = Path(__file__).resolve().parent.parent
 LIB_SH = REPO / "devtools" / "lib.sh"
+
+
+@pytest.fixture(autouse=True)
+def _no_card_selection(monkeypatch) -> None:
+    """Enumeration asks about the selected card (lib.sh's gpu_card_index), so
+    a run under `CUDA_VISIBLE_DEVICES=2` must not move what is asserted against
+    these fake trees: card 0, as on a box with nothing selected."""
+    for v in ("CUDA_VISIBLE_DEVICES", "HIP_VISIBLE_DEVICES",
+              "ROCR_VISIBLE_DEVICES"):
+        monkeypatch.delenv(v, raising=False)
 
 
 # -- what counts as an enumerated NVIDIA GPU ---------------------------------
@@ -206,6 +217,9 @@ def _lib_sh_nodes(backend: str) -> set[str]:
     THIS box, and what is being compared is the rule, not the hardware.
     """
     text = LIB_SH.read_text()
+    # gpu_nodes's own body: other functions have `cuda)` / `hip)` branches too.
+    text = text[text.index("\ngpu_nodes() {"):]
+    text = text[:text.index("\n}\n")]
     body = re.search(rf"^    {backend}\)\n(.*?)^      ;;$", text,
                      re.MULTILINE | re.DOTALL)
     assert body, f"gpu_nodes has no {backend}) branch -- did lib.sh move?"
@@ -215,7 +229,10 @@ def _lib_sh_nodes(backend: str) -> set[str]:
     # the sentence explaining the fix.
     code = "\n".join(ln for ln in body.group(1).splitlines()
                      if not ln.lstrip().startswith("#"))
-    return set(re.findall(r"/dev/[A-Za-z0-9*\[\]/_.-]+", code))
+    # A path built from a variable (`/dev/nvidia$card`, the selected card's
+    # node) is the narrowing, not a node of the rule: dropped.
+    return {p for p in re.findall(r"/dev/[A-Za-z0-9*\[\]/_.$-]+", code)
+            if "$" not in p}
 
 
 def test_cuda_node_rule_agrees_with_lib_sh() -> None:

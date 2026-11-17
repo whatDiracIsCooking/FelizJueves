@@ -64,8 +64,9 @@ from felizjueves.spec import Spec
 # it would share the box with xdist workers compiling other tests -- and a
 # contended timing is garbage, not a noisy measurement. Run it by itself, with
 # nothing else compile-bound on the box; the card's lock is the device
-# fixture's (test/conftest.py, GPU_LOCK_PATH), so no `flock` wrapper is needed
-# -- one is harmless, the fixture recognising an ancestor's hold as its own:
+# fixture's (test/conftest.py, GPU_LOCK_PATH, one per card), so no `flock`
+# wrapper is needed -- one is harmless, the fixture recognising an ancestor's
+# hold as its own:
 #
 #   devtools/measure.sh wallclock --backend cuda
 #

@@ -31,6 +31,16 @@ from felizjueves.spec import Operator, Spec, Target
 EMIT_DIR = Path(__file__).resolve().parent.parent / "src" / "felizjueves" / "emit"
 
 
+@pytest.fixture(autouse=True)
+def _no_card_selection(monkeypatch) -> None:
+    """Enumeration asks about the selected card (lib.sh's gpu_card_index), so
+    a run under `CUDA_VISIBLE_DEVICES=2` must not move what is asserted against
+    these fake trees: card 0, as on a box with nothing selected."""
+    for v in ("CUDA_VISIBLE_DEVICES", "HIP_VISIBLE_DEVICES",
+              "ROCR_VISIBLE_DEVICES"):
+        monkeypatch.delenv(v, raising=False)
+
+
 def _spec(**kw) -> Spec:
     base = dict(
         operator=Operator.COULOMB, derivative_order=0, am=(4, 4, 4, 4), target=Target.J

@@ -68,7 +68,7 @@ seed and the touched families are the PR's own, so the draw replays. Pass:
 comment + label removed; fail: comment naming the failing cases, label
 kept; exit 2: could not run, nothing posted. It runs one PR and one backend
 at a time, so one card is busy at once, and the device phase takes the
-card's lock (`GPU_LOCK_PATH`) as any kernel-tier run does. Logs, draws and
+card's lock (`GPU_LOCK_PATH`, one per card) as any kernel-tier run does. Logs, draws and
 the posted `comment.md` stay under `KERNEL_TIER_REPORTS/verify-pr<N>-<time>`.
 
 ## The two tiers
@@ -102,7 +102,17 @@ devtools/kernel-tier.sh --backend hip           # hipcc + the RX 9060 XT (PR gat
 devtools/kernel-tier.sh --backend cuda --full   # every gpu test, slow included
 devtools/kernel-tier.sh --backend cuda --fresh  # wipe .kernel-tier/ first
 devtools/kernel-tier.sh --backend cuda -- -k saxpy    # extra pytest args
+devtools/kernel-tier.sh --backend cuda --device 2     # card 2 of a multi-card box
+devtools/kernel-tier.sh --backend cuda --device auto  # first card whose lock is free
 ```
+
+**One lock per card.** The device phase locks the card it launches on,
+`/tmp/fj-gpu-<backend>.<index>.lock` (`GPU_LOCK_PATH`), the index read from
+`CUDA_VISIBLE_DEVICES` / `HIP_VISIBLE_DEVICES` (card 0 when unset) — which
+`--device N` sets for you. Runs on different cards do not wait for each
+other; the preflight's and the result's `device` lines name the card and its
+lock. `--device auto` asks only this repo's locks, so a card another project
+holds under its own lock looks free.
 
 Four phases, and **the report at the end says which of them did anything**:
 
