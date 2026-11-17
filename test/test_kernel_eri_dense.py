@@ -46,7 +46,8 @@ from eri_dense_driver import interpret, vec_product
 from oracle import basis as ob
 from oracle import manifest
 from test_kernel_device import BOYS_REL
-from test_kernel_eri_full import J_TOL, L_MAX, SYNTHETIC
+from test_kernel_eri_full import F_BASIS, J_TOL, L_MAX, SYNTHETIC
+from tiers import split_by_l
 
 from felizjueves.ao.shell import Basis, Shell
 from felizjueves.eri.full_eri import kernel_dense, kernel_eri
@@ -86,8 +87,9 @@ def _fixture(name: str):
 
 @cache
 def _basis(name: str) -> Basis:
-    return SYNTHETIC if name == "synthetic" else ob.from_fixture(
-        _fixture(name))
+    if name in ("synthetic", "f"):
+        return SYNTHETIC if name == "synthetic" else F_BASIS
+    return ob.from_fixture(_fixture(name))
 
 
 def _classes(basis: Basis, shells=None):
@@ -383,3 +385,61 @@ def test_the_key_and_its_refusals():
         kernel_dense.build_dense_kernel((0, 0, 0, 0), "jk")
     with pytest.raises(ValueError):
         kernel_dense.launch_shape(0)
+
+
+# ---------------------------------------------------------------------------
+# The low-stack form (f, and forced at any class)
+# ---------------------------------------------------------------------------
+
+F_ORDERED = sorted(c.am for c in dense_classes(F_BASIS))
+# The fast tier's forced low-stack sample: each kind of ordering once
+FORCED_FAST = {(0, 0, 0, 0), (1, 0, 0, 0), (0, 0, 0, 1), (1, 0, 1, 1),
+               (1, 1, 1, 1), (2, 1, 0, 1), (0, 2, 2, 0), (2, 0, 1, 1)}
+
+
+def _ids(c) -> str:
+    return "".join(map(str, c))
+
+
+def test_the_dense_low_stack_rule_and_the_d_text():
+    assert len(F_ORDERED) == 256
+    assert {c for c in F_ORDERED if kernel_eri.eri_lowstack(
+        kernel_dense.dense_spec(*c))} == {c for c in F_ORDERED if 3 in c}
+    for c in (*SYNTHETIC_CLASSES, (3, 0, 0, 0), (0, 1, 3, 2)):
+        for lay in LAYOUTS:
+            k = kernel_dense.build_dense_kernel(c, lay)
+            assert k.name == f"eri_d{lay}_" + _ids(c)
+            assert k == kernel_dense.build_dense_kernel(
+                c, lay, lowstack=3 in c)
+    assert kernel_dense.launch_shape(5, 4, rows=3) == (4, (4, 1))
+
+
+@pytest.mark.parametrize("layout", LAYOUTS)
+@pytest.mark.parametrize("cls", [
+    pytest.param(c, id=_ids(c), marks=() if c in FORCED_FAST
+                 else (pytest.mark.slow,))
+    for c in SYNTHETIC_CLASSES])
+def test_the_forced_low_stack_form_through_l4_agrees_with_the_host(
+        cls, layout):
+    classes = [c for c in dense_classes(SYNTHETIC) if c.am == cls]
+    n = SYNTHETIC.n_ao
+    M = interpret(classes, n, layout, 0, n * n,
+                  init=np.full((n * n, n * n), np.nan), lowstack=True)
+    worst = check(M, "synthetic", layout, frozenset({cls}))
+    print(f"\n({_ids(cls)}) {layout} low-stack: worst / bound {worst:.2e}")
+
+
+@pytest.mark.parametrize("layout", LAYOUTS)
+@pytest.mark.parametrize("cls", split_by_l(F_ORDERED, sum, _ids))
+def test_every_ordered_class_through_ff_ff_low_stack_agrees_with_the_host(
+        cls, layout):
+    """Every ordering of the s-to-f basis in the low-stack form (the
+    default with an f shell, forced below), both layouts, against
+    `eri.eri` placed by the kernel's rule, within the analytic bound."""
+    classes = [c for c in dense_classes(F_BASIS) if c.am == cls]
+    n = F_BASIS.n_ao
+    M = interpret(classes, n, layout, 0, n * n,
+                  init=np.full((n * n, n * n), np.nan), lowstack=True)
+    worst = check(M, "f", layout, frozenset({cls}))
+    print(f"\n({_ids(cls)}) {layout} low-stack, s-to-f: worst / bound "
+          f"{worst:.2e}")

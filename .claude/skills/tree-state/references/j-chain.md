@@ -136,7 +136,8 @@ and exactly symmetric; `kernel_gemv.build_gemv_kernel()` (`eri_jgemv`) is
 `eri.schwarz.schwarz_classes`' pair classes and owns the eight-fold symmetry:
 every unordered pair of shell pairs is one task. The packing of `D` and the
 unpacking of `J` are host-side. Emitted by the opt-in `--eri-l [LMAX]`
-ladder (bare: s and p, 6 classes plus the GEMV; at most d, (dd|dd)).
+ladder (bare: s and p, 6 classes plus the GEMV; at most f, (ff|ff), 55
+classes; from f the low-stack form, below).
 **Interpreted** every class at L <= 4 (`test_kernel_eri_full.py`): within
 16 eps of the host's `eri.eri` scale, every element written once, and `J`
 from the interpreted GEMV over H2 and H2O/STO-3G within 1e-12 of PySCF's
@@ -193,7 +194,7 @@ are disjoint row blocks, collected by a gather. The int32 bound is
 `n_row n_ao^2 < 2^31` per launch (`dense.row_range` refuses past it); there
 is no `N_AO_MAX` on this path, and sizing the blocks is the caller's job.
 Emitted by the opt-in `--dense-eri-l [LMAX]` (bare: s and p, 16 classes x 2
-layouts; at most d, 81 x 2), never by default. **Interpreted**
+layouts; at most f, 256 x 2, low-stack from f), never by default. **Interpreted**
 (`test_kernel_eri_dense.py`): every ordered class at L <= 4 of the synthetic
 s/p/d basis, both layouts, against `eri.eri` placed by the kernel's rule,
 within `(2 gamma_N + delta) scale` (test_eri_full_device's analysis of the
@@ -210,3 +211,38 @@ H2O `J` and `K` within 3.8e-15 of PySCF, for the fixture's `D` and for
 `D + A` as interpreted; H2O's three row ranges on the card stacked `==` the
 whole matrix, both layouts. **hipcc never compiled it and no gfx1200
 ran it**: HIP is owed. Nothing is measured.
+
+**The low-stack full ERI, f and (ff|ff)** (`kernel_eri.eri_lowstack`: any
+class with an f shell; `lowstack=` forces either form at any class; the
+module docstrings have the design). The one-thread-per-task form holds the
+whole block in accumulators: measured `sm_86` ptxas frames 43.9 KB at
+(dd|dd) (`eri_2222`, 145 KB of spill stores, a 150 s cold compile), so
+(ff|ff) is out of reach. The low-stack form holds no block: per record pair
+`[t]^(0)` once into a local `R`, per-axis `E` tables (the ket's from `-X`,
+folding `(-1)^{|q|}` into one class sign), and per bra row the expanded
+row `E`, `G[q] = SUM_p E_p R[p+q]` and each column's rolled ket sum,
+accumulated IN PLACE in the output (the first record pair stores). The
+frame at (ff|ff) is 1,251 doubles (R 455, G 84, row E 27, six tables of
+112, Boys 13): `eri_3333` / `eri_dj_3333` ~9.8 KB, < 100 B spill, ~3 s
+cold compile. Packed: one bra row per thread (`task_threads` = `n_a n_b`);
+dense: the `n_b` rows of one bra Cartesian (`kernel_dense.task_threads` =
+`n_a`), each by measurement on an RTX A6000 (few tasks favour one row a
+thread, up to 5x; a full card favours `n_b`, `[t]^(0)` formed once per
+thread); the task is the fast thread index so a warp's lanes share trip
+counts. Plain stores, one owner per element (a self-paired task stores
+`(pr, pc)` from the row with `pc <= pr`), bit-reproducible, exactly
+symmetric; round-off, not bitwise, against the other form. Through (dd|dd)
+the default text is byte-identical to #737's (both kernels, both
+backends), so FreeBreakfast's emitted d units do not move. The forced
+low-stack (dd|dd) was faster than today's in 5 of 6 measured shapes and
+1.16x slower in one (packed, 666 tasks, 3-primitive d shells), so at d it
+stays an option, off. **Interpreted**: every packed class and every
+ordered dense class (both layouts) of an s-to-f basis through (ff|ff),
+two-f-shell (ff|ff), and the forced form at L <= 4, within the analytic
+`2 gamma_N + delta` bound. **On a card: CUDA only, an RTX A6000, partly** -- the new
+device cases (every packed class through (ff|ff), every dense ordering by
+L, the forced form at L <= 4, HF/cc-pVTZ's 55 classes against libcint,
+CO/cc-pVTZ `J` and `K` against PySCF) were written and a run was stopped
+at 77 of 98 cases, none failing; which cases those were is not recorded,
+so the f device checks are owed (the follow-up issue). nvcc compiles
+every f unit (512 dense + 34 packed, ptxas above); hipcc never, HIP owed.

@@ -61,7 +61,15 @@ from harness_driver import build_steps
 from oracle import basis as ob
 from oracle import manifest
 from test_kernel_device import BACKEND, BOYS_REL, _toolchain
-from test_kernel_eri_full import J_TOL, L_MAX, SYNTHETIC
+from test_kernel_eri_full import (
+    F_BASIS,
+    F_CLASSES,
+    J_TOL,
+    L_MAX,
+    SYNTHETIC,
+    check_bound,
+)
+from tiers import split_by_l
 
 from felizjueves.eri.full_eri.packed import (
     eri_classes,
@@ -69,6 +77,7 @@ from felizjueves.eri.full_eri.packed import (
     n_packed,
     owned,
     packed_eri_and_scale,
+    pair_index,
 )
 from felizjueves.mmd.hermite import hermite_order
 from felizjueves.reference.pq import pq
@@ -283,3 +292,176 @@ def test_the_bound_is_not_vacuous():
         assert np.max(tol[nz] / np.abs(want[nz])) < 1e-9, name
         assert math.isfinite(float(tol.max()))
         assert np.all(tol[mine] >= 0.0)
+
+
+# ---------------------------------------------------------------------------
+# Part 4: the low-stack form -- every class through (ff|ff), the forced form
+# at L <= 4, HF/cc-pVTZ against libcint, CO/cc-pVTZ's J and K against PySCF
+# ---------------------------------------------------------------------------
+#
+# THE BOUNDS, stated before any run. Against the host: test_kernel_eri_full's
+# `packed_bound`, Part 1's analysis per element (the low-stack form passes
+# every term through the same roundings, the folds nested over the row's
+# reach and the axes). Against libcint: that bound plus test_ao_eri's
+# stated host-versus-libcint TOL (1e-12), both times `eri.eri`'s scale --
+# a triangle inequality, nothing measured. `J` and `K` against PySCF:
+# `J_TOL`, as Parts 2 and 3.
+
+HF_CCPVTZ = ("hf_ccpvtz_eri", "hf_ccpvtz_eri_l9", "hf_ccpvtz_eri_l10",
+             "hf_ccpvtz_eri_l11", "hf_ccpvtz_eri_l12")
+LIBCINT_TOL = 1e-12  # test_ao_eri.TOL, eri.eri against libcint, x scale
+CO = ("co_ccpvtz_j", "co_ccpvtz_k")
+
+
+def _low(backend: str, basis, classes, label: str, request,
+         tmp_path: Path) -> np.ndarray:
+    tc = _toolchain(backend, request)
+    eri = build_on_card(classes, basis.n_ao, backend, tc, tmp_path,
+                        lowstack=True)
+    assert np.array_equal(eri, eri.T)
+    return eri
+
+
+def _f_class(backend: str, cls, request, tmp_path: Path) -> None:
+    classes = [c for c in eri_classes(F_BASIS) if c.am == cls]
+    eri = _low(backend, F_BASIS, classes, "f", request, tmp_path)
+    worst = check_bound(eri, "f", frozenset({cls}), zero_elsewhere=True)
+    print(f"\n{backend} {BACKEND[backend][1].name} ({''.join(map(str, cls))})"
+          f" low-stack, s-to-f basis: worst / bound {worst:.2e}; runs "
+          "bit-identical")
+
+
+@pytest.mark.cuda
+@pytest.mark.gpu
+@pytest.mark.parametrize("cls", split_by_l(F_CLASSES, sum,
+                                           lambda c: "".join(map(str, c))))
+def test_cuda_every_class_through_ff_ff_low_stack_matches_the_host(
+        cls, request, tmp_path):
+    _f_class("cuda", cls, request, tmp_path)
+
+
+@pytest.mark.hip
+@pytest.mark.gpu
+@pytest.mark.parametrize("cls", split_by_l(F_CLASSES, sum,
+                                           lambda c: "".join(map(str, c))))
+def test_hip_every_class_through_ff_ff_low_stack_matches_the_host(
+        cls, request, tmp_path):
+    _f_class("hip", cls, request, tmp_path)
+
+
+def _forced(backend: str, request, tmp_path: Path) -> None:
+    classes = _classes(SYNTHETIC)
+    eri = _low(backend, SYNTHETIC, classes, "synthetic", request, tmp_path)
+    worst = check_bound(eri, "synthetic",
+                        frozenset(c.am for c in classes), zero_elsewhere=True)
+    print(f"\n{backend} forced low-stack, every synthetic class at L <= 4: "
+          f"worst / bound {worst:.2e}")
+
+
+@pytest.mark.cuda
+@pytest.mark.gpu
+def test_cuda_the_forced_low_stack_form_through_l4_matches_the_host(
+        request, tmp_path):
+    _forced("cuda", request, tmp_path)
+
+
+@pytest.mark.hip
+@pytest.mark.gpu
+def test_hip_the_forced_low_stack_form_through_l4_matches_the_host(
+        request, tmp_path):
+    _forced("hip", request, tmp_path)
+
+
+def _n_of(shells) -> int:
+    """`N` for a quartet of shells, its records bounded by the primitive
+    products (a record is a primitive pair)."""
+    la, lb, lc, ld = (s.l for s in shells)
+    lp, lq = la + lb, lc + ld
+    k = math.prod(len(s.exponents) for s in shells)
+    return ((4 * lp + 8) + (4 * lq + 8) + (3 * (lp + lq) + 12)
+            + len(hermite_order(lp)) + len(hermite_order(lq)) + 3 + k)
+
+
+def _libcint(backend: str, request, tmp_path: Path) -> None:
+    from felizjueves.eri.eri import eri_block_and_scale
+
+    fxs = {n: _fixture(n) for n in HF_CCPVTZ}
+    basis = ob.from_fixture(fxs["hf_ccpvtz_eri"])
+    sh, off = basis.shells, basis.offsets
+    classes = eri_classes(basis)
+    assert len(classes) == 55
+    eri = _low(backend, basis, classes, "hf", request, tmp_path)
+    pidx = np.array(pair_index(basis.n_ao))
+    n_blocks = 0
+    for name, fx in fxs.items():
+        for q, ref in manifest.eri_blocks(fx).items():
+            i, j, k, l_ = q
+            r = [slice(off[s], off[s] + sh[s].n_cart) for s in q]
+            got = eri[pidx[r[0], r[1]][:, :, None, None],
+                      pidx[r[2], r[3]][None, None, :, :]]
+            _, scale = eri_block_and_scale((sh[i], sh[j]), (sh[k], sh[l_]),
+                                           pq=pq)
+            scale = np.array(scale).reshape(ref.shape)
+            n_max = _n_of([sh[s] for s in q])
+            tol = (2 * _gamma(n_max) + BOYS_REL + LIBCINT_TOL) * scale
+            err = np.abs(got - ref)
+            worst = float(np.max(err / np.maximum(tol, 1e-300)))
+            L = sum(sh[s].l for s in q)
+            print(f"{backend} HF/cc-pVTZ {q} L={L}: max |card - libcint| "
+                  f"{err.max():.2e}, worst / bound {worst:.2e}")
+            assert np.all(err <= tol), (name, q, worst)
+            n_blocks += 1
+    assert n_blocks == 55
+
+
+@pytest.mark.cuda
+@pytest.mark.gpu
+@pytest.mark.slow
+@pytest.mark.high_l
+def test_cuda_hf_ccpvtz_low_stack_matches_libcint(request, tmp_path):
+    _libcint("cuda", request, tmp_path)
+
+
+@pytest.mark.hip
+@pytest.mark.gpu
+@pytest.mark.slow
+@pytest.mark.high_l
+def test_hip_hf_ccpvtz_low_stack_matches_libcint(request, tmp_path):
+    _libcint("hip", request, tmp_path)
+
+
+def _co(backend: str, request, tmp_path: Path) -> None:
+    fj, fk = (_fixture(n) for n in CO)
+    assert np.array_equal(fj.density, fk.density)
+    basis = ob.from_fixture(fj)
+    classes = eri_classes(basis)
+    assert max(max(c.am) for c in classes) == 3
+    tc = _toolchain(backend, request)
+    eri = _low(backend, basis, classes, "co", request, tmp_path)
+    J = coulomb_on_card(eri, fj.density, backend, tc, tmp_path)
+    X, K = exchange_on_card(eri, fj.density, backend, tc, tmp_path)
+    assert np.array_equal(X, np.array(exchange_packed(eri.tolist())))
+    for what, got, ref in (("J", J, fj.arrays[manifest.J_ARRAY]),
+                           ("K", K, fk.arrays[manifest.K_ARRAY])):
+        rel = float(np.max(np.abs(got - ref)) / np.max(np.abs(ref)))
+        print(f"{backend} CO/cc-pVTZ ({basis.n_ao} AOs, {len(classes)} "
+              f"classes, s to f): max |{what} - v{what.lower()}| / max = "
+              f"{rel:.2e} (tol {J_TOL:g})")
+        assert rel < J_TOL, what
+        assert np.array_equal(got, got.T)
+
+
+@pytest.mark.cuda
+@pytest.mark.gpu
+@pytest.mark.slow
+@pytest.mark.high_l
+def test_cuda_co_ccpvtz_j_and_k_low_stack_match_pyscf(request, tmp_path):
+    _co("cuda", request, tmp_path)
+
+
+@pytest.mark.hip
+@pytest.mark.gpu
+@pytest.mark.slow
+@pytest.mark.high_l
+def test_hip_co_ccpvtz_j_and_k_low_stack_match_pyscf(request, tmp_path):
+    _co("hip", request, tmp_path)

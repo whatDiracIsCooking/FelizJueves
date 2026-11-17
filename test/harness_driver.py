@@ -486,12 +486,19 @@ def chain_runners(kernels: Iterable[Kernel], backend: str, workdir: Path, *,
 
 
 def build_chain(tc: Toolchain, runners: Mapping[str, Program], workdir: Path,
-                *, timeout: float = 1800.0) -> dict[str, Path]:
+                *, timeout: float = 1800.0, jobs: int = 1) -> dict[str, Path]:
     """Every runner compiled (`build_runner`), by kernel name; `timeout`
-    caps each compile."""
-    return {name: build_runner(tc, prog, workdir / f"runner_{name}",
-                               timeout=timeout)
-            for name, prog in runners.items()}
+    caps each compile, `jobs` compile at once (threads around the compiler
+    processes; 1, the default, is in order)."""
+    def one(item: tuple[str, Program]) -> tuple[str, Path]:
+        name, prog = item
+        return name, build_runner(tc, prog, workdir / f"runner_{name}",
+                                  timeout=timeout)
+    if jobs <= 1:
+        return dict(map(one, runners.items()))
+    from concurrent.futures import ThreadPoolExecutor
+    with ThreadPoolExecutor(jobs) as pool:
+        return dict(pool.map(one, runners.items()))
 
 
 def carried(steps: Sequence[Step]) -> str:
@@ -507,12 +514,12 @@ def carried(steps: Sequence[Step]) -> str:
 
 def build_steps(tc: Toolchain, backend: str, steps: Sequence[Step],
                 workdir: Path, *, units: Mapping[str, Path] | None = None,
-                timeout: float = 1800.0) -> dict[str, Path]:
+                timeout: float = 1800.0, jobs: int = 1) -> dict[str, Path]:
     """Every step's runner, compiled: `chain_runners` of the steps' kernels
-    (`units` as `emit_unit`'s), then `build_chain`."""
+    (`units` as `emit_unit`'s), then `build_chain` (`jobs` at once)."""
     return build_chain(tc, chain_runners([s.kernel for s in steps], backend,
                                          workdir, units=units),
-                       workdir, timeout=timeout)
+                       workdir, timeout=timeout, jobs=jobs)
 
 
 def run_chain(binaries: Mapping[str, Path], steps: Sequence[Step],

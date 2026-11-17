@@ -34,6 +34,7 @@ import numpy as np
 import pytest
 from eri_dense_driver import build_on_card, dense_steps, vec_product
 from harness_driver import build_steps
+from oracle import basis as ob
 from oracle import manifest
 from test_kernel_device import BACKEND, _toolchain
 from test_kernel_eri_dense import (
@@ -46,7 +47,8 @@ from test_kernel_eri_dense import (
     check,
     nonsymmetric,
 )
-from test_kernel_eri_full import J_TOL, L_MAX
+from test_kernel_eri_full import F_BASIS, J_TOL, L_MAX, SYNTHETIC
+from tiers import split_by_l
 
 from felizjueves.eri.full_eri.dense import LAYOUTS, dense_classes, row_range
 
@@ -159,6 +161,13 @@ def test_hip_a_union_of_row_ranges_is_the_whole_matrix(
 # ---------------------------------------------------------------------------
 
 
+# Both layouts of every ordering at L <= 4 is ~600 s of cold nvcc on this
+# box's A6000 host (the d units unrolled): `slow`, so the compile sample's
+# dense case is H2/STO-3G's.
+COMPILE_SYNTHETIC = pytest.param("synthetic", marks=pytest.mark.slow,
+                                 id="synthetic")
+
+
 def _programs(name: str):
     basis = _basis(name)
     m0, n_row = row_range(basis)
@@ -167,13 +176,13 @@ def _programs(name: str):
 
 
 @pytest.mark.cuda
-@pytest.mark.parametrize("name", ("synthetic", *MOLECULES))
+@pytest.mark.parametrize("name", (COMPILE_SYNTHETIC, *MOLECULES))
 def test_cuda_dense_programs_compile(name, nvcc, tmp_path):
     build_steps(nvcc, "cuda", _programs(name), tmp_path)
 
 
 @pytest.mark.hip
-@pytest.mark.parametrize("name", ("synthetic", *MOLECULES))
+@pytest.mark.parametrize("name", (COMPILE_SYNTHETIC, *MOLECULES))
 def test_hip_dense_programs_compile(name, hipcc, tmp_path):
     build_steps(hipcc, "hip", _programs(name), tmp_path)
 
@@ -183,3 +192,117 @@ def test_part1_reaches_every_ordering_at_l4_and_no_more():
     assert {(2, 0, 0, 0), (0, 0, 0, 2), (1, 1, 1, 1), (2, 1, 0, 1),
             (0, 2, 2, 0)} <= got
     assert all(sum(am) <= L_MAX for am in got)
+
+
+# ---------------------------------------------------------------------------
+# Part 3: the low-stack form -- every ordered class through (ff|ff) by L,
+# the forced form at L <= 4, CO/cc-pVTZ's J and K against PySCF
+# ---------------------------------------------------------------------------
+#
+# THE BOUNDS are Parts 1 and 2's: `bound` per element against the host (the
+# low-stack form passes every term through the same roundings), `J_TOL`
+# against PySCF.
+
+CO = ("co_ccpvtz_j", "co_ccpvtz_k")
+F_LS = sorted({sum(c.am) for c in dense_classes(F_BASIS)})
+
+
+def _f_by_l(backend: str, L: int, layout: str, request,
+            tmp_path: Path) -> None:
+    tc = _toolchain(backend, request)
+    classes = [c for c in dense_classes(F_BASIS) if sum(c.am) == L]
+    n = F_BASIS.n_ao
+    M = build_on_card(classes, n, layout, 0, n * n, backend, tc, tmp_path,
+                      lowstack=True)
+    worst = check(M, "f", layout, frozenset(c.am for c in classes),
+                  zero_elsewhere=True)
+    print(f"\n{backend} {BACKEND[backend][1].name} L = {L} {layout} "
+          f"low-stack, s-to-f basis: {len(classes)} ordered classes; worst / "
+          f"bound {worst:.2e}; runs bit-identical")
+
+
+@pytest.mark.cuda
+@pytest.mark.gpu
+@pytest.mark.parametrize("layout", LAYOUTS)
+@pytest.mark.parametrize("L", split_by_l(F_LS, lambda x: x,
+                                         lambda x: f"L{x}"))
+def test_cuda_every_ordered_class_through_ff_ff_low_stack_matches_the_host(
+        L, layout, request, tmp_path):
+    _f_by_l("cuda", L, layout, request, tmp_path)
+
+
+@pytest.mark.hip
+@pytest.mark.gpu
+@pytest.mark.parametrize("layout", LAYOUTS)
+@pytest.mark.parametrize("L", split_by_l(F_LS, lambda x: x,
+                                         lambda x: f"L{x}"))
+def test_hip_every_ordered_class_through_ff_ff_low_stack_matches_the_host(
+        L, layout, request, tmp_path):
+    _f_by_l("hip", L, layout, request, tmp_path)
+
+
+def _forced(backend: str, layout: str, request, tmp_path: Path) -> None:
+    tc = _toolchain(backend, request)
+    classes = _classes(SYNTHETIC)
+    n = SYNTHETIC.n_ao
+    M = build_on_card(classes, n, layout, 0, n * n, backend, tc, tmp_path,
+                      lowstack=True)
+    worst = check(M, "synthetic", layout, frozenset(c.am for c in classes),
+                  zero_elsewhere=True)
+    print(f"\n{backend} forced low-stack {layout}, every synthetic ordering "
+          f"at L <= 4: worst / bound {worst:.2e}")
+
+
+@pytest.mark.cuda
+@pytest.mark.gpu
+@pytest.mark.parametrize("layout", LAYOUTS)
+def test_cuda_the_forced_low_stack_form_through_l4_matches_the_host(
+        layout, request, tmp_path):
+    _forced("cuda", layout, request, tmp_path)
+
+
+@pytest.mark.hip
+@pytest.mark.gpu
+@pytest.mark.parametrize("layout", LAYOUTS)
+def test_hip_the_forced_low_stack_form_through_l4_matches_the_host(
+        layout, request, tmp_path):
+    _forced("hip", layout, request, tmp_path)
+
+
+def _co(backend: str, request, tmp_path: Path) -> None:
+    fj, fk = (_fixture(x) for x in CO)
+    basis = ob.from_fixture(fj)
+    classes = dense_classes(basis)
+    assert len(classes) == 256
+    tc = _toolchain(backend, request)
+    n = basis.n_ao
+    D = fj.density
+    for layout, ref in (("j", fj.arrays[manifest.J_ARRAY]),
+                        ("k", fk.arrays[manifest.K_ARRAY])):
+        M = build_on_card(classes, n, layout, 0, n * n, backend, tc,
+                          tmp_path / layout, lowstack=True)
+        got = vec_product(M, D)
+        rel = float(np.max(np.abs(got - ref)) / np.max(np.abs(ref)))
+        print(f"{backend} CO/cc-pVTZ ({n} AOs, 256 ordered classes, s to f) "
+              f"{layout.upper()} = M_{layout.upper()} vec(D): max |"
+              f"{layout.upper()} - v{layout}| / max = {rel:.2e} "
+              f"(tol {J_TOL:g})")
+        assert rel < J_TOL, layout
+
+
+@pytest.mark.cuda
+@pytest.mark.gpu
+@pytest.mark.slow
+@pytest.mark.high_l
+def test_cuda_co_ccpvtz_dense_j_and_k_low_stack_match_pyscf(request,
+                                                            tmp_path):
+    _co("cuda", request, tmp_path)
+
+
+@pytest.mark.hip
+@pytest.mark.gpu
+@pytest.mark.slow
+@pytest.mark.high_l
+def test_hip_co_ccpvtz_dense_j_and_k_low_stack_match_pyscf(request,
+                                                           tmp_path):
+    _co("hip", request, tmp_path)

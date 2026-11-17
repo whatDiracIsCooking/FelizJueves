@@ -26,6 +26,7 @@ bit-reproducible too. `K` is the same GEMV kernel over `X_pp`.
 
 from __future__ import annotations
 
+import os
 from collections.abc import Sequence
 from pathlib import Path
 
@@ -47,7 +48,8 @@ from felizjueves.ir import Intent, Kernel
 from felizjueves.ir.interp import Interpreter, Launch
 from felizjueves.reference.boys import boys
 
-THREADS = 32  # lanes per block, one task per thread; not numerical
+THREADS = 32  # lanes per block; not numerical
+JOBS = min(8, os.cpu_count() or 1)  # unit compiles at once, per build
 GEMV_THREADS = 128
 
 _INT = ("brec0", "brec1", "off_a", "off_b", "krec0", "krec1", "off_c",
@@ -72,13 +74,16 @@ def _args(c: EriClass, n_ao: int) -> dict:
             "pidx": np.asarray(pair_index(n_ao), dtype=np.int32)}
 
 
-def eri_steps(classes: Sequence[EriClass], n_ao: int) -> list[Step]:
-    """One launch per class in `classes`, every argument but `eri`."""
+def eri_steps(classes: Sequence[EriClass], n_ao: int, *,
+              lowstack: bool | None = None) -> list[Step]:
+    """One launch per class in `classes`, every argument but `eri`;
+    `lowstack` is `build_eri_kernel`'s (None: each class's rule)."""
     steps = []
     for c in classes:
-        kern = kernel_eri.build_eri_kernel(c.am)
+        kern = kernel_eri.build_eri_kernel(c.am, lowstack=lowstack)
         _check_signature(kern)
-        grid, block = kernel_eri.launch_shape(c.n_task, THREADS)
+        grid, block = kernel_eri.launch_shape(
+            c.n_task, THREADS, rows=kernel_eri.task_threads(c.am, lowstack))
         steps.append(Step(kern, grid, block, _args(c, n_ao)))
     return steps
 
@@ -120,12 +125,15 @@ def interpret_kperm(eri: np.ndarray, *, threads: int = 5) -> np.ndarray:
 
 
 def interpret(classes: Sequence[EriClass], n_ao: int, *,
-              init: np.ndarray, threads: int = 3) -> np.ndarray:
+              init: np.ndarray, threads: int = 3,
+              lowstack: bool | None = None) -> np.ndarray:
     """`ERI_pp` from the interpreted kernels of `classes`, onto `init`."""
     eri = init
     for c in classes:
-        grid, block = kernel_eri.launch_shape(c.n_task, threads)
-        eri = Interpreter(kernel_eri.build_eri_kernel(c.am),
+        grid, block = kernel_eri.launch_shape(
+            c.n_task, threads, rows=kernel_eri.task_threads(c.am, lowstack))
+        eri = Interpreter(kernel_eri.build_eri_kernel(c.am,
+                                                      lowstack=lowstack),
                           launch=Launch(grid, block, 1), boys=boys).run(
             **_args(c, n_ao), eri=eri)[kernel_eri.OUT]
     return eri
@@ -143,11 +151,12 @@ def interpret_gemv(eri: np.ndarray, D, *, threads: int = 7) -> np.ndarray:
 
 
 def build_on_card(classes: Sequence[EriClass], n_ao: int, backend: str,
-                  tc: Toolchain, workdir: Path) -> np.ndarray:
+                  tc: Toolchain, workdir: Path, *,
+                  lowstack: bool | None = None) -> np.ndarray:
     """`ERI_pp` of `classes` built on the card, the chain run `RUNS` times
     bit-identically. The caller holds the card (its device fixture)."""
-    steps = eri_steps(classes, n_ao)
-    binaries = build_steps(tc, backend, steps, workdir)
+    steps = eri_steps(classes, n_ao, lowstack=lowstack)
+    binaries = build_steps(tc, backend, steps, workdir, jobs=JOBS)
     n_pp = n_packed(n_ao)
     outs = run_chain(binaries, steps, kernel_eri.OUT, np.zeros((n_pp, n_pp)),
                      workdir, runs=RUNS)
