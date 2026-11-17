@@ -146,7 +146,7 @@ def _run(backend: str, name: str, request, tmp_path: Path) -> np.ndarray:
     want, _, mine = _host(name)
     tol = _bound(name)
     err = np.abs(eri - want)
-    worst = float(np.max(err[mine] / tol[mine]))
+    worst = float(np.max(err[mine] / np.maximum(tol[mine], 1e-300)))
     print(f"\n{backend} {BACKEND[backend][1].name} {name}: classes "
           f"{[''.join(map(str, c.am)) for c in classes]}; max |ERI - host| = "
           f"{err[mine].max():.2e}, worst / bound {worst:.2e}; runs "

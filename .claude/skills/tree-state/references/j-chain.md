@@ -141,10 +141,13 @@ ladder (bare: s and p, 6 classes plus the GEMV; at most d, (dd|dd)).
 16 eps of the host's `eri.eri` scale, every element written once, and `J`
 from the interpreted GEMV over H2 and H2O/STO-3G within 1e-12 of PySCF's
 `vj` (6e-15 absolute on H2O). **Compiled by nvcc and hipcc** (the programs of
-`test_eri_full_device.py`); **on no card yet** -- its `gpu` tests (every
-class at L <= 4 against the host, H2 and H2O/STO-3G's `J` against PySCF)
-were written in a cloud session without one, so both backends are owed.
-Nothing is measured.
+`test_eri_full_device.py`). **On a card: CUDA only, an RTX A6000 (sm_86,
+CUDA 13.0), 2026-11-17** -- the first run of its `gpu` tests: every class at
+L <= 4 of the synthetic basis within its bound (worst 4.7e-2 of it; max
+|ERI - host| 7.1e-15),
+runs bit-identical; H2 and H2O/STO-3G's `J` within 3.8e-15 / 7.5e-16 of
+`vj` (relative to max |vj|). HIP is still owed (no gfx1200 run). Nothing is
+measured.
 
 **`K` by GEMV over the same tensor** (`kernel_kperm.build_kperm_kernel()`,
 `eri_kperm`): for a symmetric `D`, `K_pp = X_pp Dp` with the Coulomb GEMV's
@@ -158,5 +161,52 @@ and its transpose; the host's packed `K` within 2e-16 of a dense `einsum`
 over the unpacked tensor (s/p synthetic basis, random symmetric `D`); `K`
 from the interpreted chain over H2 and H2O/STO-3G within 3e-15 / 6e-16
 (relative to max |vk|) of PySCF's `vk`. **Compiled by nvcc and hipcc**
-(`test_X_eri_programs_compile`, cloud session, 2026-11-17); **on no card**
--- `test_X_k_by_gemv_matches_pyscf` on both backends is owed. Nothing is measured.
+(`test_X_eri_programs_compile`, cloud session, 2026-11-17). **On CUDA, an
+RTX A6000, 2026-11-17**: `X_pp` bitwise the host's `exchange_packed` of the
+card's ERI and exactly symmetric, `K` within 2.9e-15 (H2) / 6.2e-16 (H2O) of
+`vk`, runs bit-identical; HIP owed. Nothing is measured.
+
+**The dense J- and K-layout ERI** (`Target.ERI_DENSE`,
+`kernel_dense.build_dense_kernel(cls, layout)`, `eri_dj_{la}{lb}{lc}{ld}` /
+`eri_dk_...`; host staging and reference in `full_eri/dense.py`) is the
+multi-GPU path, and the packed one is left as it was. With AO pairs unpacked,
+`(m, n) -> m n_ao + n`, it writes `M_J[(m,n), (l,s)] = (mn|ls)` or
+`M_K[(m,n), (l,s)] = (ml|ns)`, each dense `n_ao^2 x n_ao^2`, so `J = M_J
+vec(D)` and `K = M_K vec(D)` for ANY `D` -- no packing, no `Dp`, no
+symmetric-`D` assumption. **One family, a layout argument**: both layouts are
+the same block `(ab|cd)` of one ORDERED shell quartet, placed at
+`M_J[(a,b), (c,d)]` or `M_K[(a,c), (b,d)]`; everything up to the scatter is
+`kernel_eri.contraction`, factored out of `build_eri_kernel` for it (the
+packed kernels' emitted text is byte-identical, checked for all 21 classes on
+both backends). The key is the class's, not the layout's. **No symmetry, by
+decision**: the class is the AO-order quartet of every ordering (81 at d), a
+task is one ordered shell quartet, nothing is mirrored or skipped, every
+element has one owner and one plain store (no atomics, bit-reproducible run
+to run). Recomputation against `kernel_eri`'s unique-quartet build: up to 8x
+(`n_shell^4` tasks against ~`n_shell^4 / 8`), per layout; a split over GPUs
+adds none. **The row range** is first-class: in both layouts the row's `m`
+is in the bra's first shell, so a launch over the tasks whose first shell is
+in `[sh0, sh1)` (`dense.dense_classes(basis, (sh0, sh1))`) writes exactly the
+contiguous rows `[m0 n_ao, (m0 + n_m) n_ao)`, every column, into a LOCAL
+block (`eri[n_row, n_col]`, params `m0 n_row n_col`); disjoint shell ranges
+are disjoint row blocks, collected by a gather. The int32 bound is
+`n_row n_ao^2 < 2^31` per launch (`dense.row_range` refuses past it); there
+is no `N_AO_MAX` on this path, and sizing the blocks is the caller's job.
+Emitted by the opt-in `--dense-eri-l [LMAX]` (bare: s and p, 16 classes x 2
+layouts; at most d, 81 x 2), never by default. **Interpreted**
+(`test_kernel_eri_dense.py`): every ordered class at L <= 4 of the synthetic
+s/p/d basis, both layouts, against `eri.eri` placed by the kernel's rule,
+within `(2 gamma_N + delta) scale` (test_eri_full_device's analysis of the
+same contraction) -- worst 1.0e-2 of the bound; H2 and H2O/STO-3G
+whole, `J` and `K` by one product within 4e-15 of PySCF's `vj` / `vk`; a
+non-symmetric `D + A`: `J` against `vj` (`J(A) = 0`), `(K(D) + K(D^T)) / 2`
+against `vk`, `K(A)` against a dense `einsum` of the host tensor, all within
+4e-15, and with the oracle group PySCF's `get_jk(hermi=0)` itself (`J` and
+`K` within 3.6e-15); H2O's shells cut three ways, each range launched alone,
+stacked `==` the whole. **On a card: CUDA only, an RTX A6000 (sm_86), not
+this box's RTX 3080** -- 2026-11-17, CUDA 13.0: every ordered class at L <= 4, both
+layouts, within the bound (worst 4.7e-2 of it), runs bit-identical; H2 and
+H2O `J` and `K` within 3.8e-15 of PySCF, for the fixture's `D` and for
+`D + A` as interpreted; H2O's three row ranges on the card stacked `==` the
+whole matrix, both layouts. **hipcc never compiled it and no gfx1200
+ran it**: HIP is owed. Nothing is measured.

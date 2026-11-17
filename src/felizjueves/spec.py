@@ -134,6 +134,20 @@ but indexes no [JEngine] table row. Unbatched by decision
 (`_ERI_BATCH_REFUSAL`). It is a small-system path by construction: memory is
 `n_pp^2` doubles, about 1 GB at `n_ao = 150`.
 
+A DENSE-ERI CLASS IS AN ORDERED QUARTET WITH NO SYMMETRY. `Target.ERI_DENSE`
+is the same Cartesian AO tensor `(mn|ls)` written unpacked into one of two
+dense `n_ao^2 x n_ao^2` layouts, a row range of it per launch -- the J layout
+`M_J[(m,n), (l,s)] = (mn|ls)` or the K layout `M_K[(m,n), (l,s)] = (ml|ns)`,
+so `J = M_J vec(D)` and `K = M_K vec(D)` for any `D`, symmetric or not
+(`eri/full_eri/kernel_dense.py`). Its class is the AO-order quartet
+`(la, lb | lc, ld)` of the block it computes, EVERY ordering (no staging:
+`la > lb` and the ket's class before the bra's are classes of their own), key
+``coulomb/d0/(1,0|1,1)/b1/eri_dense/literal``; the layout is the builder's
+argument, not the key's, since both layouts run the same block. Like
+`Target.ERI` it runs the `Target.J` quartet's plan with the same `am`, its
+`total_am` indexes no [JEngine] row, and it is unbatched by decision
+(`_ERI_BATCH_REFUSAL`).
+
 A CROSS-OVERLAP CLASS IS AN ORDERED PAIR ACROSS TWO BASES. `Target.SX` is
 the rectangular overlap `S_{B1,B2}[m, n] = <m|n>` with `m` an AO of one
 basis and `n` of another (the same molecule in two basis sets, or two
@@ -516,6 +530,11 @@ class Target(StrEnum):
     # (n_ao <= 150), where J = (mn|ls) D_ls is one GEMV (eri/full_eri,
     # module docstring "A FULL-ERI CLASS").
     ERI = "eri"
+    # The same tensor with no symmetry, written into a dense J- or K-ordered
+    # n_ao^2 x n_ao^2 layout, a row range per launch: an AO-order quartet
+    # class of every ordering (eri/full_eri/kernel_dense, module docstring
+    # "A DENSE-ERI CLASS").
+    ERI_DENSE = "eri_dense"
 
 
 class Engine(StrEnum):
@@ -541,6 +560,7 @@ AM_LENGTH: dict[Target, int] = {
     Target.SX: 2, Target.METRIC: 2, Target.ERI3: 3, Target.PAIR_BOUND: 2,
     Target.RECORD_BOUND: 2, Target.DIPOLE: 2, Target.QUADRUPOLE: 2,
     Target.KX1: 4, Target.KXC: 4, Target.JX: 2, Target.ERI: 4,
+    Target.ERI_DENSE: 4,
 }
 
 
@@ -559,6 +579,7 @@ OPERATOR_OF: dict[Target, Operator] = {
     Target.DIPOLE: Operator.DIPOLE, Target.QUADRUPOLE: Operator.QUADRUPOLE,
     Target.KX1: Operator.COULOMB, Target.KXC: Operator.COULOMB,
     Target.JX: Operator.COULOMB, Target.ERI: Operator.COULOMB,
+    Target.ERI_DENSE: Operator.COULOMB,
 }
 
 
@@ -639,6 +660,8 @@ _ENGINE_REFUSAL: dict[tuple[Target, Engine], str] = {
     (Target.JX, Engine.HGP): _NO_HGP_PAIR,
     (Target.ERI, Engine.HGP): _mmd_only(
         "the full ERI kernel (la lb|lc ld)"),
+    (Target.ERI_DENSE, Engine.HGP): _mmd_only(
+        "the dense ERI kernel (la lb|lc ld)"),
     (Target.F, Engine.MMD): (
         "the fused F is built on HGP only ([Fock] §3.2); a fused MMD F is "
         "#326, not yet built"
@@ -963,7 +986,8 @@ class Spec:
                 f"n_batches {self.n_batches!r} for target {self.target}: "
                 f"{_F_BATCH_REFUSAL}"
             )
-        if self.target is Target.ERI and self.n_batches != 1:
+        if (self.target in (Target.ERI, Target.ERI_DENSE)
+                and self.n_batches != 1):
             raise ValueError(
                 f"n_batches {self.n_batches!r} for target {self.target}: "
                 f"{_ERI_BATCH_REFUSAL}"

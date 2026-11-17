@@ -5567,6 +5567,10 @@ def test_the_hgp2_builder_reaches_neither_its_witness_nor_a_machine() -> None:
 # Schwarz builder's skeleton -- its liveness helpers imported, not copied --
 # widened to a quartet; `kernel_kperm` and `kernel_gemv`, IR only). The
 # generator CLI writes their ladder (`--eri-l`), so the driver composes them.
+# The dense J- and K-layout ERI (`Target.ERI_DENSE`) adds a host staging and
+# reference (`dense`, under the `ao` rule, reusing `packed`'s launch record)
+# and a fourth builder (`kernel_dense`, `kernel_eri`'s contraction imported,
+# not copied, under a scatter of its own), written by `--dense-eri-l`.
 # ---------------------------------------------------------------------------
 
 RULES |= {
@@ -5582,9 +5586,11 @@ RULES |= {
         "quartet (`plan`), the J engine's prelude and recurrence statements "
         "(`recurrence`), the `E` block fragment inlined twice "
         "(`e_fragment`) and `kernel_schwarz`'s liveness pass -- the "
-        "exchange-ordered gather from its output, and the GEMV over either",
+        "exchange-ordered gather from its output, and the GEMV over either; "
+        "and kernel_dense.py, `Target.ERI_DENSE`, the same contraction "
+        "(`kernel_eri`'s) under a dense J- or K-layout scatter",
         ("spec", "=ir", "mmd.e_fragment", "plan", "mmd.recurrence",
-         "eri.kernel_schwarz"),
+         "eri.kernel_schwarz", "eri.full_eri.kernel_eri"),
         ao="`eri.full_eri.packed` (through `eri.eri`) is the witness the "
            "kernel is interpreted against: importing it shares ancestry "
            "with it (#20)",
@@ -5595,12 +5601,20 @@ RULES |= {
             "the `Kernel` is arch-neutral; the arch enters at emission"},
         reference=_GROUND_TRUTH),
 }
+RULES["full_eri_dense_host"] = Rule(
+    "dense.py: the dense ERI's host staging and reference -- the `ao` rule, "
+    "plus `packed`'s launch record (`EriClass`), which the dense launches "
+    "share with `kernel_eri`'s",
+    RULES["ao"].may | frozenset({"eri.full_eri.packed"}),
+    RULES["ao"].must_not)
 RULE_OF |= {
     "eri.full_eri": "eri_full_eri_package",
     "eri.full_eri.packed": "ao",
     "eri.full_eri.kernel_eri": "full_eri_builder",
     "eri.full_eri.kernel_gemv": "full_eri_builder",
     "eri.full_eri.kernel_kperm": "full_eri_builder",
+    "eri.full_eri.dense": "full_eri_dense_host",
+    "eri.full_eri.kernel_dense": "full_eri_builder",
 }
 EDGES |= {k: frozenset(v) for k, v in {
     "eri.full_eri": (),
@@ -5610,11 +5624,17 @@ EDGES |= {k: frozenset(v) for k, v in {
                                 "plan.schedule", "plan.targets", "spec"),
     "eri.full_eri.kernel_gemv": ("ir",),
     "eri.full_eri.kernel_kperm": ("ir",),
+    "eri.full_eri.dense": ("ao.density", "ao.shell", "eri.eri",
+                           "eri.full_eri.packed", "eri.schwarz"),
+    "eri.full_eri.kernel_dense": ("eri.full_eri.kernel_eri", "ir",
+                                  "mmd.e_fragment", "spec"),
 }.items()}
 _FULL_ERI_BUILDERS = ("eri.full_eri.kernel_eri", "eri.full_eri.kernel_gemv",
-                      "eri.full_eri.kernel_kperm")
+                      "eri.full_eri.kernel_kperm",
+                      "eri.full_eri.kernel_dense")
 RULES["driver"] = Rule(RULES["driver"].why + ", and the full-ERI ladder "
-                       "through `kernel_eri`, `kernel_kperm` and `kernel_gemv`",
+                       "through `kernel_eri`, `kernel_kperm` and `kernel_gemv`, "
+                       "and the dense-ERI ladder through `kernel_dense`",
                        RULES["driver"].may | frozenset(_FULL_ERI_BUILDERS),
                        RULES["driver"].must_not)
 EDGES["emit.__main__"] = EDGES["emit.__main__"] | frozenset(_FULL_ERI_BUILDERS)
