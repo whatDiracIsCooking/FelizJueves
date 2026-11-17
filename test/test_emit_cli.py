@@ -284,7 +284,9 @@ def test_the_eri_ladder_pairs_the_staged_pair_classes():
     assert emit_cli.eri_classes(1) == [
         (0, 0, 0, 0), (0, 0, 0, 1), (0, 0, 1, 1), (0, 1, 0, 1), (0, 1, 1, 1),
         (1, 1, 1, 1)]
-    assert len(emit_cli.eri_classes(emit_cli.ERI_L_MAX)) == 21
+    assert len(emit_cli.eri_classes(2)) == 21
+    assert emit_cli.ERI_L_MAX == 3
+    assert len(emit_cli.eri_classes(emit_cli.ERI_L_MAX)) == 55
     assert emit_cli.DEFAULT_ERI_L == 1
     for bad in (-1, emit_cli.ERI_L_MAX + 1, True):
         with pytest.raises(ValueError):
@@ -310,7 +312,7 @@ def test_eri_l_bare_adds_s_and_p_the_permute_and_the_gemv(tmp_path):
 
 
 def test_an_eri_l_past_the_cap_is_a_2(tmp_path):
-    assert _run(tmp_path / "out", "cuda", "--eri-l", "3") == 2
+    assert _run(tmp_path / "out", "cuda", "--eri-l", "4") == 2
     assert not (tmp_path / "out").exists()
 
 
@@ -321,7 +323,8 @@ def test_the_dense_eri_ladder_is_every_ordered_quartet():
     assert emit_cli.dense_eri_classes(0) == [(0, 0, 0, 0)]
     assert len(emit_cli.dense_eri_classes(1)) == 16
     assert (1, 0, 0, 0) in emit_cli.dense_eri_classes(1)
-    assert len(emit_cli.dense_eri_classes(emit_cli.ERI_L_MAX)) == 81
+    assert len(emit_cli.dense_eri_classes(2)) == 81
+    assert len(emit_cli.dense_eri_classes(emit_cli.ERI_L_MAX)) == 256
     assert emit_cli.DEFAULT_DENSE_ERI_L == 1
     for bad in (-1, emit_cli.ERI_L_MAX + 1, True):
         with pytest.raises(ValueError):
@@ -343,7 +346,7 @@ def test_dense_eri_l_bare_adds_both_layouts_of_every_s_and_p_ordering(
 
 
 def test_a_dense_eri_l_past_the_cap_is_a_2(tmp_path):
-    assert _run(tmp_path / "out", "cuda", "--dense-eri-l", "3") == 2
+    assert _run(tmp_path / "out", "cuda", "--dense-eri-l", "4") == 2
     assert not (tmp_path / "out").exists()
 
 

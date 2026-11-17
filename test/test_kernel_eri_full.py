@@ -34,9 +34,15 @@ import pytest
 from eri_full_driver import interpret, interpret_gemv, interpret_kperm
 from oracle import basis as ob
 from oracle import manifest
+from tiers import split_by_l
 
 from felizjueves.ao.shell import Basis, Shell
-from felizjueves.eri.full_eri import kernel_eri, kernel_gemv, kernel_kperm
+from felizjueves.eri.full_eri import (
+    kernel_dense,
+    kernel_eri,
+    kernel_gemv,
+    kernel_kperm,
+)
 from felizjueves.eri.full_eri.packed import (
     N_AO_MAX,
     coulomb_from_packed,
@@ -320,3 +326,177 @@ def test_the_key_and_its_refusals():
     with pytest.raises(ValueError, match="n_ao"):
         exchange_packed([[0.0] * 2] * 2)
     assert kernel_kperm.build_kperm_kernel().name == "eri_kperm"
+
+
+# ---------------------------------------------------------------------------
+# The low-stack form (f, and forced at any class)
+# ---------------------------------------------------------------------------
+
+U = 2.0 ** -53
+BOYS_REL = 1e-13  # test_kernel_device.BOYS_REL, the card's Boys tolerance
+D_ = (0.9, 1.3, -0.6)
+# One shell of each l, s to f, the s and p contracted: every one of the 55
+# classes through (ff|ff), one pair per pair class (so (ll) pairs are
+# diagonal, and an (ll|ll) task pairs a shell pair with itself).
+F_BASIS = Basis((
+    Shell(3, A, (0.8,), (1.0,)),
+    Shell(2, B, (0.9,), (1.0,)),
+    Shell(1, C, (1.4, 0.35), (0.45, 0.66)),
+    Shell(0, D_, (2.6, 0.5), (0.3, 0.8)),
+))
+F_CLASSES = sorted(c.am for c in eri_classes(F_BASIS))
+# Two f shells: off-diagonal (ff) pairs, and (ff|ff) tasks that pair an
+# off-diagonal shell pair with itself.
+FF_BASIS = Basis((Shell(3, A, (0.8,), (1.0,)),
+                  Shell(3, C, (1.1,), (1.0,))))
+
+
+def _gamma(n: int) -> float:
+    return n * U / (1.0 - n * U)
+
+
+def gamma_n(c, tb: int, tk: int) -> int:
+    """test_eri_full_device's `N` for one task: every term's roundings."""
+    from felizjueves.mmd.hermite import hermite_order
+
+    la, lb, lc, ld = c.am
+    lp, lq = la + lb, lc + ld
+    kb = c.bra.rec1[tb] - c.bra.rec0[tb]
+    kk = c.ket.rec1[tk] - c.ket.rec0[tk]
+    return ((4 * lp + 8) + (4 * lq + 8) + (3 * (lp + lq) + 12)
+            + len(hermite_order(lp)) + len(hermite_order(lq)) + 3 + kb * kk)
+
+
+def packed_bound(basis: Basis, keep=None) -> np.ndarray:
+    """Each element's `2 gamma_N + delta` (test_eri_full_device's analysis,
+    which the low-stack form keeps: the same E entries, one [p+q]^(0) at
+    order L, the two folds over n_p and n_q terms -- now nested over the
+    row's reach and the axes -- the products by E and w, and the record
+    fold), placed as the kernel places it."""
+    sh, off = basis.shells, basis.offsets
+    n = basis.n_ao
+    pidx = np.array(pair_index(n))
+    tol = np.zeros((n_packed(n),) * 2)
+    for c in eri_classes(basis):
+        if keep is not None and c.am not in keep:
+            continue
+        for tb, tk in zip(c.task_bra, c.task_ket, strict=True):
+            t = 2 * _gamma(gamma_n(c, tb, tk)) + BOYS_REL
+            a_, b_ = c.bra.pairs[tb]
+            c_, d_ = c.ket.pairs[tk]
+            rows = pidx[off[a_]:off[a_] + sh[a_].n_cart,
+                        off[b_]:off[b_] + sh[b_].n_cart].ravel()
+            cols = pidx[off[c_]:off[c_] + sh[c_].n_cart,
+                        off[d_]:off[d_] + sh[d_].n_cart].ravel()
+            tol[np.ix_(rows, cols)] = t
+            tol[np.ix_(cols, rows)] = t
+    return tol
+
+
+@cache
+def packed_host(name: str, keep: frozenset | None = None):
+    """`(ERI_pp, scale, owned, tol)` of the host over a named basis."""
+    basis = {"f": F_BASIS, "ff": FF_BASIS, "synthetic": SYNTHETIC}[name]
+    want, scale = (np.array(x) for x in packed_eri_and_scale(
+        basis, pq=pq, keep=keep))
+    return (want, scale, np.array(owned(basis, keep)),
+            packed_bound(basis, keep) * scale)
+
+
+def check_bound(eri: np.ndarray, name: str, keep: frozenset,
+                *, zero_elsewhere: bool = False) -> float:
+    """`eri` against the host within the analytic bound, every owned element
+    written (NaN, or 0.0, elsewhere), exactly symmetric; the worst ratio."""
+    want, _, mine, tol = packed_host(name, keep)
+    assert np.all(np.isfinite(eri[mine])), name
+    if zero_elsewhere:
+        assert np.all(eri[~mine] == 0.0), name
+    else:
+        assert np.all(np.isnan(eri[~mine])), name
+    err = np.abs(eri[mine] - want[mine])
+    worst = float(np.max(err / np.maximum(tol[mine], 1e-300)))
+    assert np.all(err <= tol[mine]), (name, worst)
+    assert np.array_equal(np.nan_to_num(eri), np.nan_to_num(eri).T)
+    return worst
+
+
+def _ids(c) -> str:
+    return "".join(map(str, c))
+
+
+def test_the_low_stack_rule_and_the_d_text():
+    assert kernel_eri.LOWSTACK_MIN_L == 3
+    for c in F_CLASSES:
+        assert kernel_eri.eri_lowstack(c) is (max(c) >= 3)
+        assert kernel_eri.eri_lowstack(kernel_eri.eri_spec(*c)) is \
+            kernel_eri.eri_lowstack(c)
+        assert kernel_eri.task_threads(c, False) == 1
+        assert kernel_eri.task_threads(c) == (
+            kernel_eri.task_threads(c, True) if max(c) >= 3 else 1)
+    # through (dd|dd) the default is the one-thread-per-task text, unchanged
+    for c in SYNTHETIC_CLASSES + [(2, 2, 2, 2)]:
+        assert kernel_eri.build_eri_kernel(c) == kernel_eri.build_eri_kernel(
+            c, lowstack=False)
+    with pytest.raises(ValueError, match="rows"):
+        kernel_eri.launch_shape(4, 32, rows=0)
+    with pytest.raises(ValueError, match="int32"):
+        kernel_eri.launch_shape(2 ** 30, 32, rows=10)
+    assert kernel_eri.launch_shape(5, 4, rows=3) == (4, (4, 1))
+
+
+def _local_doubles(k) -> int:
+    return sum(math.prod(x.value for x in s.shape) for s in walk(k.body)
+               if isinstance(s, Decl) and s.shape)
+
+
+def test_the_ff_ff_low_stack_frame_is_its_arrays():
+    """No accumulator block: the frame is R (455), G (84), the row's E
+    (27), six per-axis tables (6 x 112) and the Boys F_m (13), the same at
+    (ff|ff) for the packed and the dense kernels."""
+    k = kernel_eri.build_eri_kernel((3, 3, 3, 3))
+    assert _local_doubles(k) == 455 + 84 + 27 + 6 * 112 + 13
+    for lay in ("j", "k"):
+        assert _local_doubles(kernel_dense.build_dense_kernel(
+            (3, 3, 3, 3), lay)) == _local_doubles(k)
+    assert not [s for s in walk(k.body) if isinstance(s, AtomicAdd)]
+    assert kernel_eri.task_threads((3, 3, 3, 3)) == 100
+    assert kernel_dense.task_threads((3, 3, 3, 3)) == 10
+    assert kernel_dense.task_threads((3, 2, 0, 0)) == 10
+    assert kernel_dense.task_threads((2, 2, 2, 2)) == 1
+
+
+@pytest.mark.parametrize("cls", SYNTHETIC_CLASSES, ids=_ids)
+def test_the_forced_low_stack_form_through_l4_agrees_with_the_host(cls):
+    classes = [c for c in eri_classes(SYNTHETIC) if c.am == cls]
+    eri = interpret(classes, SYNTHETIC.n_ao, init=_nan(SYNTHETIC.n_ao),
+                    lowstack=True)
+    worst = check_bound(eri, "synthetic", frozenset({cls}))
+    print(f"\n({_ids(cls)}) low-stack, synthetic: worst / bound "
+          f"{worst:.2e}")
+
+
+def _by_l(classes):
+    return split_by_l(classes, sum, _ids)
+
+
+@pytest.mark.parametrize("cls", _by_l(F_CLASSES))
+def test_every_class_through_ff_ff_low_stack_agrees_with_the_host(cls):
+    """Every class of the s-to-f basis in the low-stack form (the default
+    for each with an f shell, forced below), one launch, against
+    `eri.eri` within the analytic bound."""
+    classes = [c for c in eri_classes(F_BASIS) if c.am == cls]
+    eri = interpret(classes, F_BASIS.n_ao, init=_nan(F_BASIS.n_ao),
+                    lowstack=True)
+    worst = check_bound(eri, "f", frozenset({cls}))
+    print(f"\n({_ids(cls)}) low-stack, s-to-f: worst / bound {worst:.2e}")
+
+
+@pytest.mark.slow
+def test_ff_ff_over_two_f_shells_agrees_with_the_host():
+    """Off-diagonal (ff) pairs, and tasks pairing one with itself: the
+    larger packed index owns each element and its mirror."""
+    (c,) = eri_classes(FF_BASIS)
+    assert c.am == (3, 3, 3, 3) and c.n_task == 6
+    eri = interpret([c], FF_BASIS.n_ao, init=_nan(FF_BASIS.n_ao))
+    worst = check_bound(eri, "ff", frozenset({c.am}))
+    print(f"\n(ff|ff), two f shells: worst / bound {worst:.2e}")

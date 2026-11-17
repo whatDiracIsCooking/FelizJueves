@@ -836,7 +836,8 @@ def cartesian_loops(l: int, names: tuple[str, str, str],  # noqa: E741
 def rolled_e_sum(la: int, lb: int, a: tuple[Expr, Expr, Expr],
                  b: tuple[Expr, Expr, Expr], x: Callable[[Expr], Expr],
                  dst: str, *, tag: str = "e", up: int | None = None,
-                 index: Callable[[Expr, Expr, Expr], Expr] | None = None
+                 index: Callable[[Expr, Expr, Expr], Expr] | None = None,
+                 arrays: tuple[str, str, str] = AXIS_ARRAYS
                  ) -> tuple[Stmt, ...]:
     """`dst = SUM_t E^{ab}_t X[t]` over the reachable `t` of one row, as
     loops over the per-axis tables (module doc, THE LOW-STACK E PATH).
@@ -848,7 +849,9 @@ def rolled_e_sum(la: int, lb: int, a: tuple[Expr, Expr, Expr],
     `X[t]` (the Hermite shift of a d1 kernel, #613); the default text is
     unchanged. `index(i, j, t)` places `E^{ij}_t` in the tables (default
     `axis_table_index`; compact tables pass `kernel_gk.compact_index`,
-    #1265): only each row's base moves."""
+    #1265): only each row's base moves. `arrays` names the tables (default
+    `AXIS_ARRAYS`; the full ERI's low-stack ket binds its own): the default
+    text is unchanged."""
     L = la + lb
     t = (Var(f"{tag}_tx"), Var(f"{tag}_ty"), Var(f"{tag}_tz"))
     at = t if up is None else tuple(
@@ -857,7 +860,7 @@ def rolled_e_sum(la: int, lb: int, a: tuple[Expr, Expr, Expr],
     sy, sz = f"{tag}_sy", f"{tag}_sz"
 
     def e(d: int) -> Index:
-        return Index(AXIS_ARRAYS[d], (_iadd(Var(base[d]), t[d]),))
+        return Index(arrays[d], (_iadd(Var(base[d]), t[d]),))
 
     def acc(name: str, value: Expr) -> Assign:
         return Assign(Var(name), Call(Fn.ADD, (Var(name), value)))

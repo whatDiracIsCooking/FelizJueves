@@ -1,8 +1,9 @@
 """The dense-ERI kernel, `Target.ERI_DENSE`: a row block of `M_J` or `M_K`.
 
-    build_dense_kernel(spec | (la, lb, lc, ld), layout) -> Kernel  per class
+    build_dense_kernel(spec | (la, lb, lc, ld), layout, lowstack=None)
+                                                        -> Kernel  per class
     dense_spec(la, lb, lc, ld)                          -> Spec    the key
-    launch_shape(n_task, threads)                       -> (grid, block)
+    launch_shape(n_task, threads, rows=1)               -> (grid, block)
 
 THE MATRICES (`full_eri.dense`): with AO pairs unpacked, `(m, n) -> m n_ao +
 n`, the J layout `M_J[(m,n), (l,s)] = (mn|ls)` and the K layout
@@ -53,6 +54,17 @@ writes outside the block, so only the staging's tasks may be launched.
 `m0` is the range's first AO `m` (`off[sh0]`), `n_col = n_ao^2`. Elements of
 classes not launched are untouched: the caller zeroes first.
 
+THE LOW-STACK FORM, every class with an f shell (`kernel_eri.eri_lowstack`,
+the same rule; `lowstack=True` forces it at any class): `kernel_eri`'s
+module docstring has it -- `kernel_eri.lowstack_body` unchanged, one thread
+per (task, bra Cartesian `a`) -- its `n_b` rows serially, where the packed
+kernel takes one row a thread -- so `task_threads(cls) = n_a` threads per
+task (`launch_shape(n_task, threads, rows=n_a)`), each element
+accumulated in place in `eri` (the first record pair stores). Here every
+element of a thread's rows is its own, so nothing is skipped and nothing
+mirrored; the layout places each one as above. Same name, parameters and
+output as the one-thread-per-task form.
+
 A builder: vendor-neutral IR. It imports neither `ao/` nor the interpreter
 nor `reference/`.
 """
@@ -61,8 +73,11 @@ from __future__ import annotations
 
 from felizjueves.eri.full_eri.kernel_eri import (
     contraction,
+    eri_lowstack,
     input_params,
     launch,
+    lowstack_body,
+    lowstack_launch,
 )
 from felizjueves.eri.full_eri.kernel_eri import (
     launch_shape as _eri_launch_shape,
@@ -93,6 +108,7 @@ __all__ = [
     "build_dense_kernel",
     "dense_spec",
     "launch_shape",
+    "task_threads",
 ]
 
 OUT = "eri"
@@ -113,10 +129,22 @@ def _spec(cls: Spec | tuple[int, int, int, int]) -> Spec:
     return spec
 
 
-def launch_shape(n_task: int, threads: int = 32
+def task_threads(cls: Spec | tuple[int, int, int, int],
+                 lowstack: bool | None = None) -> int:
+    """Threads per task of the dense kernel: 1 in the one-thread-per-task
+    form, `n_a` (one bra Cartesian `a`, its `n_b` rows, each) in the
+    low-stack form (`lowstack=None` is `kernel_eri.eri_lowstack(cls)`)."""
+    am = cls.am if isinstance(cls, Spec) else tuple(cls)
+    if lowstack is None:
+        lowstack = eri_lowstack(am)
+    return len(ef.cartesians(am[0])) if lowstack else 1
+
+
+def launch_shape(n_task: int, threads: int = 32, *, rows: int = 1
                  ) -> tuple[int, tuple[int, int]]:
-    """`(grid, (threads, 1))`: one thread per task, as `kernel_eri`'s."""
-    return _eri_launch_shape(n_task, threads)
+    """`(grid, (threads, 1))`: `rows` threads per task, as `kernel_eri`'s
+    (`task_threads`)."""
+    return _eri_launch_shape(n_task, threads, rows=rows)
 
 
 def _c(fn: Fn, *args: Expr) -> Call:
@@ -124,15 +152,21 @@ def _c(fn: Fn, *args: Expr) -> Call:
 
 
 def build_dense_kernel(cls: Spec | tuple[int, int, int, int], layout: str,
-                       *, name: str | None = None) -> Kernel:
+                       *, name: str | None = None,
+                       lowstack: bool | None = None) -> Kernel:
     """The dense-ERI kernel of one ordered class in `layout` (`"j"` or
-    `"k"`; module docstring)."""
+    `"k"`; module docstring). `lowstack` as `kernel_eri.build_eri_kernel`'s:
+    `None` is `kernel_eri.eri_lowstack(cls)`."""
     spec = _spec(cls)
     if spec.levers:
         raise ValueError(f"{spec.key()}: the dense ERI kernel takes no "
                          "levers")
     if layout not in LAYOUTS:
         raise ValueError(f"layout {layout!r} is not one of {LAYOUTS}")
+    if lowstack is None:
+        lowstack = eri_lowstack(spec)
+    if lowstack:
+        return _build_lowstack(spec, layout, name)
     la, lb, lc, ld = spec.am
     na, nb = len(ef.cartesians(la)), len(ef.cartesians(lb))
     nc, nd = len(ef.cartesians(lc)), len(ef.cartesians(ld))
@@ -191,3 +225,49 @@ def build_dense_kernel(cls: Spec | tuple[int, int, int, int], layout: str,
               shape=(Var("n_row"), Var("n_col"))),
     )
     return Kernel(name or f"eri_d{layout}_{la}{lb}{lc}{ld}", params, body)
+
+
+def _params() -> tuple[Param, ...]:
+    return (
+        *input_params(SCALARS),
+        Param(OUT, Scalar.F64, array=True, intent=Intent.OUT,
+              shape=(Var("n_row"), Var("n_col"))),
+    )
+
+
+def _build_lowstack(spec: Spec, layout: str, name: str | None) -> Kernel:
+    """`build_dense_kernel`'s low-stack form (module docstring, THE
+    LOW-STACK FORM): `kernel_eri.lowstack_body`, each element of the
+    thread's rows placed by the layout's rule."""
+    la, lb, lc, ld = spec.am
+
+    def add(*xs: Expr) -> Expr:
+        out = xs[0]
+        for x in xs[1:]:
+            out = _c(Fn.ADD, out, x)
+        return out
+
+    m_row = _c(Fn.MUL, _c(Fn.SUB, add(Var("oa"), Var("ra")), Var("m0")),
+               Var("n_ao"))
+
+    def element(ci: Expr, di: Expr) -> tuple[Index, None]:
+        if layout == "j":  # M_J[(a, b), (c, d)]
+            row = add(m_row, Var("ob"), Var("rb"))
+            col = add(_c(Fn.MUL, add(Var("oc"), ci), Var("n_ao")), Var("od"),
+                      di)
+        else:  # M_K[(a, c), (b, d)]
+            row = add(m_row, Var("oc"), ci)
+            col = add(_c(Fn.MUL, add(Var("ob"), Var("rb")), Var("n_ao")),
+                      Var("od"), di)
+        return Index(OUT, (row, col)), None
+
+    what = ("M_J[(m,n), (l,s)] = (mn|ls)" if layout == "j"
+            else "M_K[(m,n), (l,s)] = (ml|ns)")
+    rows = len(ef.cartesians(lb))
+    body = lowstack_launch(
+        (Note(f"dense ERI, {layout.upper()} layout, class ({la},{lb}|{lc},"
+              f"{ld}) at L = {la + lb + lc + ld}, LOW-STACK: {what}, rows "
+              "[m0 n_ao, m0 n_ao + n_row) (eri/full_eri/dense.py, "
+              "eri/eri.py)"),),
+        spec.am, rows, lowstack_body(spec.am, rows, element))
+    return Kernel(name or f"eri_d{layout}_{la}{lb}{lc}{ld}", _params(), body)

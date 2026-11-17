@@ -22,6 +22,7 @@ not a kernel of this family.
 
 from __future__ import annotations
 
+import os
 from collections.abc import Sequence
 from pathlib import Path
 
@@ -31,12 +32,14 @@ from harness_driver import Step, build_steps, run_chain
 from plan_driver import RUNS
 
 from felizjueves.eri.full_eri import kernel_dense
+from felizjueves.eri.full_eri.kernel_dense import task_threads
 from felizjueves.eri.full_eri.packed import EriClass
 from felizjueves.ir import Intent, Kernel
 from felizjueves.ir.interp import Interpreter, Launch
 from felizjueves.reference.boys import boys
 
-THREADS = 32  # lanes per block, one task per thread; not numerical
+THREADS = 32  # lanes per block; not numerical
+JOBS = min(8, os.cpu_count() or 1)  # unit compiles at once, per build
 
 _INT = ("brec0", "brec1", "off_a", "off_b", "krec0", "krec1", "off_c",
         "off_d", "task_bra", "task_ket")
@@ -62,26 +65,32 @@ def _args(c: EriClass, n_ao: int, m0: int, n_row: int) -> dict:
 
 
 def dense_steps(classes: Sequence[EriClass], n_ao: int, layout: str,
-                m0: int, n_row: int) -> list[Step]:
-    """One launch per class in `classes`, every argument but `eri`."""
+                m0: int, n_row: int, *, lowstack: bool | None = None
+                ) -> list[Step]:
+    """One launch per class in `classes`, every argument but `eri`;
+    `lowstack` is `build_dense_kernel`'s (None: each class's rule)."""
     steps = []
     for c in classes:
-        kern = kernel_dense.build_dense_kernel(c.am, layout)
+        kern = kernel_dense.build_dense_kernel(c.am, layout,
+                                               lowstack=lowstack)
         _check_signature(kern)
-        grid, block = kernel_dense.launch_shape(c.n_task, THREADS)
+        grid, block = kernel_dense.launch_shape(
+            c.n_task, THREADS, rows=task_threads(c.am, lowstack))
         steps.append(Step(kern, grid, block, _args(c, n_ao, m0, n_row)))
     return steps
 
 
 def interpret(classes: Sequence[EriClass], n_ao: int, layout: str, m0: int,
-              n_row: int, *, init: np.ndarray, threads: int = 3
-              ) -> np.ndarray:
+              n_row: int, *, init: np.ndarray, threads: int = 3,
+              lowstack: bool | None = None) -> np.ndarray:
     """The row block from the interpreted kernels of `classes`, onto
     `init`."""
     out = init
     for c in classes:
-        grid, block = kernel_dense.launch_shape(c.n_task, threads)
-        out = Interpreter(kernel_dense.build_dense_kernel(c.am, layout),
+        grid, block = kernel_dense.launch_shape(
+            c.n_task, threads, rows=task_threads(c.am, lowstack))
+        out = Interpreter(kernel_dense.build_dense_kernel(
+            c.am, layout, lowstack=lowstack),
                           launch=Launch(grid, block, 1), boys=boys).run(
             **_args(c, n_ao, m0, n_row), eri=out)[kernel_dense.OUT]
     return out
@@ -89,11 +98,12 @@ def interpret(classes: Sequence[EriClass], n_ao: int, layout: str, m0: int,
 
 def build_on_card(classes: Sequence[EriClass], n_ao: int, layout: str,
                   m0: int, n_row: int, backend: str, tc: Toolchain,
-                  workdir: Path) -> np.ndarray:
+                  workdir: Path, *, lowstack: bool | None = None
+                  ) -> np.ndarray:
     """The row block of `classes` built on the card, the chain run `RUNS`
     times bit-identically. The caller holds the card (its device fixture)."""
-    steps = dense_steps(classes, n_ao, layout, m0, n_row)
-    binaries = build_steps(tc, backend, steps, workdir)
+    steps = dense_steps(classes, n_ao, layout, m0, n_row, lowstack=lowstack)
+    binaries = build_steps(tc, backend, steps, workdir, jobs=JOBS)
     outs = run_chain(binaries, steps, kernel_dense.OUT,
                      np.zeros((n_row, n_ao * n_ao)), workdir, runs=RUNS)
     assert all(np.array_equal(outs[0], x) for x in outs[1:]), "runs differ"

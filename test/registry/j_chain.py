@@ -25,14 +25,16 @@ CASES = [
     *(case for q in "stv" for case in ladder(
         "mmd", q, 0, compile=range(5), gpu=range(7),
         cards=dict.fromkeys(BOTH, range(7)))),
-    # The packed full ERI (`Target.ERI`), J and K by GEMV: every class at
-    # L <= 4 interpreted, compiled by nvcc and hipcc, and run on an RTX
-    # A6000 (CUDA; not a registry card); no HIP card yet.
-    *ladder("mmd", "eri", 0, compile=range(5), gpu=range(5)),
+    # The packed full ERI (`Target.ERI`), J and K by GEMV: every class
+    # through (ff|ff) interpreted (the low-stack form from f) and run on an
+    # RTX A6000 (CUDA; not a registry card); compile-only at L <= 4 (the
+    # gpu cases compile the rest); no HIP card yet.
+    *ladder("mmd", "eri", 0, compile=range(5), gpu=range(13)),
     # The dense J- and K-layout ERI (`Target.ERI_DENSE`), a row range per
-    # launch: every ordered class at L <= 4 interpreted, nvcc-compiled, and
-    # on an RTX A6000 (CUDA; not a registry card); hipcc never.
-    *ladder("mmd", "eri_dense", 0, compile=range(5), gpu=range(5)),
+    # launch: every ordered class through (ff|ff) interpreted and on an RTX
+    # A6000 (CUDA; not a registry card), compile-only at L <= 4; hipcc
+    # never.
+    *ladder("mmd", "eri_dense", 0, compile=range(5), gpu=range(13)),
 ]
 
 _ERI = span("mmd", "eri", 0, range(5))
@@ -67,6 +69,16 @@ TESTS = {
     "test/test_eri_full_device.py::test_X_eri_programs_compile": ById({
         "synthetic": _ERI, "h2_sto3g_j": Allow(MOLECULE),
         "h2o_sto3g_j": Allow(MOLECULE)}),
+    # Its low-stack form: every class through (ff|ff), the forced form at
+    # L <= 4, HF/cc-pVTZ against libcint, CO/cc-pVTZ's J and K.
+    "test/test_eri_full_device.py::test_X_every_class_through_ff_ff_low_stack_matches_the_host":
+        Classes("mmd", "eri"),
+    "test/test_eri_full_device.py::test_X_the_forced_low_stack_form_through_l4_matches_the_host":
+        _ERI,
+    "test/test_eri_full_device.py::test_X_hf_ccpvtz_low_stack_matches_libcint":
+        Allow(MOLECULE),
+    "test/test_eri_full_device.py::test_X_co_ccpvtz_j_and_k_low_stack_match_pyscf":
+        Allow(MOLECULE),
     # The dense J- and K-layout ERI.
     "test/test_eri_dense_device.py::test_X_every_dense_class_through_l4_matches_the_host":
         _DENSE,
@@ -77,6 +89,12 @@ TESTS = {
     "test/test_eri_dense_device.py::test_X_dense_programs_compile": ById({
         "synthetic": _DENSE, "h2_sto3g_k": Allow(MOLECULE),
         "h2o_sto3g_k": Allow(MOLECULE)}),
+    "test/test_eri_dense_device.py::test_X_every_ordered_class_through_ff_ff_low_stack_matches_the_host":
+        Classes("mmd", "eri_dense"),
+    "test/test_eri_dense_device.py::test_X_the_forced_low_stack_form_through_l4_matches_the_host":
+        _DENSE,
+    "test/test_eri_dense_device.py::test_X_co_ccpvtz_dense_j_and_k_low_stack_match_pyscf":
+        Allow(MOLECULE),
     # [p|q], one batch and split.
     "test/test_emit_X.py::test_it_compiles": Classes("mmd", "j"),
     "test/test_any_wavefront_device.py::test_X_any_wavefront_j_p_matches_the_reference":

@@ -60,23 +60,26 @@ for CUDA, `.hip` for HIP):
 - the full-ERI ladder, `--eri-l [LMAX]`: for every quartet of staged pair
   classes `(la lb|lc ld)`, `la <= lb <= LMAX`, `lc <= ld <= LMAX`, the bra
   pair class not after the ket's (1 when the flag is given bare, accepted
-  0..`ERI_L_MAX` = 2), `kernel_eri.build_eri_kernel` (`eri_{la}{lb}{lc}{ld}`,
+  0..`ERI_L_MAX` = 3), `kernel_eri.build_eri_kernel` (`eri_{la}{lb}{lc}{ld}`,
   `Target.ERI`): the packed AO ERI tensor, one thread per shell-pair
-  quartet; and, once each, `kernel_kperm.build_kperm_kernel` (`eri_kperm`,
-  the exchange-ordered matrix gathered from it) and
+  quartet -- or, in the low-stack form every class with an f shell takes
+  (`kernel_eri.eri_lowstack`), `n_a` threads per quartet; and, once each,
+  `kernel_kperm.build_kperm_kernel` (`eri_kperm`, the exchange-ordered
+  matrix gathered from it) and
   `kernel_gemv.build_gemv_kernel` (`eri_jgemv`), `J` -- and `K`, over
   `eri_kperm`'s output -- as one GEMV (`eri/full_eri`). A small-system
-  path: LMAX = 2 is (dd|dd) at L = 8. It ADDS units beside the J ladders
-  and is NEVER in the no-flag default.
+  path: LMAX = 3 is (ff|ff) at L = 12, 55 classes. It ADDS units beside
+  the J ladders and is NEVER in the no-flag default.
 
 - the dense-ERI ladder, `--dense-eri-l [LMAX]`: for every ORDERED quartet
   class `(la lb|lc ld)`, each `l <= LMAX` (1 when the flag is given bare,
-  accepted 0..`ERI_L_MAX` = 2), `kernel_dense.build_dense_kernel` in both
+  accepted 0..`ERI_L_MAX` = 3), `kernel_dense.build_dense_kernel` in both
   layouts (`eri_dj_{la}{lb}{lc}{ld}`, `M_J[(m,n), (l,s)] = (mn|ls)`, and
   `eri_dk_...`, `M_K[(m,n), (l,s)] = (ml|ns)`, `Target.ERI_DENSE`): the
   dense AO ERI with no symmetry, a row range per launch, one thread per
-  ordered shell quartet (`eri/full_eri`). Bare: 16 classes x 2 layouts; at
-  LMAX = 2, 81 x 2. It ADDS units beside the J ladders and is NEVER in the
+  ordered shell quartet, low-stack from f as the packed ladder's
+  (`eri/full_eri`). Bare: 16 classes x 2 layouts; at LMAX = 2, 81 x 2; at
+  LMAX = 3, 256 x 2. It ADDS units beside the J ladders and is NEVER in the
   no-flag default.
 
 - the cross-basis overlap ladder, `--sx-l [LMAX]`: for every ORDERED pair
@@ -816,7 +819,7 @@ ONE_E_L_MAX = PAIR_L_MAX  # the range the pair ladder accepts
 DEFAULT_SCHWARZ_L = 2  # `--schwarz-l` given bare: (ss) through (dd), 6 units
 SCHWARZ_L_MAX = 4  # (gg|gg) at L = 16, the [p|q] ladder's top
 DEFAULT_ERI_L = 1  # `--eri-l` given bare: s and p, 6 classes + permute + GEMV
-ERI_L_MAX = 2  # (dd|dd) at L = 8: the full ERI is a small-system path
+ERI_L_MAX = 3  # (ff|ff) at L = 12, f in the low-stack form
 DEFAULT_DENSE_ERI_L = 1  # `--dense-eri-l` given bare: s and p, 16 x 2 units
 DEFAULT_SX_L = 2  # `--sx-l` given bare: every ordered class through d, 9 units
 DEFAULT_METRIC_L = 4  # `--metric-l` given bare: lP <= lQ, lP + lQ <= 4, 9 units
