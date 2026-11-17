@@ -424,19 +424,20 @@ def _ids(c) -> str:
     return "".join(map(str, c))
 
 
-def test_the_low_stack_rule_and_the_d_text():
-    assert kernel_eri.LOWSTACK_MIN_L == 3
+def test_the_low_stack_rule_and_the_sp_text():
+    assert kernel_eri.LOWSTACK_MIN_L == 2
     for c in F_CLASSES:
-        assert kernel_eri.eri_lowstack(c) is (max(c) >= 3)
+        assert kernel_eri.eri_lowstack(c) is (max(c) >= 2)
         assert kernel_eri.eri_lowstack(kernel_eri.eri_spec(*c)) is \
             kernel_eri.eri_lowstack(c)
         assert kernel_eri.task_threads(c, False) == 1
         assert kernel_eri.task_threads(c) == (
-            kernel_eri.task_threads(c, True) if max(c) >= 3 else 1)
-    # through (dd|dd) the default is the one-thread-per-task text, unchanged
+            kernel_eri.task_threads(c, True) if max(c) >= 2 else 1)
+    # the default is the low-stack text from d, the one-thread-per-task
+    # text through (pp|pp)
     for c in SYNTHETIC_CLASSES + [(2, 2, 2, 2)]:
         assert kernel_eri.build_eri_kernel(c) == kernel_eri.build_eri_kernel(
-            c, lowstack=False)
+            c, lowstack=max(c) >= 2)
     with pytest.raises(ValueError, match="rows"):
         kernel_eri.launch_shape(4, 32, rows=0)
     with pytest.raises(ValueError, match="int32"):
@@ -462,7 +463,8 @@ def test_the_ff_ff_low_stack_frame_is_its_arrays():
     assert kernel_eri.task_threads((3, 3, 3, 3)) == 100
     assert kernel_dense.task_threads((3, 3, 3, 3)) == 10
     assert kernel_dense.task_threads((3, 2, 0, 0)) == 10
-    assert kernel_dense.task_threads((2, 2, 2, 2)) == 1
+    assert kernel_dense.task_threads((2, 2, 2, 2)) == 6
+    assert kernel_dense.task_threads((1, 1, 1, 1)) == 1
 
 
 @pytest.mark.parametrize("cls", SYNTHETIC_CLASSES, ids=_ids)
@@ -482,7 +484,7 @@ def _by_l(classes):
 @pytest.mark.parametrize("cls", _by_l(F_CLASSES))
 def test_every_class_through_ff_ff_low_stack_agrees_with_the_host(cls):
     """Every class of the s-to-f basis in the low-stack form (the default
-    for each with an f shell, forced below), one launch, against
+    for each with a d or f shell, forced below), one launch, against
     `eri.eri` within the analytic bound."""
     classes = [c for c in eri_classes(F_BASIS) if c.am == cls]
     eri = interpret(classes, F_BASIS.n_ao, init=_nan(F_BASIS.n_ao),

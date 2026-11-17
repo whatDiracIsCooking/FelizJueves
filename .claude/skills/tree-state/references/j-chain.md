@@ -212,8 +212,8 @@ H2O `J` and `K` within 3.8e-15 of PySCF, for the fixture's `D` and for
 whole matrix, both layouts. **hipcc never compiled it and no gfx1200
 ran it**: HIP is owed. Nothing is measured.
 
-**The low-stack full ERI, f and (ff|ff)** (`kernel_eri.eri_lowstack`: any
-class with an f shell; `lowstack=` forces either form at any class; the
+**The low-stack full ERI, d through (ff|ff)** (`kernel_eri.eri_lowstack`:
+any class with a d or f shell, `LOWSTACK_MIN_L = 2`; `lowstack=` forces either form at any class; the
 module docstrings have the design). The one-thread-per-task form holds the
 whole block in accumulators: measured `sm_86` ptxas frames 43.9 KB at
 (dd|dd) (`eri_2222`, 145 KB of spill stores, a 150 s cold compile), so
@@ -231,12 +231,15 @@ thread, up to 5x; a full card favours `n_b`, `[t]^(0)` formed once per
 thread); the task is the fast thread index so a warp's lanes share trip
 counts. Plain stores, one owner per element (a self-paired task stores
 `(pr, pc)` from the row with `pc <= pr`), bit-reproducible, exactly
-symmetric; round-off, not bitwise, against the other form. Through (dd|dd)
-the default text is byte-identical to #737's (both kernels, both
-backends), so FreeBreakfast's emitted d units do not move. The forced
-low-stack (dd|dd) was faster than today's in 5 of 6 measured shapes and
-1.16x slower in one (packed, 666 tasks, 3-primitive d shells), so at d it
-stays an option, off. **Interpreted**: every packed class and every
+symmetric; round-off, not bitwise, against the other form. At d the
+default was first left unrolled (#739, byte-identical to #737's); the
+user then decided (#738) to make low-stack the default at d too, both
+kernels: the forced low-stack (dd|dd) is 3.9 KB of `sm_86` stack, 0
+spill, a 2.0 s compile against the unrolled 43.9 KB / 145 KB spill /
+150-200 s, and faster in 5 of 6 measured shapes, 1.16x slower in one
+(packed, 666 tasks, 3-primitive d shells), accepted. Only the s and p
+classes, through (pp|pp), keep the one-thread-per-task text (`lowstack=`
+still forces either form), so FreeBreakfast's emitted d units moved. **Interpreted**: every packed class and every
 ordered dense class (both layouts) of an s-to-f basis through (ff|ff),
 two-f-shell (ff|ff), and the forced form at L <= 4, within the analytic
 `2 gamma_N + delta` bound. **On a card: CUDA only, an RTX A6000, partly** -- the new
