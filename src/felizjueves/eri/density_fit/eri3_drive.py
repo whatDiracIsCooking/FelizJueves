@@ -126,24 +126,31 @@ def eri3_tensor_kernel(basis: Basis, aux: Basis, *, boys: Boys,
 
 @cache
 def packed_kernel(la: int, lb: int, lP: int,
-                  lowstack: bool | None = None) -> Kernel:
-    """`build_eri3_kernel((la, lb, lP), packed=True)`, built once."""
-    return build_eri3_kernel((la, lb, lP), lowstack=lowstack, packed=True)
+                  lowstack: bool | None = None,
+                  spherical_aux: bool = False) -> Kernel:
+    """`build_eri3_kernel((la, lb, lP), packed=True)`, built once;
+    `spherical_aux` its solid-harmonic aux mode."""
+    return build_eri3_kernel((la, lb, lP), lowstack=lowstack, packed=True,
+                             spherical_aux=spherical_aux)
 
 
 def launch_packed(cls: Eri3Class, cells: dict[str, Sequence[int]],
                   out: np.ndarray, *, boys: Boys, threads: int = 32,
-                  lowstack: bool | None = None) -> np.ndarray:
+                  lowstack: bool | None = None,
+                  spherical_aux: bool = False) -> np.ndarray:
     """One interpreted launch of `cls`'s packed kernel over the cells
     `cells` names (`PACKED_CELL_ARRAYS`, `packed_cells`' arrays), writing
-    into (a copy of) `out`, `(n_col, n_aux)`, which is returned."""
+    into (a copy of) `out`, `(n_col, n_aux)`, which is returned;
+    `spherical_aux` launches the solid-harmonic aux mode, `n_aux` and `dst`
+    in spherical aux columns."""
     n_col, naux = out.shape
     n_cell = len(cells["dst"])
     grid, block = launch_shape(n_cell, threads)
     records = {PARAM_OF.get(k, k): np.array(v, dtype=float)
                for k, v in cls.arrays().items()
                if k in (*cls.BRA_ARRAYS, *cls.AUX_ARRAYS)}
-    flat = Interpreter(packed_kernel(cls.la, cls.lb, cls.lP, lowstack),
+    flat = Interpreter(packed_kernel(cls.la, cls.lb, cls.lP, lowstack,
+                                     spherical_aux),
                        launch=Launch(grid, block, 1), boys=boys).run(
         n_cell=n_cell, n_bra_rec=cls.n_bra_rec, n_aux_rec=cls.n_aux_rec,
         n_col=n_col, n_aux=naux, **{OUT: out.reshape(-1)}, **records,
