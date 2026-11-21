@@ -183,6 +183,20 @@ RTX A6000, every class at L <= 4 in both forms and all 70 classes through
 (ff|i) on the aux-i set in the default form plus the low-stack form of
 every class unrolled by default (`test_eri3_packed_device.py`). HIP: not
 compiled, no card. The square `eri3_*` kernels are unchanged.
+**The packed output has a spherical-aux mode** (#743; `three_center.md`,
+"The spherical-aux packed output"): `build_eri3_kernel(cls, packed=True,
+spherical_aux=True)`, `speri3_{la}{lb}{lP}`, low-stack only, at any class.
+The aux index is in real solid harmonics by Hobson's theorem, `2 lP + 1`
+columns per aux shell (`aux_harmonics`, FreeBreakfast's
+`spherical_transform_matrix` convention), and Cartesian P is never formed.
+Held to the host's Cartesian block contracted by the table, within
+`(2 TOL_ULPS + nq + lP) eps` of the contracted scale, at (ll|l), l = 0..3
+only, by decision. Interpreted (`test_kernel_eri3_spherical.py`, worst
+1.74 eps), and on **both cards**, the RTX 3080 and the RX 9060 XT
+(`test_eri3_spherical_device.py`, worst 3.0 eps). The table is checked
+through l = 6 with no kernel. No la ≠ lb class and no lP > 3 runs through
+a kernel here: FreeBreakfast#1736's full-ladder regeneration covers those.
+Every Cartesian kernel's text is unchanged.
 **Both DF targets also have an HGP twin, for s and p shells, interpreted
 only** (`docs/implementation/hgp_df.md` is the one place with the detail):
 `eri/density_fit/kernel_hgp.py`'s `build_hmetric_kernel` (`hmetric_{lP}{lQ}`)

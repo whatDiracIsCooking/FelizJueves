@@ -600,6 +600,83 @@ default-unrolled classes in the low-stack form) compiles alone under nvcc
 (`sm_86`, the tier's `NVCC_FLAGS`, no cache) with no warning, the slowest
 in 10.6 s (`peri3_134`), against the 300 s per-file budget.
 
+## The spherical-aux packed output (#743)
+
+FreeBreakfast's rust tree applied `U_aux` to the packed output's
+Cartesian aux index afterwards, as one dense GEMM against a block-diagonal
+matrix (FreeBreakfast#1736). `build_eri3_kernel(cls, packed=True,
+spherical_aux=True)` writes the aux index already in real solid
+harmonics: `speri3_{la}{lb}{lP}`, `(ab|Q)` with `a`, `b` Cartesian and
+`2 lP + 1` columns per aux shell. Cartesian `P` is never formed.
+
+**Hobson's theorem.** An aux primitive is single-centre, so a solid
+harmonic on it is a pure degree-`lP` Hermite function:
+`S_m(r_A) e^{-α r_A²} = (2α)^{-lP} S_m(∂_A) e^{-α r_A²}`. Its Hermite
+expansion is `E^m_τ = (2α)^{-lP} c[m][τ]` at `|τ| = lP`, zero below.
+Every Cartesian row carries lower-degree terms too, and the harmonic
+combination cancels them. Per (bra record, aux record) the kernel
+therefore drops the single-centre tables and the `rolled_center_sum`, and
+per column `m` forms
+
+    U[t] = Σ_{|τ| = lP} c[m][τ] [t+τ]^(0)          every |t| ≤ la + lb
+    eri3[a, b, m] ±= s_ij s_k (2α)^{-lP} Σ_t E^{ab}_t U[t]
+
+with the class's one sign `(-1)^{lP}`. The Boys values, the R recurrence
+(still to order `la + lb + lP`), the bra tables, the records, the cell
+arrays and the launch are unchanged.
+
+**The table and its convention.** `c[m][τ]` is `aux_harmonics(lP)`: the
+columns `m = -lP ..= lP` (PySCF/libcint order) over `cartesians(lP)`. Each
+is the Schlegel-Frisch real solid harmonic, normalized under the
+Gaussian-moment product and scaled by `sqrt((2 lP - 1)!!)`. That is
+FreeBreakfast's `solid_harmonic_block(l)` times `sqrt((2l-1)!!)`, one
+shell's block of `fb_basis::spherical_transform_matrix`, transposed. s and
+p are the identity, so `p` stays `x, y, z`. The kernel spells the table as
+literals: the `2 lP + 1` columns are unrolled, each `U` sum runs over that
+column's nonzero `τ` only, and the `t` and `(a, b)` loops stay rolled. No
+coefficient array is declared, and `(2α)^{-lP}` is folded into the
+record's `w`.
+
+**Low-stack only.** The mode exists only in the low-stack form, at every
+class: it refuses `lowstack=False` and `packed=False`. The unrolled form,
+its measured rule (`E_DOUBLES_MAX`) and every Cartesian kernel are
+untouched. Every square and packed unit of the ladder emits the same text
+as before, checked by hashing the whole ladder's text against the parent
+commit. With the aux tables gone the local arrays shrink at every class
+(5,200 against 5,584 B at (ff|f), 7,104 against 8,280 B at (ff|i)). The
+unrolled columns grow the text instead: 173 KB against 127 KB at (ff|i).
+nvcc compiles `speri3_336` in 7.6 s, against 5.9 s for the low-stack
+`peri3_336`.
+
+**Host side.** `eri.density_fit.eri3.spherical_offsets(aux)` gives each aux
+shell's first spherical column and the count, which are the kernel's
+`off_p` and `n_aux`. `packed_cells(..., aux_offsets=)` forms `dst` from
+them.
+
+**The witness is the host, contracted; not bitwise.** For every cell, the
+spherical block is compared with the host's Cartesian `class_block`
+contracted by `aux_harmonics(lP)` on the aux index. The bound per element
+is `(2·TOL_ULPS + nq + lP) eps` times the contracted scale `|c|·scale`.
+That covers the Cartesian kernel's own bound on each side (the spherical
+kernel's terms are a subset of the `|c|`-weighted Cartesian ones), the
+contraction's `nq` roundings, and the `lP` factors of `(2α)^{-lP}`. (ss|s)
+is also bitwise the Cartesian low-stack packed kernel. The table is
+checked separately through l = 6, with no kernel: harmonic,
+`c G cᵀ = (2l-1)!! I`, the column order and signs, and the d columns in
+closed form.
+
+**Scope, by decision (#743).** The emitter takes any class. Only (ll|l),
+l = 0..3, is tested, to keep compile and test time down: interpreted
+(`test_kernel_eri3_spherical.py`, s and p fast, d and f `slow`) and on
+both cards (`test_eri3_spherical_device.py`, (ff|f) also `high_l`). No
+`la ≠ lb` class and no `lP > 3` runs through a kernel here. The
+consumer's full-ladder regeneration (FreeBreakfast#1736) covers those.
+
+**Where it ran:** both cards, in the combined container. On the RTX 3080
+(`sm_86`) and the RX 9060 XT (`gfx1200`), all four classes pass, the
+worst within 3.0 eps of the contracted scale (bounds 33 to 45 eps).
+Interpreted, the worst is 1.74 eps.
+
 ## What is not done
 
 - **Spherical comparison.** #606 asks for agreement with spherical
@@ -610,7 +687,10 @@ in 10.6 s (`peri3_134`), against the 300 s per-file budget.
   for stack and compile time.
 - **L > 4 on the cc-pVTZ-jkfit fixture.** That fixture's (sp|g), (pp|f)
   and (pp|g) are still not launched. The aux-i set covers those classes.
-- **Spherical aux functions.** Only Cartesian aux functions are handled.
+- **Spherical aux functions beyond the packed output.** The packed
+  low-stack kernel has a spherical-aux mode (#743, above). The square
+  kernel, the unrolled form, the metric `(P|Q)` and the DF derivative
+  kernels take Cartesian aux functions only.
 - **DF-J and DF-K themselves**, and anything that factors or inverts the
   metric `(P|Q)`.
 - **Screening.** A `(mn|P)` Schwarz bound is unbuilt, and every cell is

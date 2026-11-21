@@ -8,7 +8,9 @@
     class_block(cls, k, *, pq)              -> staged cell k's block, from records
     place_staged(cls, k, block, out)        -> the scatter, transposing a swap
     packed_columns(classes, keep=None)      -> each pair's packed column, count
-    packed_cells(cls, columns, n_aux)       -> the packed kernel's cell arrays
+    packed_cells(cls, columns, n_aux, aux_offsets=None)
+                                            -> the packed kernel's cell arrays
+    spherical_offsets(aux)                  -> aux shells' solid-harmonic columns
 
 `(mn|P) = INT INT m(r1) n(r1) P(r2) / r12` (#443; `Target.ERI3`, spec.py):
 `m`, `n` AOs of an ordinary basis, `P` a function of an auxiliary basis, both
@@ -442,19 +444,34 @@ def packed_columns(classes: Sequence[Eri3Class],
     return col, n
 
 
+def spherical_offsets(aux: Basis) -> tuple[tuple[int, ...], int]:
+    """Each aux shell's first column in solid harmonics, `2 l + 1` per
+    shell in basis order, and the count: the spherical-aux packed kernel's
+    `off_p` and `n_aux` (`kernel_eri3`'s THE SPHERICAL-AUX OUTPUT)."""
+    out, n = [], 0
+    for sh in aux.shells:
+        out.append(n)
+        n += 2 * sh.l + 1
+    return tuple(out), n
+
+
 def packed_cells(cls: Eri3Class, columns: dict[tuple[int, int], int],
-                 n_aux: int) -> dict[str, tuple[int, ...]]:
+                 n_aux: int, aux_offsets: Sequence[int] | None = None
+                 ) -> dict[str, tuple[int, ...]]:
     """The packed kernel's cell arrays (`kernel_eri3.PACKED_CELL_ARRAYS`)
     for the cells of `cls` whose pair has a column in `columns`, in cell
     order: the two record ranges, `dst = columns[pair] n_aux + off_p` and
-    `diag` (1 for a diagonal shell pair, else 0)."""
+    `diag` (1 for a diagonal shell pair, else 0). `aux_offsets`, indexed by
+    aux shell, replaces the Cartesian `off_p` (`spherical_offsets`' for the
+    spherical-aux mode)."""
     out: dict[str, list[int]] = {k: [] for k in (
         "ab_rec0", "ab_rec1", "p_rec0", "p_rec1", "dst", "diag")}
-    for k, (a, b, _) in enumerate(cls.cells):
+    for k, (a, b, p) in enumerate(cls.cells):
         if (a, b) not in columns:
             continue
         for name in ("ab_rec0", "ab_rec1", "p_rec0", "p_rec1"):
             out[name].append(getattr(cls, name)[k])
-        out["dst"].append(columns[(a, b)] * n_aux + cls.off_p[k])
+        op = cls.off_p[k] if aux_offsets is None else aux_offsets[p]
+        out["dst"].append(columns[(a, b)] * n_aux + op)
         out["diag"].append(int(a == b))
     return {k: tuple(v) for k, v in out.items()}
