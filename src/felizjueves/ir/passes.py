@@ -192,7 +192,7 @@ def atomize(kernel: Kernel, *, array: str = "J") -> Kernel:
                 out.append(s)
         return tuple(out)
 
-    return Kernel(kernel.name, kernel.params, st(kernel.body))
+    return Kernel(kernel.name, kernel.params, st(kernel.body), kernel.consts)
 
 
 def _names(kernel: Kernel) -> set[str]:
@@ -266,7 +266,7 @@ def split_axes(kernel: Kernel,
                              shape=(p.shape[0],)) for n in axes[p.name])
         else:
             out.append(p)
-    return Kernel(kernel.name, tuple(out), expr(kernel.body))
+    return Kernel(kernel.name, tuple(out), expr(kernel.body), kernel.consts)
 
 
 def transpose(kernel: Kernel, arrays: tuple[str, ...]) -> Kernel:
@@ -313,4 +313,4 @@ def transpose(kernel: Kernel, arrays: tuple[str, ...]) -> Kernel:
 
     out = tuple(dataclasses.replace(p, shape=(p.shape[1], p.shape[0]))
                 if p.name in swap else p for p in kernel.params)
-    return Kernel(kernel.name, out, expr(kernel.body))
+    return Kernel(kernel.name, out, expr(kernel.body), kernel.consts)

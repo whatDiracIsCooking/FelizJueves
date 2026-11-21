@@ -914,6 +914,9 @@ class Interpreter:
         # I32 scalars and the launch's block dimensions; one that cannot be
         # (an F64 scalar, a division by zero) leaves its array unchecked, with
         # the reason in `self.unchecked`: unevaluable is not wrong.
+        for c in self.kernel.consts:  # read-only tables (#748)
+            globals_[c.name] = _Array(c.name, c.type, np.array(
+                c.values, dtype=_DTYPE[c.type]), None, False)
         self.unchecked = {}
         env = {k: s for k, s in globals_.items()
                if isinstance(s, _Scalar) and s.type is Scalar.I32}

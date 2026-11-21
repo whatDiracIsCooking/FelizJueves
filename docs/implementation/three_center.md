@@ -813,6 +813,51 @@ store sweep grows a row for it, and its ceilings stay unmeasured.
 `test_eri3_spherical_device.py` and `test_eri3_fully_spherical_device.py`
 (the cases below `high_l`) pass natively at `-arch=sm_90`.
 
+## The rolled spherical kernels (#748)
+
+The spherical kernels unroll their aux columns (#743), and `ssperi3_`
+unrolls its bra transform inside each of them (#745), because the IR's only
+way to carry a coefficient table without stack was literals. The IR now has
+a read-only table, `ir.Const` (`Kernel.consts`, `()` for every other
+kernel): a name, I32 or F64, and its values, spelled once per unit at file
+scope as a `__constant__` array by both backends, and bound by the
+interpreter as an array no statement may store to. Every thread of a warp
+reads the same entry at once, constant memory's broadcast case.
+
+`build_eri3_kernel(..., spherical_aux=True, rolled=True)` (`rsperi3_`) and
+with `spherical_bra=True` (`rssperi3_`) loop over the aux columns `m`, and
+over `mu` and `nu`, reading `aux_harmonics` as CSR tables (`hc{l}_off`,
+`hc{l}_idx`, `hc{l}_val`, and the Cartesian components `hc{l}_tx/ty/tz` for
+the aux shift `t + tau`). Each sum runs over the same nonzero terms in the
+same order as the unrolled text, as a left fold from 0 (`0 + x` is `x`), so
+interpreted the two forms are **bitwise** (`test_kernel_eri3_rolled.py`, at
+(pp|d), (pd|p), (dd|f) and (sf|d) in both modes). On a card they need not
+be: the device compiler forms fused multiply-adds from the text it sees, and
+on the GH200 (nvcc 13.0, `sm_90`) they are not, both within the host bound,
+the worst equal (1.04 eps at (dd|f), 0.09 at (ff|i);
+`test_eri3_rolled_device.py`, the host contraction as the oracle).
+
+Each unit compiled alone by nvcc 13.0, the tier's flags, no cache:
+
+| unit | text | `sm_86` frame | spill stores | nvcc |
+|---|---|---|---|---|
+| `speri3_333` / `rsperi3_333` | 93 / 73 KB | 5,264 / 5,168 B | 136 / 52 B | 1.6 / 0.9 s |
+| `ssperi3_333` / `rssperi3_333` | 178 / 75 KB | 6,336 / 6,064 B | 416 / 60 B | 2.7 / 1.2 s |
+| `speri3_336` / `rsperi3_336` | 173 / 124 KB | 7,072 / 7,072 B | 60 / 60 B | 3.1 / 1.1 s |
+| `ssperi3_336` / `rssperi3_336` | 331 / 126 KB | 7,872 / 7,952 B | 72 / 60 B | 5.3 / 1.4 s |
+
+`sm_90` frames and spills are the same to within 8 B. The rolled
+`ssperi3_` text no longer grows with the bra transform (126 KB against
+331 KB at (ff|i)), its compile is about 3.8x faster, and the (ff|f) spill
+stores drop from 416 to 60 B; the frame moves by at most +80 B.
+
+**Off by default, additive.** The rolled form is behind `rolled=True`,
+named apart, and every existing unit's text is unchanged (the 1,000 CUDA and
+HIP units of `eri3_`, `peri3_`, `speri3_` and `ssperi3_` over the ladder
+hash identically against the parent). Its wall-clock against the unrolled
+form was not taken (the #747 sweep was stopped by decision), so whether it
+becomes the default is open.
+
 ## What is not done
 
 - **Spherical comparison.** #606 asks for agreement with spherical

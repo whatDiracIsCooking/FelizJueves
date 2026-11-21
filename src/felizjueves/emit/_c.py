@@ -92,6 +92,7 @@ from felizjueves.ir import (
     Boys,
     Break,
     Call,
+    Const,
     Decl,
     Expr,
     Factor,
@@ -257,6 +258,8 @@ class CWriter:
         for p in k.params:
             self._bind(p.name, _Array(p.shape, True) if p.array else None,
                        p.type)
+        for c in k.consts:
+            self._bind(c.name, _Array((Lit(len(c.values)),), False), c.type)
         sig = ",\n".join(INDENT + self.param(p) for p in k.params)
         self._block(k.body, 1)
         unread = [p.name for p in k.params
@@ -284,11 +287,23 @@ class CWriter:
         if records:
             head += "\n" + "".join(record_struct(r, self.ctype(r.scalar))
                                     for r in records)
+        if k.consts:
+            head += "\n" + "".join(self.const(c) for c in k.consts)
         return (
             f"{head}\n"
             f"{self.signature(k, sig)}\n"
             "{\n" + "".join(self._lines) + "}\n"
         )
+
+    def const(self, c: Const) -> str:
+        """A read-only table (#748) at file scope: `__constant__`, eight
+        values a line, each spelled as `lit` spells a literal."""
+        vals = [self.lit(Lit(v)) for v in c.values]
+        rows = [", ".join(vals[i:i + 8]) for i in range(0, len(vals), 8)]
+        body = "".join(f"{INDENT}{r},\n" for r in rows)
+        return (f"// {c.name}: a read-only table (#748)\n"
+                f"__constant__ {self.ctype(c.type)} {c.name}"
+                f"[{len(c.values)}] = {{\n{body}}};\n")
 
     def signature(self, k: Kernel, sig: str) -> str:
         """The text that opens the kernel, `sig` its spelled parameters."""
@@ -647,7 +662,8 @@ class CWriter:
 def kernel_names(k: Kernel) -> list[str]:
     """Every name `k` declares: itself, its parameters, its locals, its loop
     counters and what its fragments bind."""
-    names = [k.name, *(p.name for p in k.params)]
+    names = [k.name, *(p.name for p in k.params),
+             *(c.name for c in k.consts)]
     for s in walk(k.body):
         if isinstance(s, Decl):
             names.append(s.name)
