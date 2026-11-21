@@ -308,6 +308,7 @@ MEASURE_SCHEME_AB_STORE=${MEASURE_SCHEME_AB_STORE:-data/measured/scheme_ab.json}
 MEASURE_KBLOCK_SPLIT_STORE=${MEASURE_KBLOCK_SPLIT_STORE:-data/measured/kblock_split.json}
 MEASURE_KBLOCK_ROLLED_STORE=${MEASURE_KBLOCK_ROLLED_STORE:-data/measured/kblock_rolled.json}
 MEASURE_DF_LOWSTACK_STORE=${MEASURE_DF_LOWSTACK_STORE:-data/measured/df_lowstack.json}
+MEASURE_SPHERICAL_BRA_STORE=${MEASURE_SPHERICAL_BRA_STORE:-data/measured/spherical_bra.json}
 MEASURE_DF_GRAD_LOWSTACK_STORE=${MEASURE_DF_GRAD_LOWSTACK_STORE:-data/measured/df_grad_lowstack.json}
 MEASURE_D2_DF_LOWSTACK_STORE=${MEASURE_D2_DF_LOWSTACK_STORE:-data/measured/d2_df_lowstack.json}
 MEASURE_G1E_STORE=${MEASURE_G1E_STORE:-data/measured/g1e.json}

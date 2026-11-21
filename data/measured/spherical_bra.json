@@ -1,0 +1,3918 @@
+{
+ "schema": 1,
+ "issue": 747,
+ "about": "OPT-IN: skips unless FJ_SPHERICAL_BRA_STORE names the store (measure.sh\nsets it to config.sh's MEASURE_SPHERICAL_BRA_STORE, the tracked\ndata/measured/spherical_bra.json). FJ_SPHERICAL_BRA_ONLY (comma-separated\n`ssperi3_` names) narrows the ladder.",
+ "compile": [
+  {
+   "arch": "sm_90",
+   "toolchain": "nvcc 13.0",
+   "gpu": "NVIDIA GH200 480GB",
+   "host": "c1fe91bda5a6 (container)",
+   "date": "2026-11-21",
+   "am": [
+    0,
+    0,
+    6
+   ],
+   "unit": "sbra3_00",
+   "source_bytes": 1329,
+   "compile_s": 0.47,
+   "registers": 14,
+   "spill_store": 0,
+   "spill_load": 0,
+   "stack_bytes": 0
+  },
+  {
+   "arch": "sm_90",
+   "toolchain": "nvcc 13.0",
+   "gpu": "NVIDIA GH200 480GB",
+   "host": "c1fe91bda5a6 (container)",
+   "date": "2026-11-21",
+   "am": [
+    0,
+    1,
+    6
+   ],
+   "unit": "sbra3_01",
+   "source_bytes": 1431,
+   "compile_s": 0.47,
+   "registers": 20,
+   "spill_store": 0,
+   "spill_load": 0,
+   "stack_bytes": 0
+  },
+  {
+   "arch": "sm_90",
+   "toolchain": "nvcc 13.0",
+   "gpu": "NVIDIA GH200 480GB",
+   "host": "c1fe91bda5a6 (container)",
+   "date": "2026-11-21",
+   "am": [
+    0,
+    2,
+    6
+   ],
+   "unit": "sbra3_02",
+   "source_bytes": 1674,
+   "compile_s": 0.47,
+   "registers": 28,
+   "spill_store": 0,
+   "spill_load": 0,
+   "stack_bytes": 0
+  },
+  {
+   "arch": "sm_90",
+   "toolchain": "nvcc 13.0",
+   "gpu": "NVIDIA GH200 480GB",
+   "host": "c1fe91bda5a6 (container)",
+   "date": "2026-11-21",
+   "am": [
+    0,
+    3,
+    6
+   ],
+   "unit": "sbra3_03",
+   "source_bytes": 2047,
+   "compile_s": 0.47,
+   "registers": 32,
+   "spill_store": 0,
+   "spill_load": 0,
+   "stack_bytes": 0
+  },
+  {
+   "arch": "sm_90",
+   "toolchain": "nvcc 13.0",
+   "gpu": "NVIDIA GH200 480GB",
+   "host": "c1fe91bda5a6 (container)",
+   "date": "2026-11-21",
+   "am": [
+    1,
+    1,
+    1
+   ],
+   "unit": "sbra3_11",
+   "source_bytes": 1935,
+   "compile_s": 0.47,
+   "registers": 32,
+   "spill_store": 0,
+   "spill_load": 0,
+   "stack_bytes": 0
+  },
+  {
+   "arch": "sm_90",
+   "toolchain": "nvcc 13.0",
+   "gpu": "NVIDIA GH200 480GB",
+   "host": "c1fe91bda5a6 (container)",
+   "date": "2026-11-21",
+   "am": [
+    0,
+    0,
+    0
+   ],
+   "unit": "speri3_000",
+   "source_bytes": 10673,
+   "compile_s": 0.52,
+   "registers": 72,
+   "spill_store": 0,
+   "spill_load": 0,
+   "stack_bytes": 0
+  },
+  {
+   "arch": "sm_90",
+   "toolchain": "nvcc 13.0",
+   "gpu": "NVIDIA GH200 480GB",
+   "host": "c1fe91bda5a6 (container)",
+   "date": "2026-11-21",
+   "am": [
+    0,
+    0,
+    1
+   ],
+   "unit": "speri3_001",
+   "source_bytes": 17456,
+   "compile_s": 0.53,
+   "registers": 76,
+   "spill_store": 0,
+   "spill_load": 0,
+   "stack_bytes": 0
+  },
+  {
+   "arch": "sm_90",
+   "toolchain": "nvcc 13.0",
+   "gpu": "NVIDIA GH200 480GB",
+   "host": "c1fe91bda5a6 (container)",
+   "date": "2026-11-21",
+   "am": [
+    0,
+    0,
+    2
+   ],
+   "unit": "speri3_002",
+   "source_bytes": 25197,
+   "compile_s": 0.54,
+   "registers": 82,
+   "spill_store": 0,
+   "spill_load": 0,
+   "stack_bytes": 0
+  },
+  {
+   "arch": "sm_90",
+   "toolchain": "nvcc 13.0",
+   "gpu": "NVIDIA GH200 480GB",
+   "host": "c1fe91bda5a6 (container)",
+   "date": "2026-11-21",
+   "am": [
+    0,
+    0,
+    3
+   ],
+   "unit": "speri3_003",
+   "source_bytes": 34141,
+   "compile_s": 0.55,
+   "registers": 86,
+   "spill_store": 0,
+   "spill_load": 0,
+   "stack_bytes": 0
+  },
+  {
+   "arch": "sm_90",
+   "toolchain": "nvcc 13.0",
+   "gpu": "NVIDIA GH200 480GB",
+   "host": "c1fe91bda5a6 (container)",
+   "date": "2026-11-21",
+   "am": [
+    0,
+    0,
+    4
+   ],
+   "unit": "speri3_004",
+   "source_bytes": 44505,
+   "compile_s": 0.57,
+   "registers": 96,
+   "spill_store": 0,
+   "spill_load": 0,
+   "stack_bytes": 0
+  },
+  {
+   "arch": "sm_90",
+   "toolchain": "nvcc 13.0",
+   "gpu": "NVIDIA GH200 480GB",
+   "host": "c1fe91bda5a6 (container)",
+   "date": "2026-11-21",
+   "am": [
+    0,
+    0,
+    5
+   ],
+   "unit": "speri3_005",
+   "source_bytes": 57325,
+   "compile_s": 0.6,
+   "registers": 116,
+   "spill_store": 0,
+   "spill_load": 0,
+   "stack_bytes": 0
+  },
+  {
+   "arch": "sm_90",
+   "toolchain": "nvcc 13.0",
+   "gpu": "NVIDIA GH200 480GB",
+   "host": "c1fe91bda5a6 (container)",
+   "date": "2026-11-21",
+   "am": [
+    0,
+    0,
+    6
+   ],
+   "unit": "speri3_006",
+   "source_bytes": 72485,
+   "compile_s": 0.63,
+   "registers": 132,
+   "spill_store": 0,
+   "spill_load": 0,
+   "stack_bytes": 0
+  },
+  {
+   "arch": "sm_90",
+   "toolchain": "nvcc 13.0",
+   "gpu": "NVIDIA GH200 480GB",
+   "host": "c1fe91bda5a6 (container)",
+   "date": "2026-11-21",
+   "am": [
+    0,
+    1,
+    0
+   ],
+   "unit": "speri3_010",
+   "source_bytes": 11014,
+   "compile_s": 0.53,
+   "registers": 80,
+   "spill_store": 0,
+   "spill_load": 0,
+   "stack_bytes": 0
+  },
+  {
+   "arch": "sm_90",
+   "toolchain": "nvcc 13.0",
+   "gpu": "NVIDIA GH200 480GB",
+   "host": "c1fe91bda5a6 (container)",
+   "date": "2026-11-21",
+   "am": [
+    0,
+    1,
+    1
+   ],
+   "unit": "speri3_011",
+   "source_bytes": 17852,
+   "compile_s": 0.54,
+   "registers": 88,
+   "spill_store": 0,
+   "spill_load": 0,
+   "stack_bytes": 0
+  },
+  {
+   "arch": "sm_90",
+   "toolchain": "nvcc 13.0",
+   "gpu": "NVIDIA GH200 480GB",
+   "host": "c1fe91bda5a6 (container)",
+   "date": "2026-11-21",
+   "am": [
+    0,
+    1,
+    2
+   ],
+   "unit": "speri3_012",
+   "source_bytes": 26119,
+   "compile_s": 0.57,
+   "registers": 100,
+   "spill_store": 0,
+   "spill_load": 0,
+   "stack_bytes": 0
+  },
+  {
+   "arch": "sm_90",
+   "toolchain": "nvcc 13.0",
+   "gpu": "NVIDIA GH200 480GB",
+   "host": "c1fe91bda5a6 (container)",
+   "date": "2026-11-21",
+   "am": [
+    0,
+    1,
+    3
+   ],
+   "unit": "speri3_013",
+   "source_bytes": 35802,
+   "compile_s": 0.6,
+   "registers": 119,
+   "spill_store": 0,
+   "spill_load": 0,
+   "stack_bytes": 0
+  },
+  {
+   "arch": "sm_90",
+   "toolchain": "nvcc 13.0",
+   "gpu": "NVIDIA GH200 480GB",
+   "host": "c1fe91bda5a6 (container)",
+   "date": "2026-11-21",
+   "am": [
+    0,
+    1,
+    4
+   ],
+   "unit": "speri3_014",
+   "source_bytes": 47659,
+   "compile_s": 0.64,
+   "registers": 143,
+   "spill_store": 0,
+   "spill_load": 0,
+   "stack_bytes": 0
+  },
+  {
+   "arch": "sm_90",
+   "toolchain": "nvcc 13.0",
+   "gpu": "NVIDIA GH200 480GB",
+   "host": "c1fe91bda5a6 (container)",
+   "date": "2026-11-21",
+   "am": [
+    0,
+    1,
+    5
+   ],
+   "unit": "speri3_015",
+   "source_bytes": 62227,
+   "compile_s": 0.69,
+   "registers": 164,
+   "spill_store": 0,
+   "spill_load": 0,
+   "stack_bytes": 0
+  },
+  {
+   "arch": "sm_90",
+   "toolchain": "nvcc 13.0",
+   "gpu": "NVIDIA GH200 480GB",
+   "host": "c1fe91bda5a6 (container)",
+   "date": "2026-11-21",
+   "am": [
+    0,
+    1,
+    6
+   ],
+   "unit": "speri3_016",
+   "source_bytes": 80014,
+   "compile_s": 0.76,
+   "registers": 199,
+   "spill_store": 0,
+   "spill_load": 0,
+   "stack_bytes": 0
+  },
+  {
+   "arch": "sm_90",
+   "toolchain": "nvcc 13.0",
+   "gpu": "NVIDIA GH200 480GB",
+   "host": "c1fe91bda5a6 (container)",
+   "date": "2026-11-21",
+   "am": [
+    0,
+    2,
+    0
+   ],
+   "unit": "speri3_020",
+   "source_bytes": 12760,
+   "compile_s": 0.54,
+   "registers": 108,
+   "spill_store": 0,
+   "spill_load": 0,
+   "stack_bytes": 0
+  },
+  {
+   "arch": "sm_90",
+   "toolchain": "nvcc 13.0",
+   "gpu": "NVIDIA GH200 480GB",
+   "host": "c1fe91bda5a6 (container)",
+   "date": "2026-11-21",
+   "am": [
+    0,
+    2,
+    1
+   ],
+   "unit": "speri3_021",
+   "source_bytes": 20226,
+   "compile_s": 0.58,
+   "registers": 130,
+   "spill_store": 0,
+   "spill_load": 0,
+   "stack_bytes": 0
+  },
+  {
+   "arch": "sm_90",
+   "toolchain": "nvcc 13.0",
+   "gpu": "NVIDIA GH200 480GB",
+   "host": "c1fe91bda5a6 (container)",
+   "date": "2026-11-21",
+   "am": [
+    0,
+    2,
+    2
+   ],
+   "unit": "speri3_022",
+   "source_bytes": 29295,
+   "compile_s": 0.62,
+   "registers": 156,
+   "spill_store": 0,
+   "spill_load": 0,
+   "stack_bytes": 0
+  },
+  {
+   "arch": "sm_90",
+   "toolchain": "nvcc 13.0",
+   "gpu": "NVIDIA GH200 480GB",
+   "host": "c1fe91bda5a6 (container)",
+   "date": "2026-11-21",
+   "am": [
+    0,
+    2,
+    3
+   ],
+   "unit": "speri3_023",
+   "source_bytes": 40142,
+   "compile_s": 0.68,
+   "registers": 188,
+   "spill_store": 0,
+   "spill_load": 0,
+   "stack_bytes": 0
+  },
+  {
+   "arch": "sm_90",
+   "toolchain": "nvcc 13.0",
+   "gpu": "NVIDIA GH200 480GB",
+   "host": "c1fe91bda5a6 (container)",
+   "date": "2026-11-21",
+   "am": [
+    0,
+    2,
+    4
+   ],
+   "unit": "speri3_024",
+   "source_bytes": 53390,
+   "compile_s": 0.76,
+   "registers": 224,
+   "spill_store": 0,
+   "spill_load": 0,
+   "stack_bytes": 0
+  },
+  {
+   "arch": "sm_90",
+   "toolchain": "nvcc 13.0",
+   "gpu": "NVIDIA GH200 480GB",
+   "host": "c1fe91bda5a6 (container)",
+   "date": "2026-11-21",
+   "am": [
+    0,
+    2,
+    5
+   ],
+   "unit": "speri3_025",
+   "source_bytes": 69552,
+   "compile_s": 0.86,
+   "registers": 255,
+   "spill_store": 48,
+   "spill_load": 44,
+   "stack_bytes": 48
+  },
+  {
+   "arch": "sm_90",
+   "toolchain": "nvcc 13.0",
+   "gpu": "NVIDIA GH200 480GB",
+   "host": "c1fe91bda5a6 (container)",
+   "date": "2026-11-21",
+   "am": [
+    0,
+    2,
+    6
+   ],
+   "unit": "speri3_026",
+   "source_bytes": 89173,
+   "compile_s": 0.97,
+   "registers": 255,
+   "spill_store": 276,
+   "spill_load": 288,
+   "stack_bytes": 280
+  },
+  {
+   "arch": "sm_90",
+   "toolchain": "nvcc 13.0",
+   "gpu": "NVIDIA GH200 480GB",
+   "host": "c1fe91bda5a6 (container)",
+   "date": "2026-11-21",
+   "am": [
+    0,
+    3,
+    0
+   ],
+   "unit": "speri3_030",
+   "source_bytes": 15572,
+   "compile_s": 0.56,
+   "registers": 152,
+   "spill_store": 0,
+   "spill_load": 0,
+   "stack_bytes": 0
+  },
+  {
+   "arch": "sm_90",
+   "toolchain": "nvcc 13.0",
+   "gpu": "NVIDIA GH200 480GB",
+   "host": "c1fe91bda5a6 (container)",
+   "date": "2026-11-21",
+   "am": [
+    0,
+    3,
+    1
+   ],
+   "unit": "speri3_031",
+   "source_bytes": 23844,
+   "compile_s": 0.65,
+   "registers": 199,
+   "spill_store": 0,
+   "spill_load": 0,
+   "stack_bytes": 0
+  },
+  {
+   "arch": "sm_90",
+   "toolchain": "nvcc 13.0",
+   "gpu": "NVIDIA GH200 480GB",
+   "host": "c1fe91bda5a6 (container)",
+   "date": "2026-11-21",
+   "am": [
+    0,
+    3,
+    2
+   ],
+   "unit": "speri3_032",
+   "source_bytes": 34081,
+   "compile_s": 0.74,
+   "registers": 254,
+   "spill_store": 0,
+   "spill_load": 0,
+   "stack_bytes": 0
+  },
+  {
+   "arch": "sm_90",
+   "toolchain": "nvcc 13.0",
+   "gpu": "NVIDIA GH200 480GB",
+   "host": "c1fe91bda5a6 (container)",
+   "date": "2026-11-21",
+   "am": [
+    0,
+    3,
+    3
+   ],
+   "unit": "speri3_033",
+   "source_bytes": 46323,
+   "compile_s": 0.88,
+   "registers": 255,
+   "spill_store": 216,
+   "spill_load": 212,
+   "stack_bytes": 216
+  },
+  {
+   "arch": "sm_90",
+   "toolchain": "nvcc 13.0",
+   "gpu": "NVIDIA GH200 480GB",
+   "host": "c1fe91bda5a6 (container)",
+   "date": "2026-11-21",
+   "am": [
+    0,
+    3,
+    4
+   ],
+   "unit": "speri3_034",
+   "source_bytes": 61169,
+   "compile_s": 1.04,
+   "registers": 255,
+   "spill_store": 556,
+   "spill_load": 684,
+   "stack_bytes": 528
+  },
+  {
+   "arch": "sm_90",
+   "toolchain": "nvcc 13.0",
+   "gpu": "NVIDIA GH200 480GB",
+   "host": "c1fe91bda5a6 (container)",
+   "date": "2026-11-21",
+   "am": [
+    0,
+    3,
+    5
+   ],
+   "unit": "speri3_035",
+   "source_bytes": 79169,
+   "compile_s": 1.22,
+   "registers": 255,
+   "spill_store": 1140,
+   "spill_load": 1652,
+   "stack_bytes": 1104
+  },
+  {
+   "arch": "sm_90",
+   "toolchain": "nvcc 13.0",
+   "gpu": "NVIDIA GH200 480GB",
+   "host": "c1fe91bda5a6 (container)",
+   "date": "2026-11-21",
+   "am": [
+    0,
+    3,
+    6
+   ],
+   "unit": "speri3_036",
+   "source_bytes": 101258,
+   "compile_s": 1.74,
+   "registers": 255,
+   "spill_store": 1856,
+   "spill_load": 2776,
+   "stack_bytes": 3296
+  },
+  {
+   "arch": "sm_90",
+   "toolchain": "nvcc 13.0",
+   "gpu": "NVIDIA GH200 480GB",
+   "host": "c1fe91bda5a6 (container)",
+   "date": "2026-11-21",
+   "am": [
+    1,
+    1,
+    0
+   ],
+   "unit": "speri3_110",
+   "source_bytes": 14005,
+   "compile_s": 0.55,
+   "registers": 123,
+   "spill_store": 0,
+   "spill_load": 0,
+   "stack_bytes": 0
+  },
+  {
+   "arch": "sm_90",
+   "toolchain": "nvcc 13.0",
+   "gpu": "NVIDIA GH200 480GB",
+   "host": "c1fe91bda5a6 (container)",
+   "date": "2026-11-21",
+   "am": [
+    1,
+    1,
+    1
+   ],
+   "unit": "speri3_111",
+   "source_bytes": 21903,
+   "compile_s": 0.63,
+   "registers": 144,
+   "spill_store": 0,
+   "spill_load": 0,
+   "stack_bytes": 0
+  },
+  {
+   "arch": "sm_90",
+   "toolchain": "nvcc 13.0",
+   "gpu": "NVIDIA GH200 480GB",
+   "host": "c1fe91bda5a6 (container)",
+   "date": "2026-11-21",
+   "am": [
+    0,
+    0,
+    0
+   ],
+   "unit": "ssperi3_000",
+   "source_bytes": 11036,
+   "compile_s": 0.51,
+   "registers": 72,
+   "spill_store": 0,
+   "spill_load": 0,
+   "stack_bytes": 0
+  },
+  {
+   "arch": "sm_90",
+   "toolchain": "nvcc 13.0",
+   "gpu": "NVIDIA GH200 480GB",
+   "host": "c1fe91bda5a6 (container)",
+   "date": "2026-11-21",
+   "am": [
+    0,
+    0,
+    1
+   ],
+   "unit": "ssperi3_001",
+   "source_bytes": 17819,
+   "compile_s": 0.52,
+   "registers": 76,
+   "spill_store": 0,
+   "spill_load": 0,
+   "stack_bytes": 0
+  },
+  {
+   "arch": "sm_90",
+   "toolchain": "nvcc 13.0",
+   "gpu": "NVIDIA GH200 480GB",
+   "host": "c1fe91bda5a6 (container)",
+   "date": "2026-11-21",
+   "am": [
+    0,
+    0,
+    2
+   ],
+   "unit": "ssperi3_002",
+   "source_bytes": 25560,
+   "compile_s": 0.54,
+   "registers": 82,
+   "spill_store": 0,
+   "spill_load": 0,
+   "stack_bytes": 0
+  },
+  {
+   "arch": "sm_90",
+   "toolchain": "nvcc 13.0",
+   "gpu": "NVIDIA GH200 480GB",
+   "host": "c1fe91bda5a6 (container)",
+   "date": "2026-11-21",
+   "am": [
+    0,
+    0,
+    3
+   ],
+   "unit": "ssperi3_003",
+   "source_bytes": 34504,
+   "compile_s": 0.55,
+   "registers": 86,
+   "spill_store": 0,
+   "spill_load": 0,
+   "stack_bytes": 0
+  },
+  {
+   "arch": "sm_90",
+   "toolchain": "nvcc 13.0",
+   "gpu": "NVIDIA GH200 480GB",
+   "host": "c1fe91bda5a6 (container)",
+   "date": "2026-11-21",
+   "am": [
+    0,
+    0,
+    4
+   ],
+   "unit": "ssperi3_004",
+   "source_bytes": 44868,
+   "compile_s": 0.57,
+   "registers": 96,
+   "spill_store": 0,
+   "spill_load": 0,
+   "stack_bytes": 0
+  },
+  {
+   "arch": "sm_90",
+   "toolchain": "nvcc 13.0",
+   "gpu": "NVIDIA GH200 480GB",
+   "host": "c1fe91bda5a6 (container)",
+   "date": "2026-11-21",
+   "am": [
+    0,
+    0,
+    5
+   ],
+   "unit": "ssperi3_005",
+   "source_bytes": 57688,
+   "compile_s": 0.6,
+   "registers": 116,
+   "spill_store": 0,
+   "spill_load": 0,
+   "stack_bytes": 0
+  },
+  {
+   "arch": "sm_90",
+   "toolchain": "nvcc 13.0",
+   "gpu": "NVIDIA GH200 480GB",
+   "host": "c1fe91bda5a6 (container)",
+   "date": "2026-11-21",
+   "am": [
+    0,
+    0,
+    6
+   ],
+   "unit": "ssperi3_006",
+   "source_bytes": 72848,
+   "compile_s": 0.64,
+   "registers": 132,
+   "spill_store": 0,
+   "spill_load": 0,
+   "stack_bytes": 0
+  },
+  {
+   "arch": "sm_90",
+   "toolchain": "nvcc 13.0",
+   "gpu": "NVIDIA GH200 480GB",
+   "host": "c1fe91bda5a6 (container)",
+   "date": "2026-11-21",
+   "am": [
+    0,
+    1,
+    0
+   ],
+   "unit": "ssperi3_010",
+   "source_bytes": 11377,
+   "compile_s": 0.52,
+   "registers": 80,
+   "spill_store": 0,
+   "spill_load": 0,
+   "stack_bytes": 0
+  },
+  {
+   "arch": "sm_90",
+   "toolchain": "nvcc 13.0",
+   "gpu": "NVIDIA GH200 480GB",
+   "host": "c1fe91bda5a6 (container)",
+   "date": "2026-11-21",
+   "am": [
+    0,
+    1,
+    1
+   ],
+   "unit": "ssperi3_011",
+   "source_bytes": 18215,
+   "compile_s": 0.54,
+   "registers": 88,
+   "spill_store": 0,
+   "spill_load": 0,
+   "stack_bytes": 0
+  },
+  {
+   "arch": "sm_90",
+   "toolchain": "nvcc 13.0",
+   "gpu": "NVIDIA GH200 480GB",
+   "host": "c1fe91bda5a6 (container)",
+   "date": "2026-11-21",
+   "am": [
+    0,
+    1,
+    2
+   ],
+   "unit": "ssperi3_012",
+   "source_bytes": 26482,
+   "compile_s": 0.57,
+   "registers": 100,
+   "spill_store": 0,
+   "spill_load": 0,
+   "stack_bytes": 0
+  },
+  {
+   "arch": "sm_90",
+   "toolchain": "nvcc 13.0",
+   "gpu": "NVIDIA GH200 480GB",
+   "host": "c1fe91bda5a6 (container)",
+   "date": "2026-11-21",
+   "am": [
+    0,
+    1,
+    3
+   ],
+   "unit": "ssperi3_013",
+   "source_bytes": 36165,
+   "compile_s": 0.6,
+   "registers": 119,
+   "spill_store": 0,
+   "spill_load": 0,
+   "stack_bytes": 0
+  },
+  {
+   "arch": "sm_90",
+   "toolchain": "nvcc 13.0",
+   "gpu": "NVIDIA GH200 480GB",
+   "host": "c1fe91bda5a6 (container)",
+   "date": "2026-11-21",
+   "am": [
+    0,
+    1,
+    4
+   ],
+   "unit": "ssperi3_014",
+   "source_bytes": 48022,
+   "compile_s": 0.64,
+   "registers": 143,
+   "spill_store": 0,
+   "spill_load": 0,
+   "stack_bytes": 0
+  },
+  {
+   "arch": "sm_90",
+   "toolchain": "nvcc 13.0",
+   "gpu": "NVIDIA GH200 480GB",
+   "host": "c1fe91bda5a6 (container)",
+   "date": "2026-11-21",
+   "am": [
+    0,
+    1,
+    5
+   ],
+   "unit": "ssperi3_015",
+   "source_bytes": 62590,
+   "compile_s": 0.69,
+   "registers": 164,
+   "spill_store": 0,
+   "spill_load": 0,
+   "stack_bytes": 0
+  },
+  {
+   "arch": "sm_90",
+   "toolchain": "nvcc 13.0",
+   "gpu": "NVIDIA GH200 480GB",
+   "host": "c1fe91bda5a6 (container)",
+   "date": "2026-11-21",
+   "am": [
+    0,
+    1,
+    6
+   ],
+   "unit": "ssperi3_016",
+   "source_bytes": 80377,
+   "compile_s": 0.75,
+   "registers": 199,
+   "spill_store": 0,
+   "spill_load": 0,
+   "stack_bytes": 0
+  },
+  {
+   "arch": "sm_90",
+   "toolchain": "nvcc 13.0",
+   "gpu": "NVIDIA GH200 480GB",
+   "host": "c1fe91bda5a6 (container)",
+   "date": "2026-11-21",
+   "am": [
+    0,
+    2,
+    0
+   ],
+   "unit": "ssperi3_020",
+   "source_bytes": 14214,
+   "compile_s": 0.53,
+   "registers": 104,
+   "spill_store": 0,
+   "spill_load": 0,
+   "stack_bytes": 0
+  },
+  {
+   "arch": "sm_90",
+   "toolchain": "nvcc 13.0",
+   "gpu": "NVIDIA GH200 480GB",
+   "host": "c1fe91bda5a6 (container)",
+   "date": "2026-11-21",
+   "am": [
+    0,
+    2,
+    1
+   ],
+   "unit": "ssperi3_021",
+   "source_bytes": 23770,
+   "compile_s": 0.58,
+   "registers": 145,
+   "spill_store": 0,
+   "spill_load": 0,
+   "stack_bytes": 0
+  },
+  {
+   "arch": "sm_90",
+   "toolchain": "nvcc 13.0",
+   "gpu": "NVIDIA GH200 480GB",
+   "host": "c1fe91bda5a6 (container)",
+   "date": "2026-11-21",
+   "am": [
+    0,
+    2,
+    2
+   ],
+   "unit": "ssperi3_022",
+   "source_bytes": 34929,
+   "compile_s": 0.63,
+   "registers": 160,
+   "spill_store": 0,
+   "spill_load": 0,
+   "stack_bytes": 0
+  },
+  {
+   "arch": "sm_90",
+   "toolchain": "nvcc 13.0",
+   "gpu": "NVIDIA GH200 480GB",
+   "host": "c1fe91bda5a6 (container)",
+   "date": "2026-11-21",
+   "am": [
+    0,
+    2,
+    3
+   ],
+   "unit": "ssperi3_023",
+   "source_bytes": 47866,
+   "compile_s": 0.7,
+   "registers": 200,
+   "spill_store": 0,
+   "spill_load": 0,
+   "stack_bytes": 0
+  },
+  {
+   "arch": "sm_90",
+   "toolchain": "nvcc 13.0",
+   "gpu": "NVIDIA GH200 480GB",
+   "host": "c1fe91bda5a6 (container)",
+   "date": "2026-11-21",
+   "am": [
+    0,
+    2,
+    4
+   ],
+   "unit": "ssperi3_024",
+   "source_bytes": 63204,
+   "compile_s": 0.79,
+   "registers": 236,
+   "spill_store": 0,
+   "spill_load": 0,
+   "stack_bytes": 0
+  },
+  {
+   "arch": "sm_90",
+   "toolchain": "nvcc 13.0",
+   "gpu": "NVIDIA GH200 480GB",
+   "host": "c1fe91bda5a6 (container)",
+   "date": "2026-11-21",
+   "am": [
+    0,
+    2,
+    5
+   ],
+   "unit": "ssperi3_025",
+   "source_bytes": 81464,
+   "compile_s": 0.88,
+   "registers": 255,
+   "spill_store": 48,
+   "spill_load": 44,
+   "stack_bytes": 48
+  },
+  {
+   "arch": "sm_90",
+   "toolchain": "nvcc 13.0",
+   "gpu": "NVIDIA GH200 480GB",
+   "host": "c1fe91bda5a6 (container)",
+   "date": "2026-11-21",
+   "am": [
+    0,
+    2,
+    6
+   ],
+   "unit": "ssperi3_026",
+   "source_bytes": 103191,
+   "compile_s": 1.0,
+   "registers": 255,
+   "spill_store": 308,
+   "spill_load": 312,
+   "stack_bytes": 312
+  },
+  {
+   "arch": "sm_90",
+   "toolchain": "nvcc 13.0",
+   "gpu": "NVIDIA GH200 480GB",
+   "host": "c1fe91bda5a6 (container)",
+   "date": "2026-11-21",
+   "am": [
+    0,
+    3,
+    0
+   ],
+   "unit": "ssperi3_030",
+   "source_bytes": 17554,
+   "compile_s": 0.56,
+   "registers": 158,
+   "spill_store": 0,
+   "spill_load": 0,
+   "stack_bytes": 0
+  },
+  {
+   "arch": "sm_90",
+   "toolchain": "nvcc 13.0",
+   "gpu": "NVIDIA GH200 480GB",
+   "host": "c1fe91bda5a6 (container)",
+   "date": "2026-11-21",
+   "am": [
+    0,
+    3,
+    1
+   ],
+   "unit": "ssperi3_031",
+   "source_bytes": 28972,
+   "compile_s": 0.66,
+   "registers": 223,
+   "spill_store": 0,
+   "spill_load": 0,
+   "stack_bytes": 0
+  },
+  {
+   "arch": "sm_90",
+   "toolchain": "nvcc 13.0",
+   "gpu": "NVIDIA GH200 480GB",
+   "host": "c1fe91bda5a6 (container)",
+   "date": "2026-11-21",
+   "am": [
+    0,
+    3,
+    2
+   ],
+   "unit": "ssperi3_032",
+   "source_bytes": 42355,
+   "compile_s": 0.76,
+   "registers": 254,
+   "spill_store": 0,
+   "spill_load": 0,
+   "stack_bytes": 0
+  },
+  {
+   "arch": "sm_90",
+   "toolchain": "nvcc 13.0",
+   "gpu": "NVIDIA GH200 480GB",
+   "host": "c1fe91bda5a6 (container)",
+   "date": "2026-11-21",
+   "am": [
+    0,
+    3,
+    3
+   ],
+   "unit": "ssperi3_033",
+   "source_bytes": 57743,
+   "compile_s": 0.91,
+   "registers": 255,
+   "spill_store": 264,
+   "spill_load": 260,
+   "stack_bytes": 264
+  },
+  {
+   "arch": "sm_90",
+   "toolchain": "nvcc 13.0",
+   "gpu": "NVIDIA GH200 480GB",
+   "host": "c1fe91bda5a6 (container)",
+   "date": "2026-11-21",
+   "am": [
+    0,
+    3,
+    4
+   ],
+   "unit": "ssperi3_034",
+   "source_bytes": 75735,
+   "compile_s": 1.09,
+   "registers": 255,
+   "spill_store": 552,
+   "spill_load": 668,
+   "stack_bytes": 536
+  },
+  {
+   "arch": "sm_90",
+   "toolchain": "nvcc 13.0",
+   "gpu": "NVIDIA GH200 480GB",
+   "host": "c1fe91bda5a6 (container)",
+   "date": "2026-11-21",
+   "am": [
+    0,
+    3,
+    5
+   ],
+   "unit": "ssperi3_035",
+   "source_bytes": 96893,
+   "compile_s": 1.29,
+   "registers": 255,
+   "spill_store": 1116,
+   "spill_load": 1564,
+   "stack_bytes": 1088
+  },
+  {
+   "arch": "sm_90",
+   "toolchain": "nvcc 13.0",
+   "gpu": "NVIDIA GH200 480GB",
+   "host": "c1fe91bda5a6 (container)",
+   "date": "2026-11-21",
+   "am": [
+    0,
+    3,
+    6
+   ],
+   "unit": "ssperi3_036",
+   "source_bytes": 122152,
+   "compile_s": 1.79,
+   "registers": 255,
+   "spill_store": 1708,
+   "spill_load": 2664,
+   "stack_bytes": 3232
+  },
+  {
+   "arch": "sm_90",
+   "toolchain": "nvcc 13.0",
+   "gpu": "NVIDIA GH200 480GB",
+   "host": "c1fe91bda5a6 (container)",
+   "date": "2026-11-21",
+   "am": [
+    1,
+    1,
+    0
+   ],
+   "unit": "ssperi3_110",
+   "source_bytes": 14368,
+   "compile_s": 0.55,
+   "registers": 123,
+   "spill_store": 0,
+   "spill_load": 0,
+   "stack_bytes": 0
+  },
+  {
+   "arch": "sm_90",
+   "toolchain": "nvcc 13.0",
+   "gpu": "NVIDIA GH200 480GB",
+   "host": "c1fe91bda5a6 (container)",
+   "date": "2026-11-21",
+   "am": [
+    1,
+    1,
+    1
+   ],
+   "unit": "ssperi3_111",
+   "source_bytes": 22266,
+   "compile_s": 0.63,
+   "registers": 144,
+   "spill_store": 0,
+   "spill_load": 0,
+   "stack_bytes": 0
+  }
+ ],
+ "clock": [
+  {
+   "arch": "sm_90",
+   "toolchain": "nvcc 13.0",
+   "gpu": "NVIDIA GH200 480GB",
+   "host": "c1fe91bda5a6 (container)",
+   "date": "2026-11-21",
+   "am": [
+    0,
+    0,
+    0
+   ],
+   "unit": "ssperi3_000",
+   "n_aux": 64,
+   "n_pair": 136,
+   "n_cell": 8704,
+   "n_bra_rec": 544,
+   "cartesian_doubles": 8704,
+   "spherical_doubles": 8704,
+   "rounds": 3,
+   "warmup": 2,
+   "repeats": 7,
+   "gate": [
+    {
+     "arm": "ssperi3",
+     "cpu_busy_permille": 0,
+     "gpu_util_before": 1,
+     "gpu_util_after": 0
+    },
+    {
+     "arm": "speri3+sbra3",
+     "cpu_busy_permille": 0,
+     "gpu_util_before": 0,
+     "gpu_util_after": 0
+    },
+    {
+     "arm": "ssperi3",
+     "cpu_busy_permille": 0,
+     "gpu_util_before": 0,
+     "gpu_util_after": 0
+    },
+    {
+     "arm": "speri3+sbra3",
+     "cpu_busy_permille": 0,
+     "gpu_util_before": 0,
+     "gpu_util_after": 0
+    },
+    {
+     "arm": "ssperi3",
+     "cpu_busy_permille": 0,
+     "gpu_util_before": 0,
+     "gpu_util_after": 0
+    },
+    {
+     "arm": "speri3+sbra3",
+     "cpu_busy_permille": 2,
+     "gpu_util_before": 0,
+     "gpu_util_after": 0
+    }
+   ],
+   "gate_discarded_runs": 0,
+   "arms": {
+    "ssperi3": {
+     "median_ns": 26464,
+     "q1_ns": 25952,
+     "q3_ns": 33280,
+     "n": 21
+    },
+    "speri3+sbra3": {
+     "median_ns": 31360,
+     "q1_ns": 31296,
+     "q3_ns": 31456,
+     "n": 21
+    }
+   },
+   "two_pass_launches": {
+    "speri3": {
+     "median_ns": 24640,
+     "q1_ns": 24512,
+     "q3_ns": 24736,
+     "n": 21
+    },
+    "sbra3": {
+     "median_ns": 3648,
+     "q1_ns": 3584,
+     "q3_ns": 3680,
+     "n": 21
+    }
+   },
+   "witness_rel": 0.0,
+   "fused_over_two_pass": 0.8439,
+   "verdict": "faster"
+  },
+  {
+   "arch": "sm_90",
+   "toolchain": "nvcc 13.0",
+   "gpu": "NVIDIA GH200 480GB",
+   "host": "c1fe91bda5a6 (container)",
+   "date": "2026-11-21",
+   "am": [
+    0,
+    0,
+    1
+   ],
+   "unit": "ssperi3_001",
+   "n_aux": 192,
+   "n_pair": 136,
+   "n_cell": 8704,
+   "n_bra_rec": 544,
+   "cartesian_doubles": 26112,
+   "spherical_doubles": 26112,
+   "rounds": 3,
+   "warmup": 2,
+   "repeats": 7,
+   "gate": [
+    {
+     "arm": "ssperi3",
+     "cpu_busy_permille": 2,
+     "gpu_util_before": 2,
+     "gpu_util_after": 0
+    },
+    {
+     "arm": "speri3+sbra3",
+     "cpu_busy_permille": 2,
+     "gpu_util_before": 0,
+     "gpu_util_after": 0
+    },
+    {
+     "arm": "ssperi3",
+     "cpu_busy_permille": 0,
+     "gpu_util_before": 0,
+     "gpu_util_after": 0
+    },
+    {
+     "arm": "speri3+sbra3",
+     "cpu_busy_permille": 0,
+     "gpu_util_before": 0,
+     "gpu_util_after": 0
+    },
+    {
+     "arm": "ssperi3",
+     "cpu_busy_permille": 1,
+     "gpu_util_before": 0,
+     "gpu_util_after": 0
+    },
+    {
+     "arm": "speri3+sbra3",
+     "cpu_busy_permille": 0,
+     "gpu_util_before": 0,
+     "gpu_util_after": 0
+    }
+   ],
+   "gate_discarded_runs": 0,
+   "arms": {
+    "ssperi3": {
+     "median_ns": 26560,
+     "q1_ns": 26464,
+     "q3_ns": 27520,
+     "n": 21
+    },
+    "speri3+sbra3": {
+     "median_ns": 32480,
+     "q1_ns": 32320,
+     "q3_ns": 32736,
+     "n": 21
+    }
+   },
+   "two_pass_launches": {
+    "speri3": {
+     "median_ns": 25376,
+     "q1_ns": 25216,
+     "q3_ns": 25760,
+     "n": 21
+    },
+    "sbra3": {
+     "median_ns": 3936,
+     "q1_ns": 3936,
+     "q3_ns": 4032,
+     "n": 21
+    }
+   },
+   "witness_rel": 0.0,
+   "fused_over_two_pass": 0.8177,
+   "verdict": "faster"
+  },
+  {
+   "arch": "sm_90",
+   "toolchain": "nvcc 13.0",
+   "gpu": "NVIDIA GH200 480GB",
+   "host": "c1fe91bda5a6 (container)",
+   "date": "2026-11-21",
+   "am": [
+    0,
+    0,
+    2
+   ],
+   "unit": "ssperi3_002",
+   "n_aux": 320,
+   "n_pair": 136,
+   "n_cell": 8704,
+   "n_bra_rec": 544,
+   "cartesian_doubles": 43520,
+   "spherical_doubles": 43520,
+   "rounds": 3,
+   "warmup": 2,
+   "repeats": 7,
+   "gate": [
+    {
+     "arm": "ssperi3",
+     "cpu_busy_permille": 0,
+     "gpu_util_before": 3,
+     "gpu_util_after": 0
+    },
+    {
+     "arm": "speri3+sbra3",
+     "cpu_busy_permille": 0,
+     "gpu_util_before": 0,
+     "gpu_util_after": 0
+    },
+    {
+     "arm": "ssperi3",
+     "cpu_busy_permille": 0,
+     "gpu_util_before": 0,
+     "gpu_util_after": 0
+    },
+    {
+     "arm": "speri3+sbra3",
+     "cpu_busy_permille": 3,
+     "gpu_util_before": 0,
+     "gpu_util_after": 0
+    },
+    {
+     "arm": "ssperi3",
+     "cpu_busy_permille": 1,
+     "gpu_util_before": 0,
+     "gpu_util_after": 0
+    },
+    {
+     "arm": "speri3+sbra3",
+     "cpu_busy_permille": 0,
+     "gpu_util_before": 0,
+     "gpu_util_after": 0
+    }
+   ],
+   "gate_discarded_runs": 0,
+   "arms": {
+    "ssperi3": {
+     "median_ns": 27840,
+     "q1_ns": 27712,
+     "q3_ns": 28256,
+     "n": 21
+    },
+    "speri3+sbra3": {
+     "median_ns": 34336,
+     "q1_ns": 33888,
+     "q3_ns": 34592,
+     "n": 21
+    }
+   },
+   "two_pass_launches": {
+    "speri3": {
+     "median_ns": 26976,
+     "q1_ns": 26496,
+     "q3_ns": 27392,
+     "n": 21
+    },
+    "sbra3": {
+     "median_ns": 4320,
+     "q1_ns": 4288,
+     "q3_ns": 4416,
+     "n": 21
+    }
+   },
+   "witness_rel": 0.0,
+   "fused_over_two_pass": 0.8108,
+   "verdict": "faster"
+  },
+  {
+   "arch": "sm_90",
+   "toolchain": "nvcc 13.0",
+   "gpu": "NVIDIA GH200 480GB",
+   "host": "c1fe91bda5a6 (container)",
+   "date": "2026-11-21",
+   "am": [
+    0,
+    0,
+    3
+   ],
+   "unit": "ssperi3_003",
+   "n_aux": 448,
+   "n_pair": 136,
+   "n_cell": 8704,
+   "n_bra_rec": 544,
+   "cartesian_doubles": 60928,
+   "spherical_doubles": 60928,
+   "rounds": 3,
+   "warmup": 2,
+   "repeats": 7,
+   "gate": [
+    {
+     "arm": "ssperi3",
+     "cpu_busy_permille": 0,
+     "gpu_util_before": 2,
+     "gpu_util_after": 0
+    },
+    {
+     "arm": "speri3+sbra3",
+     "cpu_busy_permille": 5,
+     "gpu_util_before": 0,
+     "gpu_util_after": 0
+    },
+    {
+     "arm": "ssperi3",
+     "cpu_busy_permille": 2,
+     "gpu_util_before": 0,
+     "gpu_util_after": 0
+    },
+    {
+     "arm": "speri3+sbra3",
+     "cpu_busy_permille": 0,
+     "gpu_util_before": 0,
+     "gpu_util_after": 0
+    },
+    {
+     "arm": "ssperi3",
+     "cpu_busy_permille": 3,
+     "gpu_util_before": 0,
+     "gpu_util_after": 0
+    },
+    {
+     "arm": "speri3+sbra3",
+     "cpu_busy_permille": 1,
+     "gpu_util_before": 0,
+     "gpu_util_after": 0
+    }
+   ],
+   "gate_discarded_runs": 0,
+   "arms": {
+    "ssperi3": {
+     "median_ns": 28416,
+     "q1_ns": 28256,
+     "q3_ns": 28960,
+     "n": 21
+    },
+    "speri3+sbra3": {
+     "median_ns": 35008,
+     "q1_ns": 34688,
+     "q3_ns": 35392,
+     "n": 21
+    }
+   },
+   "two_pass_launches": {
+    "speri3": {
+     "median_ns": 27232,
+     "q1_ns": 27072,
+     "q3_ns": 27776,
+     "n": 21
+    },
+    "sbra3": {
+     "median_ns": 4672,
+     "q1_ns": 4576,
+     "q3_ns": 4704,
+     "n": 21
+    }
+   },
+   "witness_rel": 0.0,
+   "fused_over_two_pass": 0.8117,
+   "verdict": "faster"
+  },
+  {
+   "arch": "sm_90",
+   "toolchain": "nvcc 13.0",
+   "gpu": "NVIDIA GH200 480GB",
+   "host": "c1fe91bda5a6 (container)",
+   "date": "2026-11-21",
+   "am": [
+    0,
+    0,
+    4
+   ],
+   "unit": "ssperi3_004",
+   "n_aux": 576,
+   "n_pair": 136,
+   "n_cell": 8704,
+   "n_bra_rec": 544,
+   "cartesian_doubles": 78336,
+   "spherical_doubles": 78336,
+   "rounds": 3,
+   "warmup": 2,
+   "repeats": 7,
+   "gate": [
+    {
+     "arm": "ssperi3",
+     "cpu_busy_permille": 1,
+     "gpu_util_before": 3,
+     "gpu_util_after": 0
+    },
+    {
+     "arm": "speri3+sbra3",
+     "cpu_busy_permille": 1,
+     "gpu_util_before": 0,
+     "gpu_util_after": 0
+    },
+    {
+     "arm": "ssperi3",
+     "cpu_busy_permille": 0,
+     "gpu_util_before": 0,
+     "gpu_util_after": 0
+    },
+    {
+     "arm": "speri3+sbra3",
+     "cpu_busy_permille": 0,
+     "gpu_util_before": 0,
+     "gpu_util_after": 0
+    },
+    {
+     "arm": "ssperi3",
+     "cpu_busy_permille": 2,
+     "gpu_util_before": 0,
+     "gpu_util_after": 0
+    },
+    {
+     "arm": "speri3+sbra3",
+     "cpu_busy_permille": 0,
+     "gpu_util_before": 0,
+     "gpu_util_after": 0
+    }
+   ],
+   "gate_discarded_runs": 0,
+   "arms": {
+    "ssperi3": {
+     "median_ns": 29824,
+     "q1_ns": 29600,
+     "q3_ns": 30048,
+     "n": 21
+    },
+    "speri3+sbra3": {
+     "median_ns": 36832,
+     "q1_ns": 36192,
+     "q3_ns": 37024,
+     "n": 21
+    }
+   },
+   "two_pass_launches": {
+    "speri3": {
+     "median_ns": 28448,
+     "q1_ns": 28352,
+     "q3_ns": 28800,
+     "n": 21
+    },
+    "sbra3": {
+     "median_ns": 5120,
+     "q1_ns": 5056,
+     "q3_ns": 5152,
+     "n": 21
+    }
+   },
+   "witness_rel": 0.0,
+   "fused_over_two_pass": 0.8097,
+   "verdict": "faster"
+  },
+  {
+   "arch": "sm_90",
+   "toolchain": "nvcc 13.0",
+   "gpu": "NVIDIA GH200 480GB",
+   "host": "c1fe91bda5a6 (container)",
+   "date": "2026-11-21",
+   "am": [
+    0,
+    0,
+    5
+   ],
+   "unit": "ssperi3_005",
+   "n_aux": 704,
+   "n_pair": 136,
+   "n_cell": 8704,
+   "n_bra_rec": 544,
+   "cartesian_doubles": 95744,
+   "spherical_doubles": 95744,
+   "rounds": 3,
+   "warmup": 2,
+   "repeats": 7,
+   "gate": [
+    {
+     "arm": "ssperi3",
+     "cpu_busy_permille": 0,
+     "gpu_util_before": 3,
+     "gpu_util_after": 0
+    },
+    {
+     "arm": "speri3+sbra3",
+     "cpu_busy_permille": 1,
+     "gpu_util_before": 0,
+     "gpu_util_after": 0
+    },
+    {
+     "arm": "ssperi3",
+     "cpu_busy_permille": 0,
+     "gpu_util_before": 0,
+     "gpu_util_after": 0
+    },
+    {
+     "arm": "speri3+sbra3",
+     "cpu_busy_permille": 0,
+     "gpu_util_before": 0,
+     "gpu_util_after": 0
+    },
+    {
+     "arm": "ssperi3",
+     "cpu_busy_permille": 0,
+     "gpu_util_before": 0,
+     "gpu_util_after": 0
+    },
+    {
+     "arm": "speri3+sbra3",
+     "cpu_busy_permille": 0,
+     "gpu_util_before": 0,
+     "gpu_util_after": 0
+    }
+   ],
+   "gate_discarded_runs": 0,
+   "arms": {
+    "ssperi3": {
+     "median_ns": 31168,
+     "q1_ns": 31104,
+     "q3_ns": 32160,
+     "n": 21
+    },
+    "speri3+sbra3": {
+     "median_ns": 38112,
+     "q1_ns": 37952,
+     "q3_ns": 38688,
+     "n": 21
+    }
+   },
+   "two_pass_launches": {
+    "speri3": {
+     "median_ns": 29728,
+     "q1_ns": 29472,
+     "q3_ns": 30016,
+     "n": 21
+    },
+    "sbra3": {
+     "median_ns": 5344,
+     "q1_ns": 5280,
+     "q3_ns": 5408,
+     "n": 21
+    }
+   },
+   "witness_rel": 0.0,
+   "fused_over_two_pass": 0.8178,
+   "verdict": "faster"
+  },
+  {
+   "arch": "sm_90",
+   "toolchain": "nvcc 13.0",
+   "gpu": "NVIDIA GH200 480GB",
+   "host": "c1fe91bda5a6 (container)",
+   "date": "2026-11-21",
+   "am": [
+    0,
+    0,
+    6
+   ],
+   "unit": "ssperi3_006",
+   "n_aux": 832,
+   "n_pair": 136,
+   "n_cell": 8704,
+   "n_bra_rec": 544,
+   "cartesian_doubles": 113152,
+   "spherical_doubles": 113152,
+   "rounds": 3,
+   "warmup": 2,
+   "repeats": 7,
+   "gate": [
+    {
+     "arm": "ssperi3",
+     "cpu_busy_permille": 0,
+     "gpu_util_before": 1,
+     "gpu_util_after": 0
+    },
+    {
+     "arm": "speri3+sbra3",
+     "cpu_busy_permille": 0,
+     "gpu_util_before": 0,
+     "gpu_util_after": 0
+    },
+    {
+     "arm": "ssperi3",
+     "cpu_busy_permille": 0,
+     "gpu_util_before": 0,
+     "gpu_util_after": 0
+    },
+    {
+     "arm": "speri3+sbra3",
+     "cpu_busy_permille": 0,
+     "gpu_util_before": 0,
+     "gpu_util_after": 0
+    },
+    {
+     "arm": "ssperi3",
+     "cpu_busy_permille": 0,
+     "gpu_util_before": 0,
+     "gpu_util_after": 0
+    },
+    {
+     "arm": "speri3+sbra3",
+     "cpu_busy_permille": 0,
+     "gpu_util_before": 0,
+     "gpu_util_after": 0
+    }
+   ],
+   "gate_discarded_runs": 0,
+   "arms": {
+    "ssperi3": {
+     "median_ns": 32608,
+     "q1_ns": 32096,
+     "q3_ns": 33024,
+     "n": 21
+    },
+    "speri3+sbra3": {
+     "median_ns": 39904,
+     "q1_ns": 39744,
+     "q3_ns": 40288,
+     "n": 21
+    }
+   },
+   "two_pass_launches": {
+    "speri3": {
+     "median_ns": 31072,
+     "q1_ns": 30944,
+     "q3_ns": 31424,
+     "n": 21
+    },
+    "sbra3": {
+     "median_ns": 5664,
+     "q1_ns": 5664,
+     "q3_ns": 5728,
+     "n": 21
+    }
+   },
+   "witness_rel": 0.0,
+   "fused_over_two_pass": 0.8172,
+   "verdict": "faster"
+  },
+  {
+   "arch": "sm_90",
+   "toolchain": "nvcc 13.0",
+   "gpu": "NVIDIA GH200 480GB",
+   "host": "c1fe91bda5a6 (container)",
+   "date": "2026-11-21",
+   "am": [
+    0,
+    1,
+    0
+   ],
+   "unit": "ssperi3_010",
+   "n_aux": 64,
+   "n_pair": 144,
+   "n_cell": 9216,
+   "n_bra_rec": 576,
+   "cartesian_doubles": 27648,
+   "spherical_doubles": 27648,
+   "rounds": 3,
+   "warmup": 2,
+   "repeats": 7,
+   "gate": [
+    {
+     "arm": "ssperi3",
+     "cpu_busy_permille": 2,
+     "gpu_util_before": 2,
+     "gpu_util_after": 0
+    },
+    {
+     "arm": "speri3+sbra3",
+     "cpu_busy_permille": 0,
+     "gpu_util_before": 0,
+     "gpu_util_after": 0
+    },
+    {
+     "arm": "ssperi3",
+     "cpu_busy_permille": 0,
+     "gpu_util_before": 0,
+     "gpu_util_after": 0
+    },
+    {
+     "arm": "speri3+sbra3",
+     "cpu_busy_permille": 10,
+     "gpu_util_before": 0,
+     "gpu_util_after": 0
+    },
+    {
+     "arm": "ssperi3",
+     "cpu_busy_permille": 12,
+     "gpu_util_before": 0,
+     "gpu_util_after": 0
+    },
+    {
+     "arm": "speri3+sbra3",
+     "cpu_busy_permille": 0,
+     "gpu_util_before": 0,
+     "gpu_util_after": 0
+    }
+   ],
+   "gate_discarded_runs": 0,
+   "arms": {
+    "ssperi3": {
+     "median_ns": 26880,
+     "q1_ns": 26592,
+     "q3_ns": 27296,
+     "n": 21
+    },
+    "speri3+sbra3": {
+     "median_ns": 32320,
+     "q1_ns": 32160,
+     "q3_ns": 32544,
+     "n": 21
+    }
+   },
+   "two_pass_launches": {
+    "speri3": {
+     "median_ns": 25696,
+     "q1_ns": 25440,
+     "q3_ns": 25856,
+     "n": 21
+    },
+    "sbra3": {
+     "median_ns": 3648,
+     "q1_ns": 3584,
+     "q3_ns": 3744,
+     "n": 21
+    }
+   },
+   "witness_rel": 0.0,
+   "fused_over_two_pass": 0.8317,
+   "verdict": "faster"
+  },
+  {
+   "arch": "sm_90",
+   "toolchain": "nvcc 13.0",
+   "gpu": "NVIDIA GH200 480GB",
+   "host": "c1fe91bda5a6 (container)",
+   "date": "2026-11-21",
+   "am": [
+    0,
+    1,
+    1
+   ],
+   "unit": "ssperi3_011",
+   "n_aux": 192,
+   "n_pair": 144,
+   "n_cell": 9216,
+   "n_bra_rec": 576,
+   "cartesian_doubles": 82944,
+   "spherical_doubles": 82944,
+   "rounds": 3,
+   "warmup": 2,
+   "repeats": 7,
+   "gate": [
+    {
+     "arm": "ssperi3",
+     "cpu_busy_permille": 0,
+     "gpu_util_before": 3,
+     "gpu_util_after": 0
+    },
+    {
+     "arm": "speri3+sbra3",
+     "cpu_busy_permille": 0,
+     "gpu_util_before": 0,
+     "gpu_util_after": 0
+    },
+    {
+     "arm": "ssperi3",
+     "cpu_busy_permille": 0,
+     "gpu_util_before": 0,
+     "gpu_util_after": 0
+    },
+    {
+     "arm": "speri3+sbra3",
+     "cpu_busy_permille": 0,
+     "gpu_util_before": 0,
+     "gpu_util_after": 0
+    },
+    {
+     "arm": "ssperi3",
+     "cpu_busy_permille": 0,
+     "gpu_util_before": 0,
+     "gpu_util_after": 0
+    },
+    {
+     "arm": "speri3+sbra3",
+     "cpu_busy_permille": 1,
+     "gpu_util_before": 0,
+     "gpu_util_after": 0
+    }
+   ],
+   "gate_discarded_runs": 0,
+   "arms": {
+    "ssperi3": {
+     "median_ns": 29376,
+     "q1_ns": 28736,
+     "q3_ns": 29536,
+     "n": 21
+    },
+    "speri3+sbra3": {
+     "median_ns": 34976,
+     "q1_ns": 34624,
+     "q3_ns": 35328,
+     "n": 21
+    }
+   },
+   "two_pass_launches": {
+    "speri3": {
+     "median_ns": 27968,
+     "q1_ns": 27648,
+     "q3_ns": 28256,
+     "n": 21
+    },
+    "sbra3": {
+     "median_ns": 4000,
+     "q1_ns": 4000,
+     "q3_ns": 4192,
+     "n": 21
+    }
+   },
+   "witness_rel": 0.0,
+   "fused_over_two_pass": 0.8399,
+   "verdict": "faster"
+  },
+  {
+   "arch": "sm_90",
+   "toolchain": "nvcc 13.0",
+   "gpu": "NVIDIA GH200 480GB",
+   "host": "c1fe91bda5a6 (container)",
+   "date": "2026-11-21",
+   "am": [
+    0,
+    1,
+    2
+   ],
+   "unit": "ssperi3_012",
+   "n_aux": 320,
+   "n_pair": 144,
+   "n_cell": 9216,
+   "n_bra_rec": 576,
+   "cartesian_doubles": 138240,
+   "spherical_doubles": 138240,
+   "rounds": 3,
+   "warmup": 2,
+   "repeats": 7,
+   "gate": [
+    {
+     "arm": "ssperi3",
+     "cpu_busy_permille": 0,
+     "gpu_util_before": 3,
+     "gpu_util_after": 0
+    },
+    {
+     "arm": "speri3+sbra3",
+     "cpu_busy_permille": 0,
+     "gpu_util_before": 0,
+     "gpu_util_after": 0
+    },
+    {
+     "arm": "ssperi3",
+     "cpu_busy_permille": 0,
+     "gpu_util_before": 0,
+     "gpu_util_after": 0
+    },
+    {
+     "arm": "speri3+sbra3",
+     "cpu_busy_permille": 0,
+     "gpu_util_before": 0,
+     "gpu_util_after": 0
+    },
+    {
+     "arm": "ssperi3",
+     "cpu_busy_permille": 0,
+     "gpu_util_before": 0,
+     "gpu_util_after": 0
+    },
+    {
+     "arm": "speri3+sbra3",
+     "cpu_busy_permille": 0,
+     "gpu_util_before": 0,
+     "gpu_util_after": 0
+    }
+   ],
+   "gate_discarded_runs": 0,
+   "arms": {
+    "ssperi3": {
+     "median_ns": 32448,
+     "q1_ns": 32064,
+     "q3_ns": 32992,
+     "n": 21
+    },
+    "speri3+sbra3": {
+     "median_ns": 39168,
+     "q1_ns": 38592,
+     "q3_ns": 39520,
+     "n": 21
+    }
+   },
+   "two_pass_launches": {
+    "speri3": {
+     "median_ns": 31360,
+     "q1_ns": 31296,
+     "q3_ns": 32000,
+     "n": 21
+    },
+    "sbra3": {
+     "median_ns": 4512,
+     "q1_ns": 4352,
+     "q3_ns": 4608,
+     "n": 21
+    }
+   },
+   "witness_rel": 0.0,
+   "fused_over_two_pass": 0.8284,
+   "verdict": "faster"
+  },
+  {
+   "arch": "sm_90",
+   "toolchain": "nvcc 13.0",
+   "gpu": "NVIDIA GH200 480GB",
+   "host": "c1fe91bda5a6 (container)",
+   "date": "2026-11-21",
+   "am": [
+    0,
+    1,
+    3
+   ],
+   "unit": "ssperi3_013",
+   "n_aux": 448,
+   "n_pair": 144,
+   "n_cell": 9216,
+   "n_bra_rec": 576,
+   "cartesian_doubles": 193536,
+   "spherical_doubles": 193536,
+   "rounds": 3,
+   "warmup": 2,
+   "repeats": 7,
+   "gate": [
+    {
+     "arm": "ssperi3",
+     "cpu_busy_permille": 0,
+     "gpu_util_before": 3,
+     "gpu_util_after": 0
+    },
+    {
+     "arm": "speri3+sbra3",
+     "cpu_busy_permille": 0,
+     "gpu_util_before": 0,
+     "gpu_util_after": 0
+    },
+    {
+     "arm": "ssperi3",
+     "cpu_busy_permille": 0,
+     "gpu_util_before": 0,
+     "gpu_util_after": 0
+    },
+    {
+     "arm": "speri3+sbra3",
+     "cpu_busy_permille": 0,
+     "gpu_util_before": 0,
+     "gpu_util_after": 0
+    },
+    {
+     "arm": "ssperi3",
+     "cpu_busy_permille": 0,
+     "gpu_util_before": 0,
+     "gpu_util_after": 0
+    },
+    {
+     "arm": "speri3+sbra3",
+     "cpu_busy_permille": 0,
+     "gpu_util_before": 0,
+     "gpu_util_after": 0
+    }
+   ],
+   "gate_discarded_runs": 0,
+   "arms": {
+    "ssperi3": {
+     "median_ns": 35424,
+     "q1_ns": 35104,
+     "q3_ns": 35840,
+     "n": 21
+    },
+    "speri3+sbra3": {
+     "median_ns": 41664,
+     "q1_ns": 41344,
+     "q3_ns": 42272,
+     "n": 21
+    }
+   },
+   "two_pass_launches": {
+    "speri3": {
+     "median_ns": 33664,
+     "q1_ns": 33344,
+     "q3_ns": 34496,
+     "n": 21
+    },
+    "sbra3": {
+     "median_ns": 4864,
+     "q1_ns": 4832,
+     "q3_ns": 4864,
+     "n": 21
+    }
+   },
+   "witness_rel": 0.0,
+   "fused_over_two_pass": 0.8502,
+   "verdict": "faster"
+  },
+  {
+   "arch": "sm_90",
+   "toolchain": "nvcc 13.0",
+   "gpu": "NVIDIA GH200 480GB",
+   "host": "c1fe91bda5a6 (container)",
+   "date": "2026-11-21",
+   "am": [
+    0,
+    1,
+    4
+   ],
+   "unit": "ssperi3_014",
+   "n_aux": 576,
+   "n_pair": 144,
+   "n_cell": 9216,
+   "n_bra_rec": 576,
+   "cartesian_doubles": 248832,
+   "spherical_doubles": 248832,
+   "rounds": 3,
+   "warmup": 2,
+   "repeats": 7,
+   "gate": [
+    {
+     "arm": "ssperi3",
+     "cpu_busy_permille": 0,
+     "gpu_util_before": 1,
+     "gpu_util_after": 0
+    },
+    {
+     "arm": "speri3+sbra3",
+     "cpu_busy_permille": 0,
+     "gpu_util_before": 0,
+     "gpu_util_after": 0
+    },
+    {
+     "arm": "ssperi3",
+     "cpu_busy_permille": 1,
+     "gpu_util_before": 0,
+     "gpu_util_after": 0
+    },
+    {
+     "arm": "speri3+sbra3",
+     "cpu_busy_permille": 0,
+     "gpu_util_before": 0,
+     "gpu_util_after": 0
+    },
+    {
+     "arm": "ssperi3",
+     "cpu_busy_permille": 0,
+     "gpu_util_before": 0,
+     "gpu_util_after": 0
+    },
+    {
+     "arm": "speri3+sbra3",
+     "cpu_busy_permille": 0,
+     "gpu_util_before": 0,
+     "gpu_util_after": 0
+    }
+   ],
+   "gate_discarded_runs": 0,
+   "arms": {
+    "ssperi3": {
+     "median_ns": 40064,
+     "q1_ns": 39776,
+     "q3_ns": 40384,
+     "n": 21
+    },
+    "speri3+sbra3": {
+     "median_ns": 46656,
+     "q1_ns": 46432,
+     "q3_ns": 46944,
+     "n": 21
+    }
+   },
+   "two_pass_launches": {
+    "speri3": {
+     "median_ns": 38624,
+     "q1_ns": 38144,
+     "q3_ns": 38848,
+     "n": 21
+    },
+    "sbra3": {
+     "median_ns": 5120,
+     "q1_ns": 5120,
+     "q3_ns": 5152,
+     "n": 21
+    }
+   },
+   "witness_rel": 0.0,
+   "fused_over_two_pass": 0.8587,
+   "verdict": "faster"
+  },
+  {
+   "arch": "sm_90",
+   "toolchain": "nvcc 13.0",
+   "gpu": "NVIDIA GH200 480GB",
+   "host": "c1fe91bda5a6 (container)",
+   "date": "2026-11-21",
+   "am": [
+    0,
+    1,
+    5
+   ],
+   "unit": "ssperi3_015",
+   "n_aux": 704,
+   "n_pair": 144,
+   "n_cell": 9216,
+   "n_bra_rec": 576,
+   "cartesian_doubles": 304128,
+   "spherical_doubles": 304128,
+   "rounds": 3,
+   "warmup": 2,
+   "repeats": 7,
+   "gate": [
+    {
+     "arm": "ssperi3",
+     "cpu_busy_permille": 0,
+     "gpu_util_before": 1,
+     "gpu_util_after": 0
+    },
+    {
+     "arm": "speri3+sbra3",
+     "cpu_busy_permille": 0,
+     "gpu_util_before": 0,
+     "gpu_util_after": 0
+    },
+    {
+     "arm": "ssperi3",
+     "cpu_busy_permille": 0,
+     "gpu_util_before": 0,
+     "gpu_util_after": 0
+    },
+    {
+     "arm": "speri3+sbra3",
+     "cpu_busy_permille": 0,
+     "gpu_util_before": 0,
+     "gpu_util_after": 0
+    },
+    {
+     "arm": "ssperi3",
+     "cpu_busy_permille": 0,
+     "gpu_util_before": 0,
+     "gpu_util_after": 0
+    },
+    {
+     "arm": "speri3+sbra3",
+     "cpu_busy_permille": 0,
+     "gpu_util_before": 0,
+     "gpu_util_after": 0
+    }
+   ],
+   "gate_discarded_runs": 0,
+   "arms": {
+    "ssperi3": {
+     "median_ns": 44064,
+     "q1_ns": 43104,
+     "q3_ns": 44672,
+     "n": 21
+    },
+    "speri3+sbra3": {
+     "median_ns": 50880,
+     "q1_ns": 50592,
+     "q3_ns": 50944,
+     "n": 21
+    }
+   },
+   "two_pass_launches": {
+    "speri3": {
+     "median_ns": 42112,
+     "q1_ns": 41856,
+     "q3_ns": 42336,
+     "n": 21
+    },
+    "sbra3": {
+     "median_ns": 5632,
+     "q1_ns": 5600,
+     "q3_ns": 5696,
+     "n": 21
+    }
+   },
+   "witness_rel": 0.0,
+   "fused_over_two_pass": 0.866,
+   "verdict": "faster"
+  },
+  {
+   "arch": "sm_90",
+   "toolchain": "nvcc 13.0",
+   "gpu": "NVIDIA GH200 480GB",
+   "host": "c1fe91bda5a6 (container)",
+   "date": "2026-11-21",
+   "am": [
+    0,
+    1,
+    6
+   ],
+   "unit": "ssperi3_016",
+   "n_aux": 832,
+   "n_pair": 144,
+   "n_cell": 9216,
+   "n_bra_rec": 576,
+   "cartesian_doubles": 359424,
+   "spherical_doubles": 359424,
+   "rounds": 3,
+   "warmup": 2,
+   "repeats": 7,
+   "gate": [
+    {
+     "arm": "ssperi3",
+     "cpu_busy_permille": 0,
+     "gpu_util_before": 1,
+     "gpu_util_after": 0
+    },
+    {
+     "arm": "speri3+sbra3",
+     "cpu_busy_permille": 0,
+     "gpu_util_before": 0,
+     "gpu_util_after": 0
+    },
+    {
+     "arm": "ssperi3",
+     "cpu_busy_permille": 0,
+     "gpu_util_before": 0,
+     "gpu_util_after": 0
+    },
+    {
+     "arm": "speri3+sbra3",
+     "cpu_busy_permille": 0,
+     "gpu_util_before": 0,
+     "gpu_util_after": 0
+    },
+    {
+     "arm": "ssperi3",
+     "cpu_busy_permille": 0,
+     "gpu_util_before": 0,
+     "gpu_util_after": 0
+    },
+    {
+     "arm": "speri3+sbra3",
+     "cpu_busy_permille": 0,
+     "gpu_util_before": 0,
+     "gpu_util_after": 0
+    }
+   ],
+   "gate_discarded_runs": 0,
+   "arms": {
+    "ssperi3": {
+     "median_ns": 47008,
+     "q1_ns": 46432,
+     "q3_ns": 48544,
+     "n": 21
+    },
+    "speri3+sbra3": {
+     "median_ns": 54560,
+     "q1_ns": 54400,
+     "q3_ns": 55488,
+     "n": 21
+    }
+   },
+   "two_pass_launches": {
+    "speri3": {
+     "median_ns": 45760,
+     "q1_ns": 45440,
+     "q3_ns": 46752,
+     "n": 21
+    },
+    "sbra3": {
+     "median_ns": 5952,
+     "q1_ns": 5824,
+     "q3_ns": 5984,
+     "n": 21
+    }
+   },
+   "witness_rel": 0.0,
+   "fused_over_two_pass": 0.8616,
+   "verdict": "faster"
+  },
+  {
+   "arch": "sm_90",
+   "toolchain": "nvcc 13.0",
+   "gpu": "NVIDIA GH200 480GB",
+   "host": "c1fe91bda5a6 (container)",
+   "date": "2026-11-21",
+   "am": [
+    0,
+    2,
+    0
+   ],
+   "unit": "ssperi3_020",
+   "n_aux": 64,
+   "n_pair": 144,
+   "n_cell": 9216,
+   "n_bra_rec": 576,
+   "cartesian_doubles": 55296,
+   "spherical_doubles": 46080,
+   "rounds": 3,
+   "warmup": 2,
+   "repeats": 7,
+   "gate": [
+    {
+     "arm": "ssperi3",
+     "cpu_busy_permille": 0,
+     "gpu_util_before": 3,
+     "gpu_util_after": 0
+    },
+    {
+     "arm": "speri3+sbra3",
+     "cpu_busy_permille": 0,
+     "gpu_util_before": 0,
+     "gpu_util_after": 0
+    },
+    {
+     "arm": "ssperi3",
+     "cpu_busy_permille": 0,
+     "gpu_util_before": 0,
+     "gpu_util_after": 0
+    },
+    {
+     "arm": "speri3+sbra3",
+     "cpu_busy_permille": 0,
+     "gpu_util_before": 0,
+     "gpu_util_after": 0
+    },
+    {
+     "arm": "ssperi3",
+     "cpu_busy_permille": 0,
+     "gpu_util_before": 0,
+     "gpu_util_after": 0
+    },
+    {
+     "arm": "speri3+sbra3",
+     "cpu_busy_permille": 0,
+     "gpu_util_before": 0,
+     "gpu_util_after": 0
+    }
+   ],
+   "gate_discarded_runs": 0,
+   "arms": {
+    "ssperi3": {
+     "median_ns": 29120,
+     "q1_ns": 28608,
+     "q3_ns": 29408,
+     "n": 21
+    },
+    "speri3+sbra3": {
+     "median_ns": 34496,
+     "q1_ns": 34336,
+     "q3_ns": 34880,
+     "n": 21
+    }
+   },
+   "two_pass_launches": {
+    "speri3": {
+     "median_ns": 27840,
+     "q1_ns": 27744,
+     "q3_ns": 28128,
+     "n": 21
+    },
+    "sbra3": {
+     "median_ns": 3680,
+     "q1_ns": 3648,
+     "q3_ns": 3680,
+     "n": 21
+    }
+   },
+   "witness_rel": 3.8850259913765796e-16,
+   "fused_over_two_pass": 0.8442,
+   "verdict": "faster"
+  },
+  {
+   "arch": "sm_90",
+   "toolchain": "nvcc 13.0",
+   "gpu": "NVIDIA GH200 480GB",
+   "host": "c1fe91bda5a6 (container)",
+   "date": "2026-11-21",
+   "am": [
+    0,
+    2,
+    1
+   ],
+   "unit": "ssperi3_021",
+   "n_aux": 192,
+   "n_pair": 144,
+   "n_cell": 9216,
+   "n_bra_rec": 576,
+   "cartesian_doubles": 165888,
+   "spherical_doubles": 138240,
+   "rounds": 3,
+   "warmup": 2,
+   "repeats": 7,
+   "gate": [
+    {
+     "arm": "ssperi3",
+     "cpu_busy_permille": 0,
+     "gpu_util_before": 1,
+     "gpu_util_after": 0
+    },
+    {
+     "arm": "speri3+sbra3",
+     "cpu_busy_permille": 1,
+     "gpu_util_before": 0,
+     "gpu_util_after": 0
+    },
+    {
+     "arm": "ssperi3",
+     "cpu_busy_permille": 0,
+     "gpu_util_before": 0,
+     "gpu_util_after": 0
+    },
+    {
+     "arm": "speri3+sbra3",
+     "cpu_busy_permille": 0,
+     "gpu_util_before": 0,
+     "gpu_util_after": 0
+    },
+    {
+     "arm": "ssperi3",
+     "cpu_busy_permille": 0,
+     "gpu_util_before": 0,
+     "gpu_util_after": 0
+    },
+    {
+     "arm": "speri3+sbra3",
+     "cpu_busy_permille": 0,
+     "gpu_util_before": 0,
+     "gpu_util_after": 0
+    }
+   ],
+   "gate_discarded_runs": 0,
+   "arms": {
+    "ssperi3": {
+     "median_ns": 31136,
+     "q1_ns": 30752,
+     "q3_ns": 31456,
+     "n": 21
+    },
+    "speri3+sbra3": {
+     "median_ns": 37504,
+     "q1_ns": 37152,
+     "q3_ns": 37760,
+     "n": 21
+    }
+   },
+   "two_pass_launches": {
+    "speri3": {
+     "median_ns": 30272,
+     "q1_ns": 29920,
+     "q3_ns": 30592,
+     "n": 21
+    },
+    "sbra3": {
+     "median_ns": 4192,
+     "q1_ns": 4064,
+     "q3_ns": 4224,
+     "n": 21
+    }
+   },
+   "witness_rel": 2.1634635379100807e-16,
+   "fused_over_two_pass": 0.8302,
+   "verdict": "faster"
+  },
+  {
+   "arch": "sm_90",
+   "toolchain": "nvcc 13.0",
+   "gpu": "NVIDIA GH200 480GB",
+   "host": "c1fe91bda5a6 (container)",
+   "date": "2026-11-21",
+   "am": [
+    0,
+    2,
+    2
+   ],
+   "unit": "ssperi3_022",
+   "n_aux": 320,
+   "n_pair": 144,
+   "n_cell": 9216,
+   "n_bra_rec": 576,
+   "cartesian_doubles": 276480,
+   "spherical_doubles": 230400,
+   "rounds": 3,
+   "warmup": 2,
+   "repeats": 7,
+   "gate": [
+    {
+     "arm": "ssperi3",
+     "cpu_busy_permille": 0,
+     "gpu_util_before": 3,
+     "gpu_util_after": 0
+    },
+    {
+     "arm": "speri3+sbra3",
+     "cpu_busy_permille": 0,
+     "gpu_util_before": 0,
+     "gpu_util_after": 0
+    },
+    {
+     "arm": "ssperi3",
+     "cpu_busy_permille": 0,
+     "gpu_util_before": 0,
+     "gpu_util_after": 0
+    },
+    {
+     "arm": "speri3+sbra3",
+     "cpu_busy_permille": 0,
+     "gpu_util_before": 0,
+     "gpu_util_after": 0
+    },
+    {
+     "arm": "ssperi3",
+     "cpu_busy_permille": 0,
+     "gpu_util_before": 0,
+     "gpu_util_after": 0
+    },
+    {
+     "arm": "speri3+sbra3",
+     "cpu_busy_permille": 0,
+     "gpu_util_before": 0,
+     "gpu_util_after": 0
+    }
+   ],
+   "gate_discarded_runs": 0,
+   "arms": {
+    "ssperi3": {
+     "median_ns": 37248,
+     "q1_ns": 36928,
+     "q3_ns": 37536,
+     "n": 21
+    },
+    "speri3+sbra3": {
+     "median_ns": 45248,
+     "q1_ns": 44832,
+     "q3_ns": 46080,
+     "n": 21
+    }
+   },
+   "two_pass_launches": {
+    "speri3": {
+     "median_ns": 37536,
+     "q1_ns": 37344,
+     "q3_ns": 38912,
+     "n": 21
+    },
+    "sbra3": {
+     "median_ns": 4576,
+     "q1_ns": 4448,
+     "q3_ns": 4576,
+     "n": 21
+    }
+   },
+   "witness_rel": 1.4803149810830044e-16,
+   "fused_over_two_pass": 0.8232,
+   "verdict": "faster"
+  },
+  {
+   "arch": "sm_90",
+   "toolchain": "nvcc 13.0",
+   "gpu": "NVIDIA GH200 480GB",
+   "host": "c1fe91bda5a6 (container)",
+   "date": "2026-11-21",
+   "am": [
+    0,
+    2,
+    3
+   ],
+   "unit": "ssperi3_023",
+   "n_aux": 448,
+   "n_pair": 144,
+   "n_cell": 9216,
+   "n_bra_rec": 576,
+   "cartesian_doubles": 387072,
+   "spherical_doubles": 322560,
+   "rounds": 3,
+   "warmup": 2,
+   "repeats": 7,
+   "gate": [
+    {
+     "arm": "ssperi3",
+     "cpu_busy_permille": 0,
+     "gpu_util_before": 3,
+     "gpu_util_after": 0
+    },
+    {
+     "arm": "speri3+sbra3",
+     "cpu_busy_permille": 0,
+     "gpu_util_before": 0,
+     "gpu_util_after": 0
+    },
+    {
+     "arm": "ssperi3",
+     "cpu_busy_permille": 0,
+     "gpu_util_before": 0,
+     "gpu_util_after": 0
+    },
+    {
+     "arm": "speri3+sbra3",
+     "cpu_busy_permille": 0,
+     "gpu_util_before": 0,
+     "gpu_util_after": 0
+    },
+    {
+     "arm": "ssperi3",
+     "cpu_busy_permille": 0,
+     "gpu_util_before": 0,
+     "gpu_util_after": 0
+    },
+    {
+     "arm": "speri3+sbra3",
+     "cpu_busy_permille": 0,
+     "gpu_util_before": 0,
+     "gpu_util_after": 0
+    }
+   ],
+   "gate_discarded_runs": 0,
+   "arms": {
+    "ssperi3": {
+     "median_ns": 41760,
+     "q1_ns": 41248,
+     "q3_ns": 42560,
+     "n": 21
+    },
+    "speri3+sbra3": {
+     "median_ns": 50976,
+     "q1_ns": 49888,
+     "q3_ns": 51712,
+     "n": 21
+    }
+   },
+   "two_pass_launches": {
+    "speri3": {
+     "median_ns": 43040,
+     "q1_ns": 41984,
+     "q3_ns": 43904,
+     "n": 21
+    },
+    "sbra3": {
+     "median_ns": 4960,
+     "q1_ns": 4768,
+     "q3_ns": 5024,
+     "n": 21
+    }
+   },
+   "witness_rel": 2.411325798198419e-16,
+   "fused_over_two_pass": 0.8192,
+   "verdict": "faster"
+  },
+  {
+   "arch": "sm_90",
+   "toolchain": "nvcc 13.0",
+   "gpu": "NVIDIA GH200 480GB",
+   "host": "c1fe91bda5a6 (container)",
+   "date": "2026-11-21",
+   "am": [
+    0,
+    2,
+    4
+   ],
+   "unit": "ssperi3_024",
+   "n_aux": 576,
+   "n_pair": 144,
+   "n_cell": 9216,
+   "n_bra_rec": 576,
+   "cartesian_doubles": 497664,
+   "spherical_doubles": 414720,
+   "rounds": 3,
+   "warmup": 2,
+   "repeats": 7,
+   "gate": [
+    {
+     "arm": "ssperi3",
+     "cpu_busy_permille": 0,
+     "gpu_util_before": 1,
+     "gpu_util_after": 0
+    },
+    {
+     "arm": "speri3+sbra3",
+     "cpu_busy_permille": 0,
+     "gpu_util_before": 0,
+     "gpu_util_after": 0
+    },
+    {
+     "arm": "ssperi3",
+     "cpu_busy_permille": 0,
+     "gpu_util_before": 0,
+     "gpu_util_after": 0
+    },
+    {
+     "arm": "speri3+sbra3",
+     "cpu_busy_permille": 0,
+     "gpu_util_before": 0,
+     "gpu_util_after": 0
+    },
+    {
+     "arm": "ssperi3",
+     "cpu_busy_permille": 0,
+     "gpu_util_before": 0,
+     "gpu_util_after": 0
+    },
+    {
+     "arm": "speri3+sbra3",
+     "cpu_busy_permille": 0,
+     "gpu_util_before": 0,
+     "gpu_util_after": 0
+    }
+   ],
+   "gate_discarded_runs": 0,
+   "arms": {
+    "ssperi3": {
+     "median_ns": 48608,
+     "q1_ns": 48224,
+     "q3_ns": 49600,
+     "n": 21
+    },
+    "speri3+sbra3": {
+     "median_ns": 58720,
+     "q1_ns": 58496,
+     "q3_ns": 59072,
+     "n": 21
+    }
+   },
+   "two_pass_launches": {
+    "speri3": {
+     "median_ns": 50464,
+     "q1_ns": 50080,
+     "q3_ns": 51040,
+     "n": 21
+    },
+    "sbra3": {
+     "median_ns": 5280,
+     "q1_ns": 5248,
+     "q3_ns": 5312,
+     "n": 21
+    }
+   },
+   "witness_rel": 1.538614197222593e-16,
+   "fused_over_two_pass": 0.8278,
+   "verdict": "faster"
+  },
+  {
+   "arch": "sm_90",
+   "toolchain": "nvcc 13.0",
+   "gpu": "NVIDIA GH200 480GB",
+   "host": "c1fe91bda5a6 (container)",
+   "date": "2026-11-21",
+   "am": [
+    0,
+    2,
+    5
+   ],
+   "unit": "ssperi3_025",
+   "n_aux": 704,
+   "n_pair": 144,
+   "n_cell": 9216,
+   "n_bra_rec": 576,
+   "cartesian_doubles": 608256,
+   "spherical_doubles": 506880,
+   "rounds": 3,
+   "warmup": 2,
+   "repeats": 7,
+   "gate": [
+    {
+     "arm": "ssperi3",
+     "cpu_busy_permille": 0,
+     "gpu_util_before": 3,
+     "gpu_util_after": 0
+    },
+    {
+     "arm": "speri3+sbra3",
+     "cpu_busy_permille": 0,
+     "gpu_util_before": 0,
+     "gpu_util_after": 0
+    },
+    {
+     "arm": "ssperi3",
+     "cpu_busy_permille": 0,
+     "gpu_util_before": 0,
+     "gpu_util_after": 0
+    },
+    {
+     "arm": "speri3+sbra3",
+     "cpu_busy_permille": 0,
+     "gpu_util_before": 0,
+     "gpu_util_after": 0
+    },
+    {
+     "arm": "ssperi3",
+     "cpu_busy_permille": 0,
+     "gpu_util_before": 0,
+     "gpu_util_after": 0
+    },
+    {
+     "arm": "speri3+sbra3",
+     "cpu_busy_permille": 0,
+     "gpu_util_before": 0,
+     "gpu_util_after": 0
+    }
+   ],
+   "gate_discarded_runs": 0,
+   "arms": {
+    "ssperi3": {
+     "median_ns": 56384,
+     "q1_ns": 55872,
+     "q3_ns": 57216,
+     "n": 21
+    },
+    "speri3+sbra3": {
+     "median_ns": 68320,
+     "q1_ns": 67552,
+     "q3_ns": 69024,
+     "n": 21
+    }
+   },
+   "two_pass_launches": {
+    "speri3": {
+     "median_ns": 59776,
+     "q1_ns": 59072,
+     "q3_ns": 60320,
+     "n": 21
+    },
+    "sbra3": {
+     "median_ns": 5696,
+     "q1_ns": 5600,
+     "q3_ns": 5728,
+     "n": 21
+    }
+   },
+   "witness_rel": 1.5579838102864842e-16,
+   "fused_over_two_pass": 0.8253,
+   "verdict": "faster"
+  },
+  {
+   "arch": "sm_90",
+   "toolchain": "nvcc 13.0",
+   "gpu": "NVIDIA GH200 480GB",
+   "host": "c1fe91bda5a6 (container)",
+   "date": "2026-11-21",
+   "am": [
+    0,
+    2,
+    6
+   ],
+   "unit": "ssperi3_026",
+   "n_aux": 832,
+   "n_pair": 144,
+   "n_cell": 9216,
+   "n_bra_rec": 576,
+   "cartesian_doubles": 718848,
+   "spherical_doubles": 599040,
+   "rounds": 3,
+   "warmup": 2,
+   "repeats": 7,
+   "gate": [
+    {
+     "arm": "ssperi3",
+     "cpu_busy_permille": 0,
+     "gpu_util_before": 1,
+     "gpu_util_after": 0
+    },
+    {
+     "arm": "speri3+sbra3",
+     "cpu_busy_permille": 0,
+     "gpu_util_before": 0,
+     "gpu_util_after": 0
+    },
+    {
+     "arm": "ssperi3",
+     "cpu_busy_permille": 0,
+     "gpu_util_before": 0,
+     "gpu_util_after": 0
+    },
+    {
+     "arm": "speri3+sbra3",
+     "cpu_busy_permille": 0,
+     "gpu_util_before": 0,
+     "gpu_util_after": 0
+    },
+    {
+     "arm": "ssperi3",
+     "cpu_busy_permille": 0,
+     "gpu_util_before": 0,
+     "gpu_util_after": 0
+    },
+    {
+     "arm": "speri3+sbra3",
+     "cpu_busy_permille": 0,
+     "gpu_util_before": 0,
+     "gpu_util_after": 0
+    }
+   ],
+   "gate_discarded_runs": 0,
+   "arms": {
+    "ssperi3": {
+     "median_ns": 65216,
+     "q1_ns": 64384,
+     "q3_ns": 65760,
+     "n": 21
+    },
+    "speri3+sbra3": {
+     "median_ns": 79936,
+     "q1_ns": 79456,
+     "q3_ns": 80672,
+     "n": 21
+    }
+   },
+   "two_pass_launches": {
+    "speri3": {
+     "median_ns": 70912,
+     "q1_ns": 70176,
+     "q3_ns": 71584,
+     "n": 21
+    },
+    "sbra3": {
+     "median_ns": 6048,
+     "q1_ns": 5984,
+     "q3_ns": 6112,
+     "n": 21
+    }
+   },
+   "witness_rel": 2.5393417850405733e-16,
+   "fused_over_two_pass": 0.8159,
+   "verdict": "faster"
+  },
+  {
+   "arch": "sm_90",
+   "toolchain": "nvcc 13.0",
+   "gpu": "NVIDIA GH200 480GB",
+   "host": "c1fe91bda5a6 (container)",
+   "date": "2026-11-21",
+   "am": [
+    0,
+    3,
+    0
+   ],
+   "unit": "ssperi3_030",
+   "n_aux": 64,
+   "n_pair": 144,
+   "n_cell": 9216,
+   "n_bra_rec": 576,
+   "cartesian_doubles": 92160,
+   "spherical_doubles": 64512,
+   "rounds": 3,
+   "warmup": 2,
+   "repeats": 7,
+   "gate": [
+    {
+     "arm": "ssperi3",
+     "cpu_busy_permille": 0,
+     "gpu_util_before": 3,
+     "gpu_util_after": 0
+    },
+    {
+     "arm": "speri3+sbra3",
+     "cpu_busy_permille": 0,
+     "gpu_util_before": 0,
+     "gpu_util_after": 0
+    },
+    {
+     "arm": "ssperi3",
+     "cpu_busy_permille": 0,
+     "gpu_util_before": 0,
+     "gpu_util_after": 0
+    },
+    {
+     "arm": "speri3+sbra3",
+     "cpu_busy_permille": 0,
+     "gpu_util_before": 0,
+     "gpu_util_after": 0
+    },
+    {
+     "arm": "ssperi3",
+     "cpu_busy_permille": 0,
+     "gpu_util_before": 0,
+     "gpu_util_after": 0
+    },
+    {
+     "arm": "speri3+sbra3",
+     "cpu_busy_permille": 0,
+     "gpu_util_before": 0,
+     "gpu_util_after": 0
+    }
+   ],
+   "gate_discarded_runs": 0,
+   "arms": {
+    "ssperi3": {
+     "median_ns": 29856,
+     "q1_ns": 29440,
+     "q3_ns": 30176,
+     "n": 21
+    },
+    "speri3+sbra3": {
+     "median_ns": 35392,
+     "q1_ns": 35072,
+     "q3_ns": 35520,
+     "n": 21
+    }
+   },
+   "two_pass_launches": {
+    "speri3": {
+     "median_ns": 28608,
+     "q1_ns": 28384,
+     "q3_ns": 28736,
+     "n": 21
+    },
+    "sbra3": {
+     "median_ns": 3808,
+     "q1_ns": 3680,
+     "q3_ns": 3808,
+     "n": 21
+    }
+   },
+   "witness_rel": 3.0783859936926295e-16,
+   "fused_over_two_pass": 0.8436,
+   "verdict": "faster"
+  },
+  {
+   "arch": "sm_90",
+   "toolchain": "nvcc 13.0",
+   "gpu": "NVIDIA GH200 480GB",
+   "host": "c1fe91bda5a6 (container)",
+   "date": "2026-11-21",
+   "am": [
+    0,
+    3,
+    1
+   ],
+   "unit": "ssperi3_031",
+   "n_aux": 192,
+   "n_pair": 144,
+   "n_cell": 9216,
+   "n_bra_rec": 576,
+   "cartesian_doubles": 276480,
+   "spherical_doubles": 193536,
+   "rounds": 3,
+   "warmup": 2,
+   "repeats": 7,
+   "gate": [
+    {
+     "arm": "ssperi3",
+     "cpu_busy_permille": 0,
+     "gpu_util_before": 3,
+     "gpu_util_after": 0
+    },
+    {
+     "arm": "speri3+sbra3",
+     "cpu_busy_permille": 0,
+     "gpu_util_before": 0,
+     "gpu_util_after": 0
+    },
+    {
+     "arm": "ssperi3",
+     "cpu_busy_permille": 0,
+     "gpu_util_before": 0,
+     "gpu_util_after": 0
+    },
+    {
+     "arm": "speri3+sbra3",
+     "cpu_busy_permille": 0,
+     "gpu_util_before": 0,
+     "gpu_util_after": 0
+    },
+    {
+     "arm": "ssperi3",
+     "cpu_busy_permille": 0,
+     "gpu_util_before": 0,
+     "gpu_util_after": 0
+    },
+    {
+     "arm": "speri3+sbra3",
+     "cpu_busy_permille": 0,
+     "gpu_util_before": 0,
+     "gpu_util_after": 0
+    }
+   ],
+   "gate_discarded_runs": 0,
+   "arms": {
+    "ssperi3": {
+     "median_ns": 33280,
+     "q1_ns": 33056,
+     "q3_ns": 33504,
+     "n": 21
+    },
+    "speri3+sbra3": {
+     "median_ns": 40512,
+     "q1_ns": 40416,
+     "q3_ns": 40928,
+     "n": 21
+    }
+   },
+   "two_pass_launches": {
+    "speri3": {
+     "median_ns": 33248,
+     "q1_ns": 33056,
+     "q3_ns": 33856,
+     "n": 21
+    },
+    "sbra3": {
+     "median_ns": 4224,
+     "q1_ns": 4160,
+     "q3_ns": 4256,
+     "n": 21
+    }
+   },
+   "witness_rel": 3.3096153425322495e-16,
+   "fused_over_two_pass": 0.8215,
+   "verdict": "faster"
+  },
+  {
+   "arch": "sm_90",
+   "toolchain": "nvcc 13.0",
+   "gpu": "NVIDIA GH200 480GB",
+   "host": "c1fe91bda5a6 (container)",
+   "date": "2026-11-21",
+   "am": [
+    0,
+    3,
+    2
+   ],
+   "unit": "ssperi3_032",
+   "n_aux": 320,
+   "n_pair": 144,
+   "n_cell": 9216,
+   "n_bra_rec": 576,
+   "cartesian_doubles": 460800,
+   "spherical_doubles": 322560,
+   "rounds": 3,
+   "warmup": 2,
+   "repeats": 7,
+   "gate": [
+    {
+     "arm": "ssperi3",
+     "cpu_busy_permille": 0,
+     "gpu_util_before": 3,
+     "gpu_util_after": 0
+    },
+    {
+     "arm": "speri3+sbra3",
+     "cpu_busy_permille": 0,
+     "gpu_util_before": 0,
+     "gpu_util_after": 0
+    },
+    {
+     "arm": "ssperi3",
+     "cpu_busy_permille": 0,
+     "gpu_util_before": 0,
+     "gpu_util_after": 0
+    },
+    {
+     "arm": "speri3+sbra3",
+     "cpu_busy_permille": 0,
+     "gpu_util_before": 0,
+     "gpu_util_after": 0
+    },
+    {
+     "arm": "ssperi3",
+     "cpu_busy_permille": 0,
+     "gpu_util_before": 0,
+     "gpu_util_after": 0
+    },
+    {
+     "arm": "speri3+sbra3",
+     "cpu_busy_permille": 0,
+     "gpu_util_before": 0,
+     "gpu_util_after": 0
+    }
+   ],
+   "gate_discarded_runs": 0,
+   "arms": {
+    "ssperi3": {
+     "median_ns": 42528,
+     "q1_ns": 42208,
+     "q3_ns": 42752,
+     "n": 21
+    },
+    "speri3+sbra3": {
+     "median_ns": 54016,
+     "q1_ns": 53344,
+     "q3_ns": 54368,
+     "n": 21
+    }
+   },
+   "two_pass_launches": {
+    "speri3": {
+     "median_ns": 46112,
+     "q1_ns": 45888,
+     "q3_ns": 46688,
+     "n": 21
+    },
+    "sbra3": {
+     "median_ns": 4640,
+     "q1_ns": 4608,
+     "q3_ns": 4864,
+     "n": 21
+    }
+   },
+   "witness_rel": 2.3015883180680124e-16,
+   "fused_over_two_pass": 0.7873,
+   "verdict": "faster"
+  },
+  {
+   "arch": "sm_90",
+   "toolchain": "nvcc 13.0",
+   "gpu": "NVIDIA GH200 480GB",
+   "host": "c1fe91bda5a6 (container)",
+   "date": "2026-11-21",
+   "am": [
+    0,
+    3,
+    3
+   ],
+   "unit": "ssperi3_033",
+   "n_aux": 448,
+   "n_pair": 144,
+   "n_cell": 9216,
+   "n_bra_rec": 576,
+   "cartesian_doubles": 645120,
+   "spherical_doubles": 451584,
+   "rounds": 3,
+   "warmup": 2,
+   "repeats": 7,
+   "gate": [
+    {
+     "arm": "ssperi3",
+     "cpu_busy_permille": 0,
+     "gpu_util_before": 3,
+     "gpu_util_after": 0
+    },
+    {
+     "arm": "speri3+sbra3",
+     "cpu_busy_permille": 0,
+     "gpu_util_before": 0,
+     "gpu_util_after": 0
+    },
+    {
+     "arm": "ssperi3",
+     "cpu_busy_permille": 0,
+     "gpu_util_before": 0,
+     "gpu_util_after": 0
+    },
+    {
+     "arm": "speri3+sbra3",
+     "cpu_busy_permille": 0,
+     "gpu_util_before": 0,
+     "gpu_util_after": 0
+    },
+    {
+     "arm": "ssperi3",
+     "cpu_busy_permille": 0,
+     "gpu_util_before": 0,
+     "gpu_util_after": 0
+    },
+    {
+     "arm": "speri3+sbra3",
+     "cpu_busy_permille": 0,
+     "gpu_util_before": 0,
+     "gpu_util_after": 0
+    }
+   ],
+   "gate_discarded_runs": 0,
+   "arms": {
+    "ssperi3": {
+     "median_ns": 50208,
+     "q1_ns": 49856,
+     "q3_ns": 50752,
+     "n": 21
+    },
+    "speri3+sbra3": {
+     "median_ns": 63776,
+     "q1_ns": 63552,
+     "q3_ns": 64576,
+     "n": 21
+    }
+   },
+   "two_pass_launches": {
+    "speri3": {
+     "median_ns": 55936,
+     "q1_ns": 55584,
+     "q3_ns": 56352,
+     "n": 21
+    },
+    "sbra3": {
+     "median_ns": 5088,
+     "q1_ns": 4992,
+     "q3_ns": 5120,
+     "n": 21
+    }
+   },
+   "witness_rel": 1.5718204851242657e-16,
+   "fused_over_two_pass": 0.7873,
+   "verdict": "faster"
+  },
+  {
+   "arch": "sm_90",
+   "toolchain": "nvcc 13.0",
+   "gpu": "NVIDIA GH200 480GB",
+   "host": "c1fe91bda5a6 (container)",
+   "date": "2026-11-21",
+   "am": [
+    0,
+    3,
+    4
+   ],
+   "unit": "ssperi3_034",
+   "n_aux": 576,
+   "n_pair": 144,
+   "n_cell": 9216,
+   "n_bra_rec": 576,
+   "cartesian_doubles": 829440,
+   "spherical_doubles": 580608,
+   "rounds": 3,
+   "warmup": 2,
+   "repeats": 7,
+   "gate": [
+    {
+     "arm": "ssperi3",
+     "cpu_busy_permille": 0,
+     "gpu_util_before": 3,
+     "gpu_util_after": 0
+    },
+    {
+     "arm": "speri3+sbra3",
+     "cpu_busy_permille": 0,
+     "gpu_util_before": 0,
+     "gpu_util_after": 0
+    },
+    {
+     "arm": "ssperi3",
+     "cpu_busy_permille": 0,
+     "gpu_util_before": 0,
+     "gpu_util_after": 0
+    },
+    {
+     "arm": "speri3+sbra3",
+     "cpu_busy_permille": 0,
+     "gpu_util_before": 0,
+     "gpu_util_after": 0
+    },
+    {
+     "arm": "ssperi3",
+     "cpu_busy_permille": 0,
+     "gpu_util_before": 0,
+     "gpu_util_after": 0
+    },
+    {
+     "arm": "speri3+sbra3",
+     "cpu_busy_permille": 0,
+     "gpu_util_before": 0,
+     "gpu_util_after": 0
+    }
+   ],
+   "gate_discarded_runs": 0,
+   "arms": {
+    "ssperi3": {
+     "median_ns": 60992,
+     "q1_ns": 60352,
+     "q3_ns": 62080,
+     "n": 21
+    },
+    "speri3+sbra3": {
+     "median_ns": 85120,
+     "q1_ns": 84544,
+     "q3_ns": 86560,
+     "n": 21
+    }
+   },
+   "two_pass_launches": {
+    "speri3": {
+     "median_ns": 76896,
+     "q1_ns": 75776,
+     "q3_ns": 78176,
+     "n": 21
+    },
+    "sbra3": {
+     "median_ns": 5472,
+     "q1_ns": 5472,
+     "q3_ns": 5536,
+     "n": 21
+    }
+   },
+   "witness_rel": 1.8266944851337601e-16,
+   "fused_over_two_pass": 0.7165,
+   "verdict": "faster"
+  },
+  {
+   "arch": "sm_90",
+   "toolchain": "nvcc 13.0",
+   "gpu": "NVIDIA GH200 480GB",
+   "host": "c1fe91bda5a6 (container)",
+   "date": "2026-11-21",
+   "am": [
+    0,
+    3,
+    5
+   ],
+   "unit": "ssperi3_035",
+   "n_aux": 704,
+   "n_pair": 144,
+   "n_cell": 9216,
+   "n_bra_rec": 576,
+   "cartesian_doubles": 1013760,
+   "spherical_doubles": 709632,
+   "rounds": 3,
+   "warmup": 2,
+   "repeats": 7,
+   "gate": [
+    {
+     "arm": "ssperi3",
+     "cpu_busy_permille": 0,
+     "gpu_util_before": 1,
+     "gpu_util_after": 0
+    },
+    {
+     "arm": "speri3+sbra3",
+     "cpu_busy_permille": 0,
+     "gpu_util_before": 0,
+     "gpu_util_after": 0
+    },
+    {
+     "arm": "ssperi3",
+     "cpu_busy_permille": 0,
+     "gpu_util_before": 0,
+     "gpu_util_after": 0
+    },
+    {
+     "arm": "speri3+sbra3",
+     "cpu_busy_permille": 0,
+     "gpu_util_before": 0,
+     "gpu_util_after": 0
+    },
+    {
+     "arm": "ssperi3",
+     "cpu_busy_permille": 0,
+     "gpu_util_before": 0,
+     "gpu_util_after": 0
+    },
+    {
+     "arm": "speri3+sbra3",
+     "cpu_busy_permille": 0,
+     "gpu_util_before": 0,
+     "gpu_util_after": 0
+    }
+   ],
+   "gate_discarded_runs": 0,
+   "arms": {
+    "ssperi3": {
+     "median_ns": 78112,
+     "q1_ns": 76928,
+     "q3_ns": 79648,
+     "n": 21
+    },
+    "speri3+sbra3": {
+     "median_ns": 112512,
+     "q1_ns": 111392,
+     "q3_ns": 115584,
+     "n": 21
+    }
+   },
+   "two_pass_launches": {
+    "speri3": {
+     "median_ns": 103552,
+     "q1_ns": 102720,
+     "q3_ns": 106880,
+     "n": 21
+    },
+    "sbra3": {
+     "median_ns": 5920,
+     "q1_ns": 5824,
+     "q3_ns": 5920,
+     "n": 21
+    }
+   },
+   "witness_rel": 2.0009221646237813e-16,
+   "fused_over_two_pass": 0.6943,
+   "verdict": "faster"
+  },
+  {
+   "arch": "sm_90",
+   "toolchain": "nvcc 13.0",
+   "gpu": "NVIDIA GH200 480GB",
+   "host": "c1fe91bda5a6 (container)",
+   "date": "2026-11-21",
+   "am": [
+    0,
+    3,
+    6
+   ],
+   "unit": "ssperi3_036",
+   "n_aux": 832,
+   "n_pair": 144,
+   "n_cell": 9216,
+   "n_bra_rec": 576,
+   "cartesian_doubles": 1198080,
+   "spherical_doubles": 838656,
+   "rounds": 3,
+   "warmup": 2,
+   "repeats": 7,
+   "gate": [
+    {
+     "arm": "ssperi3",
+     "cpu_busy_permille": 0,
+     "gpu_util_before": 1,
+     "gpu_util_after": 0
+    },
+    {
+     "arm": "speri3+sbra3",
+     "cpu_busy_permille": 0,
+     "gpu_util_before": 0,
+     "gpu_util_after": 0
+    },
+    {
+     "arm": "ssperi3",
+     "cpu_busy_permille": 0,
+     "gpu_util_before": 0,
+     "gpu_util_after": 0
+    },
+    {
+     "arm": "speri3+sbra3",
+     "cpu_busy_permille": 0,
+     "gpu_util_before": 0,
+     "gpu_util_after": 0
+    },
+    {
+     "arm": "ssperi3",
+     "cpu_busy_permille": 0,
+     "gpu_util_before": 0,
+     "gpu_util_after": 0
+    },
+    {
+     "arm": "speri3+sbra3",
+     "cpu_busy_permille": 0,
+     "gpu_util_before": 0,
+     "gpu_util_after": 0
+    }
+   ],
+   "gate_discarded_runs": 0,
+   "arms": {
+    "ssperi3": {
+     "median_ns": 216832,
+     "q1_ns": 211072,
+     "q3_ns": 221920,
+     "n": 21
+    },
+    "speri3+sbra3": {
+     "median_ns": 289888,
+     "q1_ns": 281888,
+     "q3_ns": 295552,
+     "n": 21
+    }
+   },
+   "two_pass_launches": {
+    "speri3": {
+     "median_ns": 280448,
+     "q1_ns": 272544,
+     "q3_ns": 286432,
+     "n": 21
+    },
+    "sbra3": {
+     "median_ns": 6496,
+     "q1_ns": 6432,
+     "q3_ns": 6560,
+     "n": 21
+    }
+   },
+   "witness_rel": 1.8167296684471542e-16,
+   "fused_over_two_pass": 0.748,
+   "verdict": "faster"
+  },
+  {
+   "arch": "sm_90",
+   "toolchain": "nvcc 13.0",
+   "gpu": "NVIDIA GH200 480GB",
+   "host": "c1fe91bda5a6 (container)",
+   "date": "2026-11-21",
+   "am": [
+    1,
+    1,
+    0
+   ],
+   "unit": "ssperi3_110",
+   "n_aux": 64,
+   "n_pair": 136,
+   "n_cell": 8704,
+   "n_bra_rec": 544,
+   "cartesian_doubles": 78336,
+   "spherical_doubles": 78336,
+   "rounds": 3,
+   "warmup": 2,
+   "repeats": 7,
+   "gate": [
+    {
+     "arm": "ssperi3",
+     "cpu_busy_permille": 0,
+     "gpu_util_before": 3,
+     "gpu_util_after": 0
+    },
+    {
+     "arm": "speri3+sbra3",
+     "cpu_busy_permille": 0,
+     "gpu_util_before": 0,
+     "gpu_util_after": 0
+    },
+    {
+     "arm": "ssperi3",
+     "cpu_busy_permille": 0,
+     "gpu_util_before": 0,
+     "gpu_util_after": 0
+    },
+    {
+     "arm": "speri3+sbra3",
+     "cpu_busy_permille": 0,
+     "gpu_util_before": 0,
+     "gpu_util_after": 0
+    },
+    {
+     "arm": "ssperi3",
+     "cpu_busy_permille": 0,
+     "gpu_util_before": 0,
+     "gpu_util_after": 0
+    },
+    {
+     "arm": "speri3+sbra3",
+     "cpu_busy_permille": 0,
+     "gpu_util_before": 0,
+     "gpu_util_after": 0
+    }
+   ],
+   "gate_discarded_runs": 0,
+   "arms": {
+    "ssperi3": {
+     "median_ns": 29088,
+     "q1_ns": 28768,
+     "q3_ns": 29472,
+     "n": 21
+    },
+    "speri3+sbra3": {
+     "median_ns": 34848,
+     "q1_ns": 34400,
+     "q3_ns": 35328,
+     "n": 21
+    }
+   },
+   "two_pass_launches": {
+    "speri3": {
+     "median_ns": 27968,
+     "q1_ns": 27840,
+     "q3_ns": 28288,
+     "n": 21
+    },
+    "sbra3": {
+     "median_ns": 3776,
+     "q1_ns": 3712,
+     "q3_ns": 3840,
+     "n": 21
+    }
+   },
+   "witness_rel": 0.0,
+   "fused_over_two_pass": 0.8347,
+   "verdict": "faster"
+  }
+ ],
+ "declared": {
+  "issue": 747,
+  "question": "per class, is ssperi3_ (#745) faster than speri3_ (#743) followed by a bra transform of its packed output (sbra3_)",
+  "rule": "per class and card: ratio = median(ssperi3_ runs) / median(speri3_ + sbra3_ runs, the whole two-launch sequence); 'faster' below 1 - BAND, 'slower' above 1 + BAND, else 'neutral'; BAND = 0.05. sbra3_ reads and writes each element once, so the two-pass arm is a lower bound on any transform's",
+  "declared": "2026-11-21, before any row"
+ }
+}
