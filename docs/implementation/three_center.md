@@ -914,6 +914,62 @@ share more. **Opt-in, the caller picks the classes**, as with
 `kernel_d2eri3`'s warp-shared tower. Every existing unit's text is
 unchanged. HIP is not compiled or run.
 
+## The mixed-precision form
+
+`build_eri3_kernel(..., spherical_aux=True, mixed=True)` (`mssperi3_` with
+`spherical_bra`; `mrssperi3_` on the rolled form) is #346's FP32
+recurrence inside an FP64 boundary, reusing `j_coulomb/levers/mixed.py`:
+
+| | FP32 | FP64 |
+|---|---|---|
+| tower `R` (prelude, every `[r]^(m)`), column sums `U` | ✓ | |
+| the contraction `Vab = Σ_t E^{ab}_t U[t]` (~95% of the flops at f) | ✓ | |
+| `P − A`, `θ` | formed in FP64, narrowed once | |
+| Boys `F_m(T)` | | evaluated on `TO_F64(T)`, narrowed at its read |
+| bra axis tables | narrowed once per bra record | formed in FP64 |
+| bra transform, `w`, the output's accumulation | | ✓ |
+
+Every crossing is an explicit `TO_F32` / `TO_F64`, which the IR enforces.
+
+**Accuracy** (interpreted, which rounds FP32 where the device does; the
+host's FP64 contraction as the oracle, on the fully spherical test bases):
+
+| class | worst, FP32 ulps of the contracted scale | max error / the class's max \|B\| |
+|---|---|---|
+| (ss\|s) | 0.85 | 4.9e-8 |
+| (pp\|f) | 1.74 | 2.3e-7 |
+| (dd\|d) | 1.59 | 4.4e-7 |
+| (dd\|i) | 0.06 | 1.1e-6 |
+| (ff\|f) | 0.54 | 4.5e-7 |
+| (ff\|i) | 0.02 | 2.3e-6 |
+
+The tests hold it to the declared FP32 tier (`F32_REL`, ~5.4e-4 of the
+contracted scale; worst 3.9e-4 of the tier interpreted, 2.3e-4 on the
+card). A relative error of 1e-7 to 2e-6 in B is FP32's to give, and is
+the question for a consumer: it is far below DF's own fitting error
+(~1e-5 relative), but an SCF converged to 1e-8 Eh needs the large
+integrals in FP64. The usual answer is dynamic precision (Luehr, Ufimtsev
+and Martínez, JCTC 7, 949 (2011)): FP32 only for contributions whose bound
+is below a threshold, which needs the screening this tree does not have.
+
+**Speed** (a script over the harness, #606's clock bases, median of 21,
+GH200 native `sm_90`), against the same form in FP64:
+
+| class | unrolled FP64 | unrolled mixed | ratio | rolled FP64 | rolled mixed | ratio |
+|---|---|---|---|---|---|---|
+| (pp\|p) | 0.033 ms | 0.034 ms | 1.02 | 0.054 | 0.055 | 1.03 |
+| (dd\|d) | 0.556 | 0.463 | 0.83 | 0.941 | 0.801 | 0.85 |
+| (dd\|i) | 3.134 | 2.253 | 0.72 | 4.650 | 3.524 | 0.76 |
+| (sf\|f) | 0.049 | 0.048 | 0.97 | 0.248 | 0.257 | 1.04 |
+| (ff\|f) | 6.590 | 5.526 | 0.84 | 8.270 | 7.140 | 0.86 |
+| (ff\|i) | 13.994 | 12.879 | 0.92 | 18.020 | 16.837 | 0.93 |
+
+Hopper's FP32 rate is only twice its FP64 rate, so this is the floor of
+the lever's value; on the RTX 3080 (FP64 at 1/64 of FP32) the contraction
+is the whole of the gap, and the ratio there is not measured. The table
+also shows **the rolled form's runtime cost** (#748 measured only its
+compile): 1.3x to 5x the unrolled form in FP64.
+
 ## What is not done
 
 - **Spherical comparison.** #606 asks for agreement with spherical

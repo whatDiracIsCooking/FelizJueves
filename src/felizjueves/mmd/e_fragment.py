@@ -837,7 +837,8 @@ def rolled_e_sum(la: int, lb: int, a: tuple[Expr, Expr, Expr],
                  b: tuple[Expr, Expr, Expr], x: Callable[[Expr], Expr],
                  dst: str, *, tag: str = "e", up: int | None = None,
                  index: Callable[[Expr, Expr, Expr], Expr] | None = None,
-                 arrays: tuple[str, str, str] = AXIS_ARRAYS
+                 arrays: tuple[str, str, str] = AXIS_ARRAYS,
+                 scalar: Scalar = Scalar.F64
                  ) -> tuple[Stmt, ...]:
     """`dst = SUM_t E^{ab}_t X[t]` over the reachable `t` of one row, as
     loops over the per-axis tables (module doc, THE LOW-STACK E PATH).
@@ -851,13 +852,17 @@ def rolled_e_sum(la: int, lb: int, a: tuple[Expr, Expr, Expr],
     `axis_table_index`; compact tables pass `kernel_gk.compact_index`,
     #1265): only each row's base moves. `arrays` names the tables (default
     `AXIS_ARRAYS`; the full ERI's low-stack ket binds its own): the default
-    text is unchanged."""
+    text is unchanged. `scalar` is the type of `dst` and the partial sums
+    (F32 for a mixed-precision kernel, #346's pattern, whose tables and `X`
+    are F32 too); the default text is unchanged."""
     L = la + lb
     t = (Var(f"{tag}_tx"), Var(f"{tag}_ty"), Var(f"{tag}_tz"))
     at = t if up is None else tuple(
         _iadd(t[d], Lit(1)) if d == up else t[d] for d in range(3))
     base = [f"{tag}_b{_AXES[d]}" for d in range(3)]
     sy, sz = f"{tag}_sy", f"{tag}_sz"
+    zero: Expr = (Lit(0.0) if scalar is Scalar.F64
+                  else Call(Fn.TO_F32, (Lit(0.0),)))
 
     def e(d: int) -> Index:
         return Index(arrays[d], (_iadd(Var(base[d]), t[d]),))
@@ -871,12 +876,12 @@ def rolled_e_sum(la: int, lb: int, a: tuple[Expr, Expr, Expr],
     z_loop = For(t[2].name, Lit(0), top(2), Lit(1), (
         acc(sz, Call(Fn.MUL, (e(2), x(hermite_index(at))))),))
     y_loop = For(t[1].name, Lit(0), top(1), Lit(1), (
-        Decl(sz, Scalar.F64, init=Lit(0.0)),
+        Decl(sz, scalar, init=zero),
         z_loop,
         acc(sy, Call(Fn.MUL, (e(1), Var(sz)))),
     ))
     x_loop = For(t[0].name, Lit(0), top(0), Lit(1), (
-        Decl(sy, Scalar.F64, init=Lit(0.0)),
+        Decl(sy, scalar, init=zero),
         y_loop,
         acc(dst, Call(Fn.MUL, (e(0), Var(sy)))),
     ))
@@ -884,7 +889,7 @@ def rolled_e_sum(la: int, lb: int, a: tuple[Expr, Expr, Expr],
         *(Decl(base[d], Scalar.I32,
                init=(axis_table_index(a[d], b[d], 0, lb, L) if index is None
                      else index(a[d], b[d], Lit(0)))) for d in range(3)),
-        Decl(dst, Scalar.F64, init=Lit(0.0)),
+        Decl(dst, scalar, init=zero),
         x_loop,
     )
 

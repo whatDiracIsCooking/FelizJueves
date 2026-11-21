@@ -232,6 +232,19 @@ shift), each sum over the same nonzero terms in the same order as the
 unrolled text, a left fold from 0. Interpreted, bitwise the unrolled form.
 Named `rsperi3_` / `rssperi3_`; the text no longer grows with the columns.
 
+THE MIXED-PRECISION FORM (`mixed=True`, either spherical mode, unrolled or
+rolled): #346's FP32 recurrence inside an FP64 boundary
+(`eri/j_coulomb/levers/mixed.py`, reused). The tower `R` (prelude, every
+`[r]^(m)`, the targets), the column sums `U` and the `E . U` contraction
+are F32: `PQ` and `theta` are formed in F64 and narrowed once, `F_m(T)` is
+evaluated in F64 on `TO_F64(T)` and narrowed at its read, the bra tables
+are narrowed once per bra record (`MIXED_TABLES`, the entries the axis
+fragment writes), the aux coefficients are F32 literals (or the CSR's
+narrowed). Each contraction is widened before it meets `w`; the bra
+transform, `w` and the accumulation in the output stay F64. Named with an
+`m` first (`mssperi3_`, `mrssperi3_`). Held to the host at the declared
+FP32 tier (`oracle.tolerance.F32_REL`); not bitwise anything FP64.
+
     params  n_cell n_bra_rec n_aux_rec n_ao n_aux (I32)
             zeta_ab[n_bra_rec]  P XPA XPB[n_bra_rec, 3]  s_ab[n_bra_rec]
             A[n_aux_rec, 3]  alpha[n_aux_rec]  s_aux[n_aux_rec]
@@ -253,7 +266,9 @@ from __future__ import annotations
 
 import itertools
 import math
+import struct
 
+from felizjueves.eri.j_coulomb.levers import mixed as jmixed
 from felizjueves.ir import (
     Assign,
     Barrier,
@@ -340,19 +355,23 @@ _PACKED_DIAGONAL = (
 
 def eri3_name(cls: Spec | tuple[int, int, int], *,
               packed: bool = False, spherical_aux: bool = False,
-              spherical_bra: bool = False, rolled: bool = False) -> str:
+              spherical_bra: bool = False, rolled: bool = False,
+              mixed: bool = False) -> str:
     """The kernel name of a class: `eri3_` and its three `l`s, run
     together while every `l <= 9` (`eri3_220`) and `_`-separated once any
     is two digits (`eri3_0_11_0`), so `(0, 11, 0)` and `(0, 1, 10)` never
     share a name (#445). The packed form's is `peri3_` (`peri3_220`), its
     spherical-aux mode's `speri3_` (`speri3_220`), and the fully spherical
     one's `ssperi3_` (`ssperi3_220`, #745); either spherical mode's rolled
-    form (#748) has an `r` before it (`rsperi3_220`, `rssperi3_220`)."""
+    form (#748) has an `r` before it (`rsperi3_220`, `rssperi3_220`), and
+    the rolled form's mixed-precision one an `m` before that
+    (`mrssperi3_220`)."""
     am = cls.am if isinstance(cls, Spec) else tuple(cls)
     sep = "_" if max(am) > 9 else ""
     head = ("ssperi3_" if spherical_bra else "speri3_" if spherical_aux
             else "peri3_" if packed else "eri3_")
-    return ("r" if rolled else "") + head + sep.join(map(str, am))
+    return (("m" if mixed else "") + ("r" if rolled else "") + head
+            + sep.join(map(str, am)))
 
 
 def eri3_spec(la: int, lb: int, lP: int) -> Spec:
@@ -505,7 +524,8 @@ def build_eri3_kernel(cls: Spec | tuple[int, int, int], *,
                       packed: bool = False,
                       spherical_aux: bool = False,
                       spherical_bra: bool = False,
-                      rolled: bool = False) -> Kernel:
+                      rolled: bool = False,
+                      mixed: bool = False) -> Kernel:
     """The three-center kernel of one class (module docstring).
 
     `cls` is a `Target.ERI3` `Spec` or `(la, lb, lP)`; any class the
@@ -522,8 +542,15 @@ def build_eri3_kernel(cls: Spec | tuple[int, int, int], *,
     solid harmonics too (THE FULLY SPHERICAL OUTPUT, #745), named
     `ssperi3_`. `rolled` (either spherical mode) loops over the columns and
     the bra harmonics, reading `aux_harmonics` from the kernel's constant
-    tables (THE ROLLED FORM, #748), named `rsperi3_` / `rssperi3_`."""
+    tables (THE ROLLED FORM, #748), named `rsperi3_` / `rssperi3_`.
+    `mixed` (either spherical mode, unrolled or rolled) runs the tower,
+    `U` and the `E . U` contraction in FP32 inside an FP64 boundary (THE
+    MIXED-PRECISION FORM), named with an `m` first (`mssperi3_`,
+    `mrssperi3_`)."""
     spec = _spec(cls)
+    if mixed and not spherical_aux:
+        raise ValueError("mixed is a form of the spherical kernels: pass "
+                         "spherical_aux=True")
     if rolled and not spherical_aux:
         raise ValueError("rolled is a form of the spherical outputs: pass "
                          "spherical_aux=True")
@@ -538,7 +565,8 @@ def build_eri3_kernel(cls: Spec | tuple[int, int, int], *,
             raise ValueError("spherical_aux exists in the low-stack form "
                              "only (THE SPHERICAL-AUX OUTPUT)")
         return _build_lowstack(spec, name, packed=True, spherical=True,
-                               spherical_bra=spherical_bra, rolled=rolled)
+                               spherical_bra=spherical_bra, rolled=rolled,
+                               mixed=mixed)
     if lowstack is None:
         lowstack = eri3_lowstack(spec)
     if lowstack:
@@ -845,6 +873,31 @@ SPHERICAL_BRA_NOTE = (
     "convention (s and p the identity); each column's Cartesian bra block "
     "is formed in a local Vab per primitive triple and transformed before "
     "the global add. n_col counts spherical bra functions")
+MIXED_TABLES = ("Fx", "Fy", "Fz")  # the bra tables, narrowed (mixed)
+MIXED_FORM_NOTE = (
+    "MIXED PRECISION (#346's pattern): the tower R, U and the E . U "
+    "contraction are FP32; PQ and theta are formed in FP64 and narrowed, "
+    "F_m(T) is evaluated in FP64 and narrowed, the bra tables are narrowed "
+    "once per bra record (Fx Fy Fz); each contraction is widened before it "
+    "meets w, and the bra transform, w and every accumulation stay FP64")
+
+
+def _narrowed_tables(la: int, lb: int) -> tuple[Stmt, ...]:
+    """`Fx Fy Fz = TO_F32(Ex Ey Ez)` at every entry the axis fragment
+    writes, `E^{ij}_t` with `t <= i + j`, once per bra record (mixed)."""
+    i, j, t = Var("ni"), Var("nj"), Var("nt")
+    at = ef.axis_table_index(i, j, t, lb, la + lb)
+    return (*(Decl(f, Scalar.F32, (Lit(ef.axis_table_extent(la, lb)),))
+              for f in MIXED_TABLES),
+            For(i.name, Lit(0), Lit(la + 1), Lit(1), (
+                For(j.name, Lit(0), Lit(lb + 1), Lit(1), (
+                    For(t.name, Lit(0), _iadd(_iadd(i, j), Lit(1)), Lit(1),
+                        tuple(Assign(Index(f, (at,)),
+                                     _c(Fn.TO_F32, Index(e, (at,))))
+                              for f, e in zip(MIXED_TABLES, ef.AXIS_ARRAYS,
+                                              strict=True))),)),)))
+
+
 ROLLED_NOTE = (
     "ROLLED (FelizJueves#748): the aux columns and the bra harmonics are "
     "loops; aux_harmonics is read from the hc constant tables (CSR: off, "
@@ -1005,15 +1058,22 @@ class ConstTables:
                       tuple(c[d] for c in ef.cartesians(l)))
         return Index(n, (k,))
 
-    def csr_sum(self, l: int, row: Expr, term, acc: str  # noqa: E741
-                ) -> tuple[Stmt, ...]:
+    def csr_sum(self, l: int, row: Expr, term, acc: str,  # noqa: E741
+                scalar: Scalar = Scalar.F64) -> tuple[Stmt, ...]:
         """`acc = SUM_k val[k] term(k)` over row `row`'s terms, a left fold
-        from 0: `0 + x` is `x`, so the unrolled fold's value."""
+        from 0: `0 + x` is `x`, so the unrolled fold's value. `scalar` F32
+        (#346's pattern) narrows each coefficient and sums in F32."""
         k = Var(f"{acc}_k")
-        return (Decl(acc, Scalar.F64, init=Lit(0.0)),
-                For(k.name, self.at(l, "off", row), self.at(l, "off", _iadd(
-                    row, Lit(1))), Lit(1), (Assign(Var(acc), _iadd(Var(acc), _c(
-                        Fn.MUL, self.at(l, "val", k), term(k)))),)))
+        # the tables in first-use order -- off, then val --
+        start, stop = (self.at(l, "off", row),
+                       self.at(l, "off", _iadd(row, Lit(1))))
+        val: Expr = self.at(l, "val", k)
+        zero: Expr = Lit(0.0)
+        if scalar is Scalar.F32:
+            val, zero = _c(Fn.TO_F32, val), _c(Fn.TO_F32, zero)
+        return (Decl(acc, scalar, init=zero),
+                For(k.name, start, stop, Lit(1), (Assign(Var(acc), _iadd(
+                    Var(acc), _c(Fn.MUL, val, term(k)))),)))
 
     def consts(self) -> tuple[Const, ...]:
         return tuple(self.tables.values())
@@ -1022,7 +1082,7 @@ class ConstTables:
 def _build_lowstack(spec: Spec, name: str | None,
                     packed: bool = False, spherical: bool = False,
                     spherical_bra: bool = False,
-                    rolled: bool = False) -> Kernel:
+                    rolled: bool = False, mixed: bool = False) -> Kernel:
     """`build_eri3_kernel`'s kernel with no `E` block and no accumulators
     (module docstring, THE LOW-STACK FORM): the same parameters, launch and
     output. `packed`: the packed output's (THE PACKED OUTPUT), each element
@@ -1047,11 +1107,22 @@ def _build_lowstack(spec: Spec, name: str | None,
     cell, ib, ik = Var(CELL), Var(BRA), Var(KET)
     targets = live_targets(la, lb, lP)
 
-    prelude, fundamental = fundamental_prelude(
-        [m for (r, m) in order if not any(r)])
-    tower = store_targets(_live((*prelude, *recurrence_body(
-        dag, order, fundamental)), {node_name((r, 0)) for r in targets}),
-        targets, L, R_ARRAY)
+    ms = [m for (r, m) in order if not any(r)]
+    if mixed:  # #346's FP32 tower: prelude, every [r]^(m), the targets
+        prelude, fundamental = jmixed.prelude(ms)
+        body = jmixed.narrow(recurrence_body(dag, order, fundamental),
+                             dag.targets, widen_targets=False)
+    else:
+        prelude, fundamental = fundamental_prelude(ms)
+        body = recurrence_body(dag, order, fundamental)
+    tower = store_targets(_live((*prelude, *body),
+                                {node_name((r, 0)) for r in targets}),
+                          targets, L, R_ARRAY)
+    fp = Scalar.F32 if mixed else Scalar.F64  # the FP32 region's type
+
+    def widened(e: Expr) -> Expr:
+        """An FP32-region value read at the FP64 boundary."""
+        return _c(Fn.TO_F64, e) if mixed else e
 
     def out_at(i: Expr, j: Expr, k: Expr, mirror: bool = False) -> Index:
         if packed:  # block (i, j), or (j, i) for the mirror, at `od`
@@ -1066,19 +1137,22 @@ def _build_lowstack(spec: Spec, name: str | None,
         def row(a: tuple[Expr, Expr, Expr]) -> tuple[Stmt, ...]:
             def elem(b: tuple[Expr, Expr, Expr]) -> tuple[Stmt, ...]:
                 at = out_at(Var("ra"), Var("rb"), rq)
-                v_sum = ef.rolled_e_sum(la, lb, a, b,
-                                        lambda h: Index(U_ARRAY, (h,)), "v")
+                v_sum = (ef.rolled_e_sum(
+                    la, lb, a, b, lambda h: Index(U_ARRAY, (h,)), "v",
+                    arrays=MIXED_TABLES, scalar=fp) if mixed else
+                    ef.rolled_e_sum(la, lb, a, b,
+                                    lambda h: Index(U_ARRAY, (h,)), "v"))
+                v = widened(Var("v"))
                 update: tuple[Stmt, ...]
                 if transform:  # the column's Cartesian block, local
-                    update = (*v_sum, Assign(_v_at(Var("ra"), Var("rb")),
-                                             Var("v")))
+                    update = (*v_sum, Assign(_v_at(Var("ra"), Var("rb")), v))
                     if la == lb:  # a diagonal pair's mirror, within V
                         update = (*update, If(_c(Fn.LT, Lit(0), Var("dg")), (
-                            Assign(_v_at(Var("rb"), Var("ra")), Var("v")),)))
+                            Assign(_v_at(Var("rb"), Var("ra")), v),)))
                 else:
                     update = (*v_sum, Assign(at, _c(
                         Fn.SUB if odd else Fn.ADD, at,
-                        _c(Fn.MUL, Var("w"), Var("v")))))
+                        _c(Fn.MUL, Var("w"), v))))
                 head = (Decl("rb", Scalar.I32, init=ef.cartesian_index("b")),)
                 if la != lb:
                     return (*head, *update)
@@ -1165,7 +1239,9 @@ def _build_lowstack(spec: Spec, name: str | None,
         def u_of(t: tuple[Expr, Expr, Expr]) -> tuple[Stmt, ...]:
             u: Expr | None = None
             for tau, c in terms:
-                term = _c(Fn.MUL, Lit(c), Index(R_ARRAY, (
+                coef: Expr = (_c(Fn.TO_F32, Lit(struct.unpack(
+                    "f", struct.pack("f", c))[0])) if mixed else Lit(c))
+                term = _c(Fn.MUL, coef, Index(R_ARRAY, (
                     ef.hermite_index(_shifted(t, tau)),)))
                 u = term if u is None else _iadd(u, term)
             assert u is not None  # every harmonic has a term
@@ -1222,7 +1298,8 @@ def _build_lowstack(spec: Spec, name: str | None,
                 return Index(R_ARRAY, (ef.hermite_index(tuple(
                     _iadd(t[d], at(lP, ("tx", "ty", "tz")[d], k))
                     for d in range(3))),))
-            return (*csr_sum(lP, m, r, "u"),
+            return (*(csr_sum(lP, m, r, "u", fp) if mixed
+                      else csr_sum(lP, m, r, "u")),
                     Assign(Index(U_ARRAY, (ef.hermite_index(t),)), Var("u")))
 
         return (For(m.name, Lit(0), Lit(nP), Lit(1), (
@@ -1261,8 +1338,7 @@ def _build_lowstack(spec: Spec, name: str | None,
                                           Index(S_AUX, (ik,)))),
             ef.cartesian_loops(lP, ("qx", "qy", "qz"), per_q, tag="q"),
         )
-    ket_body: tuple[Stmt, ...] = (
-        Decl("aq", Scalar.F64, init=Index("alpha", (ik,))),
+    operands: tuple[Stmt, ...] = (
         *(Decl(n, Scalar.F64, init=_c(Fn.SUB, Var(f"P{d}"),
                                       Index("A", (ik, Lit(d)))))
           for d, n in enumerate(PQ_PARAMS)),
@@ -1270,7 +1346,12 @@ def _build_lowstack(spec: Spec, name: str | None,
              "Hermite pair at zeta = alpha, Q = A"),
         Decl(THETA, Scalar.F64, init=_c(Fn.SQRT, _c(
             Fn.DIV, _c(Fn.MUL, Var("ze"), Var("aq")),
-            _c(Fn.ADD, Var("ze"), Var("aq"))))),
+            _c(Fn.ADD, Var("ze"), Var("aq"))))))
+    if mixed:  # formed in FP64, narrowed once (#346)
+        operands = jmixed.operands(operands)
+    ket_body: tuple[Stmt, ...] = (
+        Decl("aq", Scalar.F64, init=Index("alpha", (ik,))),
+        *operands,
         Note("[t+tau]^(0) by the plan's DAG for the quartet "
              f"({la},{lb}|{lP},0), its dead targets dropped, each live one "
              "stored into R as it forms"),
@@ -1295,6 +1376,7 @@ def _build_lowstack(spec: Spec, name: str | None,
         *(Decl(n, Scalar.F64, (Lit(ef.axis_table_extent(la, lb)),))
           for n in ef.AXIS_ARRAYS),
         Inline(fB, bra_binds),
+        *(_narrowed_tables(la, lb) if mixed else ()),
         Note("the aux records of the cell"),
         For(KET, Var("p0"), Var("p1"), Lit(1), ket_body),
     )
@@ -1320,7 +1402,7 @@ def _build_lowstack(spec: Spec, name: str | None,
                 "own packed slots, a diagonal pair's mirrored at the end")),
             Note("the cell's own elements, zeroed: no other cell writes them"),
             zero,
-            *(Decl(n, Scalar.F64, (Lit(len(hermite_targets(x))),))
+            *(Decl(n, fp, (Lit(len(hermite_targets(x))),))
               for n, x in ((R_ARRAY, L), (U_ARRAY, Lab))),
             *((Decl(V_ARRAY, Scalar.F64, (Lit(nA * nB),)),
                Decl(T_ARRAY, Scalar.F64, (Lit(nB),))) if transform else ()),
@@ -1339,10 +1421,12 @@ def _build_lowstack(spec: Spec, name: str | None,
             body = (Note(SPHERICAL_BRA_NOTE), *body)
         if rolled:
             body = (Note(ROLLED_NOTE), *body)
+        if mixed:
+            body = (Note(MIXED_FORM_NOTE), *body)
         return Kernel(name or eri3_name(spec, packed=True,
                                         spherical_aux=spherical,
                                         spherical_bra=spherical_bra,
-                                        rolled=rolled),
+                                        rolled=rolled, mixed=mixed),
                       _params(True), body, tuple(tables.values()))
     off_diag = (nest(Lit(nA), Lit(nB), (
         Assign(out_at(i, j, k, mirror=True), out_at(i, j, k)),)),)

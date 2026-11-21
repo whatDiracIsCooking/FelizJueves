@@ -136,11 +136,13 @@ def packed_kernel(la: int, lb: int, lP: int,
                   lowstack: bool | None = None,
                   spherical_aux: bool = False,
                   spherical_bra: bool = False,
-                  rolled: bool = False, warp: bool = False) -> Kernel:
+                  rolled: bool = False, warp: bool = False,
+                  mixed: bool = False) -> Kernel:
     """`build_eri3_kernel((la, lb, lP), packed=True)`, built once;
     `spherical_aux` its solid-harmonic aux mode, `spherical_bra` with it
     the fully spherical one (#745), and `rolled` either one's rolled form
-    (#748); `warp` the warp-per-cell form of either (#749)."""
+    (#748); `warp` the warp-per-cell form of either (#749); `mixed` the
+    rolled form's mixed-precision one."""
     if warp:
         if not spherical_aux or rolled or lowstack is False:
             raise ValueError("the warp form is a spherical-aux one")
@@ -148,7 +150,8 @@ def packed_kernel(la: int, lb: int, lP: int,
                                       spherical_bra=spherical_bra)
     return build_eri3_kernel((la, lb, lP), lowstack=lowstack, packed=True,
                              spherical_aux=spherical_aux,
-                             spherical_bra=spherical_bra, rolled=rolled)
+                             spherical_bra=spherical_bra, rolled=rolled,
+                             mixed=mixed)
 
 
 def launch_packed(cls: Eri3Class, cells: dict[str, Sequence[int]],
@@ -156,7 +159,8 @@ def launch_packed(cls: Eri3Class, cells: dict[str, Sequence[int]],
                   lowstack: bool | None = None,
                   spherical_aux: bool = False,
                   spherical_bra: bool = False,
-                  rolled: bool = False, warp: bool = False) -> np.ndarray:
+                  rolled: bool = False, warp: bool = False,
+                  mixed: bool = False) -> np.ndarray:
     """One interpreted launch of `cls`'s packed kernel over the cells
     `cells` names (`PACKED_CELL_ARRAYS`, `packed_cells`' arrays), writing
     into (a copy of) `out`, `(n_col, n_aux)`, which is returned;
@@ -174,7 +178,7 @@ def launch_packed(cls: Eri3Class, cells: dict[str, Sequence[int]],
                if k in (*cls.BRA_ARRAYS, *cls.AUX_ARRAYS)}
     flat = Interpreter(packed_kernel(cls.la, cls.lb, cls.lP, lowstack,
                                      spherical_aux, spherical_bra, rolled,
-                                     warp),
+                                     warp, mixed),
                        launch=Launch(grid, block, 1), boys=boys).run(
         n_cell=n_cell, n_bra_rec=cls.n_bra_rec, n_aux_rec=cls.n_aux_rec,
         n_col=n_col, n_aux=naux, **{OUT: out.reshape(-1)}, **records,
