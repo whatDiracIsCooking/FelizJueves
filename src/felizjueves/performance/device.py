@@ -192,15 +192,26 @@ GFX1200 = Arch(Vendor.AMD, "gfx1200", wavefront=32, **recorded_ceilings("gfx1200
 # Every card this box has, and so every Arch a test or the kernel tier may name.
 ARCHS: tuple[Arch, ...] = (SM_86, GFX1200)
 
+# Hopper (GH200 / H100), on the cloud VMs (#747): a compile target only.
+# It is NOT in ARCHS, so no scored report, ceiling probe or store sweep grows
+# a row for it; it exists so `CUDA_ARCH=90` builds natively there instead of
+# running the sm_86 build through PTX JIT. Its ceilings stay unmeasured.
+SM_90 = Arch(Vendor.NVIDIA, "sm_90", wavefront=32, **recorded_ceilings("sm_90"))
+
+# Every Arch a compiler may be driven at: this box's cards, then the rest.
+TARGETS: tuple[Arch, ...] = (*ARCHS, SM_90)
+
 
 def by_name(name: str) -> Arch:
-    """The declared Arch the compiler spells `name`; ValueError if undeclared."""
-    for arch in ARCHS:
+    """The declared Arch the compiler spells `name` (`TARGETS`); ValueError
+    if undeclared."""
+    for arch in TARGETS:
         if arch.name == name:
             return arch
     raise ValueError(
         f"arch {name!r} is not declared in felizjueves.performance.device "
-        f"(declared: {', '.join(a.name for a in ARCHS)}) -- add an Arch there"
+        f"(declared: {', '.join(a.name for a in TARGETS)}) -- add an Arch "
+        "there"
     )
 
 

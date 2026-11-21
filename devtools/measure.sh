@@ -67,6 +67,9 @@
 #                   compiler, no card)                  FJ_DF_LOWSTACK_STORE
 #     df-lowstack   the low-stack against the unrolled DF
 #                   kernels, wall-clock per class (#606) FJ_DF_LOWSTACK_STORE
+#     spherical-bra ssperi3_ against speri3_ + the sbra3_ bra
+#                   transform, compile rows and wall-clock
+#                   per class of the eri3 ladder (#747)  FJ_SPHERICAL_BRA_STORE
 #     df-grad-lowstack-compile  every gmetric / geri3 class of the
 #                   DF gradient ladder in its low-stack form,
 #                   and the unrolled form up the held-doubles
@@ -180,6 +183,7 @@ SWEEPS=(
   "kblock-column-profile|timed|kbr_22_22 vs kbrc_22_22 under ncu, CUDA only (#583) -> kblock_rolled.json"
   "df-lowstack-compile|compile|eri3/metric aux ladder through i, both forms' compile (#606) -> df_lowstack.json"
   "df-lowstack|timed|eri3/metric low-stack vs unrolled wall-clock per class (#606) -> df_lowstack.json"
+  "spherical-bra|timed|ssperi3 vs speri3 + sbra3 bra transform, compile and wall-clock per class (#747) -> spherical_bra.json"
   "df-grad-lowstack-compile|compile|gmetric/geri3 DF gradient ladder through (i|i)/(ff|i), both forms' compile (#613) -> df_grad_lowstack.json"
   "d2-df-lowstack-compile|compile|d2metric/d2eri3 DF Hessian ladder through (i|i)/(ff|i), both forms' compile (#694) -> d2_df_lowstack.json"
   "g1e-compile|compile|gs/gt/gv one-electron gradients through (ff), unrolled and gv low-stack compile (#614) -> g1e.json"
@@ -291,6 +295,8 @@ case $sweep in
                 envs=("FJ_DF_LOWSTACK_STORE=${FJ_DF_LOWSTACK_STORE:-$MEASURE_DF_LOWSTACK_STORE}") ;;
   df-lowstack)  files=("$M/measure_df_lowstack.py"); select=(-k df_lowstack_clock)
                 envs=("FJ_DF_LOWSTACK_STORE=${FJ_DF_LOWSTACK_STORE:-$MEASURE_DF_LOWSTACK_STORE}") ;;
+  spherical-bra) files=("$M/measure_spherical_bra.py"); select=(-k spherical_bra_clock)
+                envs=("FJ_SPHERICAL_BRA_STORE=${FJ_SPHERICAL_BRA_STORE:-$MEASURE_SPHERICAL_BRA_STORE}") ;;
   df-grad-lowstack-compile) files=("$M/measure_df_grad_lowstack.py"); select=(-k df_grad_lowstack_compile)
                 envs=("FJ_DF_GRAD_LOWSTACK_STORE=${FJ_DF_GRAD_LOWSTACK_STORE:-$MEASURE_DF_GRAD_LOWSTACK_STORE}") ;;
   d2-df-lowstack-compile) files=("$M/measure_d2_df_lowstack.py"); select=(-k d2_df_lowstack_compile)

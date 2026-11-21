@@ -212,6 +212,14 @@ Interpreted (`test_kernel_eri3_fully_spherical.py`, worst 2.78 eps) and on
 la != lb class runs through a kernel here. `sm_86` frame at (ff|f) 6,336 B
 against `speri3_`'s 5,264 B, at (ff|i) 7,872 B against 7,072 B. Every
 existing kernel's text is unchanged.
+**Timed against two passes** (#747; `three_center.md`, "Fused against two
+passes"): `devtools/measure.sh spherical-bra`, `ssperi3_` against `speri3_`
+then `sbra3_` (`build_bra_transform_kernel`, a bra transform reading and
+writing each element once; interpreted against numpy in
+`test_kernel_bra_transform.py`), into `data/measured/spherical_bra.json`.
+Partial by decision: 29 of 70 classes on a GH200 (`sm_90` native), all
+"faster", 0.69 to 0.86. `sm_90` is a compile target (`device.SM_90`), not
+one of `ARCHS`.
 **Both DF targets also have an HGP twin, for s and p shells, interpreted
 only** (`docs/implementation/hgp_df.md` is the one place with the detail):
 `eri/density_fit/kernel_hgp.py`'s `build_hmetric_kernel` (`hmetric_{lP}{lQ}`)

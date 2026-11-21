@@ -16,6 +16,7 @@ from felizjueves.performance.device import (
     MEMORY_BOUND,
     QUANTITIES,
     SM_86,
+    SM_90,
     Arch,
     MeasuredKey,
     Uncharacterised,
@@ -79,9 +80,12 @@ def test_from_env_follows_config_sh_defaults_and_pins() -> None:
     assert from_env(Vendor.NVIDIA, {"CUDA_ARCH": "86"}) is SM_86
     assert from_env(Vendor.AMD, {"GPU_TARGETS": "gfx1200"}) is GFX1200
     assert from_env(Vendor.AMD, {"HIP_ARCH": "gfx1200", "GPU_TARGETS": "x"}) is GFX1200
+    # Hopper is a compile target, not a card of this box (#747).
+    assert from_env(Vendor.NVIDIA, {"CUDA_ARCH": "90"}) is SM_90
+    assert SM_90 not in ARCHS
     # A pin to a card nobody declared fails loudly instead of drifting.
     with pytest.raises(ValueError, match="not declared"):
-        from_env(Vendor.NVIDIA, {"CUDA_ARCH": "90"})
+        from_env(Vendor.NVIDIA, {"CUDA_ARCH": "75"})
     with pytest.raises(ValueError, match="not declared"):
         by_name("gfx942")
 

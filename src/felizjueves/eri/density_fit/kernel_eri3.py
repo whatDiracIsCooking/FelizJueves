@@ -5,6 +5,7 @@
     eri3_lowstack(spec | (la, lb, lP))     -> bool        the form's rule
     aux_harmonics(l)                       -> c[m][tau]   the aux columns
     eri3_spec(la, lb, lP)                  -> Spec        the class's key
+    build_bra_transform_kernel(la, lb)     -> Kernel      sbra3_ (#747)
     quartet_spec(spec | (la, lb, lP))      -> Spec        Target.J (la lb|lP 0)
     eri3_plan(spec | (la, lb, lP))         -> (dag, order)  the plan's answer
     live_targets(la, lb, lP)               -> the [r]^(0) the contraction reads
@@ -286,7 +287,9 @@ __all__ = [
     "PACKED_CELL_ARRAYS",
     "PARAM_OF",
     "aux_harmonics",
+    "build_bra_transform_kernel",
     "build_eri3_kernel",
+    "bra_transform_name",
     "E_DOUBLES_MAX",
     "eri3_e_doubles",
     "eri3_lowstack",
@@ -1230,3 +1233,111 @@ def _build_lowstack(spec: Spec, name: str | None,
         If(_c(Fn.LT, cell, Var("n_cell")), per_cell),
     )
     return Kernel(name or eri3_name(spec), _params(), body)
+
+
+# ---------------------------------------------------------------------------
+# The bra transform of a spherical-aux packed output (#747)
+# ---------------------------------------------------------------------------
+
+BRA_SRC = "src"  # the speri3_ output read: Cartesian bra, spherical aux
+BRA_PAIR_ARRAYS = ("src_col", "dst_col")  # per pair: its first column, each
+
+
+def bra_transform_name(la: int, lb: int) -> str:
+    """`sbra3_{la}{lb}`: the bra transform of the `(la, lb)` pairs."""
+    sep = "_" if max(la, lb) > 9 else ""
+    return f"sbra3_{la}{sep}{lb}"
+
+
+def build_bra_transform_kernel(la: int, lb: int, *,
+                               name: str | None = None) -> Kernel:
+    """THE BRA TRANSFORM (#747): `speri3_`'s packed output, Cartesian bra and
+    spherical aux, onto spherical bra slots -- the pass FreeBreakfast runs
+    after `speri3_`, the other leg of #747's clock against `ssperi3_`.
+
+    One thread per (pair, aux column `q`), `q` fastest, so a warp reads and
+    writes consecutive `q`: the pair's `nA nB` Cartesian columns read once
+    into a local `Vab` (`src[src_col n_aux + n_aux (a nB + b) + q]`), then,
+    as `ssperi3_`, one `mu` at a time a row `Tmu[b] = SUM_a c^{la}[mu][a]
+    Vab[a nB + b]` and `out[dst_col n_aux + n_aux (mu (2lb+1) + nu) + q] =
+    SUM_b c^{lb}[nu][b] Tmu[b]` (`aux_harmonics`, literals, nonzero terms
+    only), a plain store. Each element is read and written once: the
+    traffic floor of any transform of that output, a GEMM's included. A
+    diagonal pair's full square block in, its full square out.
+
+        params  n_pair n_aux n_src_col n_dst_col (I32)
+                src_col dst_col [n_pair] (I32)
+                src[n_src_col n_aux]  out[n_dst_col n_aux] (OUT)
+    """
+    for x in (la, lb):
+        if type(x) is not int or x < 0:
+            raise ValueError(f"l = {x!r} is not a non-negative int")
+    nA, nB = len(ef.cartesians(la)), len(ef.cartesians(lb))
+    sA, sB = 2 * la + 1, 2 * lb + 1
+    ca, cb = aux_harmonics(la), aux_harmonics(lb)
+    gid, pr, q = Var("gid"), Var("pr"), Var("q")
+    tb, i = Var("tb"), Var("i")
+
+    def src_at(col: Expr) -> Index:
+        return Index(BRA_SRC, (_iadd(Var("s0"), _c(Fn.MUL, Var("n_aux"),
+                                                   col)),))
+
+    def v_at(a: int, b: Expr) -> Index:
+        return Index(V_ARRAY, (_iadd(Lit(a * nB), b),))
+
+    rows: list[Stmt] = []
+    for mu in range(sA):
+        t_row: Expr | None = None
+        for a, c in enumerate(ca[mu]):
+            if c != 0.0:
+                term = _c(Fn.MUL, Lit(c), v_at(a, tb))
+                t_row = term if t_row is None else _iadd(t_row, term)
+        assert t_row is not None
+        rows.append(For(tb.name, Lit(0), Lit(nB), Lit(1), (
+            Assign(Index(T_ARRAY, (tb,)), t_row),)))
+        for nu in range(sB):
+            sv: Expr | None = None
+            for b, c in enumerate(cb[nu]):
+                if c != 0.0:
+                    term = _c(Fn.MUL, Lit(c), Index(T_ARRAY, (Lit(b),)))
+                    sv = term if sv is None else _iadd(sv, term)
+            assert sv is not None
+            rows.append(Assign(Index(OUT, (_iadd(Var("d0"), _c(
+                Fn.MUL, Var("n_aux"), Lit(mu * sB + nu))),)), sv))
+    per: tuple[Stmt, ...] = (
+        Decl("pr", Scalar.I32, init=_c(Fn.DIV, gid, Var("n_aux"))),
+        Decl("q", Scalar.I32, init=_c(Fn.SUB, gid,
+                                      _c(Fn.MUL, pr, Var("n_aux")))),
+        Decl("s0", Scalar.I32, init=_iadd(_c(
+            Fn.MUL, Index("src_col", (pr,)), Var("n_aux")), q)),
+        Decl("d0", Scalar.I32, init=_iadd(_c(
+            Fn.MUL, Index("dst_col", (pr,)), Var("n_aux")), q)),
+        Note("the pair's Cartesian block at this aux column, read once"),
+        Decl(V_ARRAY, Scalar.F64, (Lit(nA * nB),)),
+        Decl(T_ARRAY, Scalar.F64, (Lit(nB),)),
+        For(i.name, Lit(0), Lit(nA * nB), Lit(1), (
+            Assign(Index(V_ARRAY, (i,)), src_at(i)),)),
+        Note("onto solid harmonics, one mu at a time through Tmu "
+             "(aux_harmonics, nonzero terms only)"),
+        *rows,
+    )
+    ncol_s, ncol_d, naux = Var("n_src_col"), Var("n_dst_col"), Var("n_aux")
+    params = (
+        Param("n_pair", Scalar.I32), Param("n_aux", Scalar.I32),
+        Param("n_src_col", Scalar.I32), Param("n_dst_col", Scalar.I32),
+        *(Param(n, Scalar.I32, array=True, shape=(Var("n_pair"),))
+          for n in BRA_PAIR_ARRAYS),
+        Param(BRA_SRC, Scalar.F64, array=True,
+              shape=(_c(Fn.MUL, ncol_s, naux),)),
+        Param(OUT, Scalar.F64, array=True, intent=Intent.OUT,
+              shape=(_c(Fn.MUL, ncol_d, naux),)),
+    )
+    body: tuple[Stmt, ...] = (
+        Note(f"bra transform ({la}, {lb}) (#747): a spherical-aux packed "
+             "output's Cartesian bra onto solid harmonics, one thread per "
+             "(pair, aux column), the aux column fastest"),
+        Decl("gid", Scalar.I32, init=_c(Fn.ADD, Call(Fn.THREAD_X), _c(
+            Fn.MUL, Call(Fn.BLOCK_X), Call(Fn.BLOCK_DIM_X)))),
+        If(_c(Fn.LT, gid, _c(Fn.MUL, Var("n_pair"), naux)), per),
+    )
+    return Kernel(name or bra_transform_name(la, lb), params, body)

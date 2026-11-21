@@ -67,7 +67,7 @@ def test_the_default_classes_are_l_0_to_16() -> None:
     ["--out", "x"],  # no backend
     ["--backend", "cuda"],  # no out
     ["--backend", "cuda", "--out", "x", "--arch", "gfx1200"],  # wrong vendor
-    ["--backend", "cuda", "--out", "x", "--arch", "sm_90"],  # undeclared
+    ["--backend", "cuda", "--out", "x", "--arch", "sm_75"],  # undeclared (sm_90 is, #747)
     ["--bogus"],
 ])
 def test_the_cli_exits_2_when_it_cannot_run(argv, monkeypatch, capsys) -> None:

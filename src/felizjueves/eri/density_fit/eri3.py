@@ -482,3 +482,21 @@ def packed_cells(cls: Eri3Class, columns: dict[tuple[int, int], int],
         out["dst"].append(columns[(a, b)] * n_aux + op)
         out["diag"].append(int(a == b))
     return {k: tuple(v) for k, v in out.items()}
+
+
+def bra_pairs(cls: Eri3Class, cartesian: dict[tuple[int, int], int],
+              spherical: dict[tuple[int, int], int]
+              ) -> dict[str, tuple[int, ...]]:
+    """The bra transform's pair arrays (`kernel_eri3.BRA_PAIR_ARRAYS`,
+    #747) for the pairs of `cls` laid out in both maps: each pair once, in
+    cell order, `src_col` its first column in the Cartesian-bra layout
+    (`packed_columns(...)`) and `dst_col` in the spherical one
+    (`packed_columns(..., spherical_bra=True)`)."""
+    src, dst, seen = [], [], set()
+    for a, b, _ in cls.cells:
+        if (a, b) in seen or (a, b) not in cartesian:
+            continue
+        seen.add((a, b))
+        src.append(cartesian[(a, b)])
+        dst.append(spherical[(a, b)])
+    return {"src_col": tuple(src), "dst_col": tuple(dst)}

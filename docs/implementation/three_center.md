@@ -768,6 +768,51 @@ declared `Arch`) and JIT-compiled from their PTX
 bit-identical across the runner's repeats. HIP: not compiled
 and not run, no hipcc and no AMD card on that machine.
 
+## Fused against two passes: the clock (#747)
+
+`devtools/measure.sh spherical-bra` (`measure/measure_spherical_bra.py`,
+store `data/measured/spherical_bra.json`) times `ssperi3_` against what
+FreeBreakfast runs today: `speri3_` followed by a bra transform of its
+packed output. The second pass is `sbra3_{la}{lb}`
+(`kernel_eri3.build_bra_transform_kernel`): one thread per (pair, aux
+column), the aux column fastest, each pair's `nA nB` Cartesian columns read
+once into a local block and written once as `(2la+1)(2lb+1)` spherical
+ones, with the same `aux_harmonics` literals. It reads and writes each
+element once, which is the traffic floor of any transform of that output,
+a GEMM's included, so the two-pass arm is a lower bound on the consumer's
+and a "faster" verdict for `ssperi3_` is conservative. Host side:
+`eri3.bra_pairs` gives each pair's column in both layouts;
+`eri3_drive.launch_bra_transform` is the interpreted launcher.
+`test_kernel_bra_transform.py` holds it, interpreted at (pd|p) and (dd|p),
+to numpy applying the same map to the same input, within
+`2 (nA + nB) eps` of `(|c||c|)·|X|`.
+
+The bases are #606's clock bases (`measure_df_lowstack._clock_bases`).
+Before timing, each class's two outputs are compared as a sanity witness
+(`WITNESS_REL = 1e-11` of the max; recorded rows at most 6e-16). The rule
+(`declared`, written before any row): ratio = median fused / median
+two-pass, "faster" below 0.95.
+
+**Partial, by decision.** The sweep was stopped after 29 of the 70
+classes, (ss|s) through (sf|i) and (ps|s), on a GH200 (`sm_90`, native,
+nvcc 13.0). All 29 are "faster": the ratio runs from 0.69 to 0.86, and the
+margin grows with the bra's `l` (0.82 at the s and p bras, 0.69 to 0.79 at
+(sf|d) and above). At (sf|i) it is 0.217 ms against 0.290 ms.
+`sbra3_`'s own launch is small next to `speri3_`'s; most of the margin is
+`speri3_`'s own time, from its `nA nB` global read-modify-writes per column
+and primitive triple, which `ssperi3_` cuts to `(2la+1)(2lb+1)`. The rest
+of the ladder (the d and f bras of both shells) is not timed.
+`devtools/measure.sh spherical-bra` with `FJ_SPHERICAL_BRA_ONLY` resumes
+it.
+
+**`sm_90` is a compile target** (`device.SM_90`, `device.TARGETS`): with
+`CUDA_ARCH=90` the tier and the runner build natively on Hopper (the GH200
+and H100 VMs) instead of running the `sm_86` build through PTX JIT. It is
+not in `device.ARCHS`, this box's scored cards, so no report, ceiling or
+store sweep grows a row for it, and its ceilings stay unmeasured.
+`test_eri3_spherical_device.py` and `test_eri3_fully_spherical_device.py`
+(the cases below `high_l`) pass natively at `-arch=sm_90`.
+
 ## What is not done
 
 - **Spherical comparison.** #606 asks for agreement with spherical

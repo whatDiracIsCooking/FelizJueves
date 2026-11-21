@@ -5,6 +5,8 @@
     eri3_tensor_kernel(basis, aux, *, boys, classes=None, threads=32) -> Run
     launch_packed(cls, cells, out, *, boys, threads=32) -> out, packed blocks
                     (spherical_aux=, spherical_bra=: speri3_ / ssperi3_)
+    launch_bra_transform(la, lb, src, pairs, n_dst_col, *, threads=32)
+                                                   -> sbra3_'s output (#747)
 
 The `eri/density_fit/metric_drive.py` pattern for `Target.ERI3`: `kernel_eri3.
 build_eri3_kernel((la, lb, lP))` run in `interp.Interpreter` over
@@ -44,9 +46,11 @@ import numpy as np
 from felizjueves.ao.shell import Basis
 from felizjueves.eri.density_fit.eri3 import Eri3Class, eri3_classes
 from felizjueves.eri.density_fit.kernel_eri3 import (
+    BRA_SRC,
     OUT,
     PACKED_CELL_ARRAYS,
     PARAM_OF,
+    build_bra_transform_kernel,
     build_eri3_kernel,
     launch_shape,
 )
@@ -163,3 +167,29 @@ def launch_packed(cls: Eri3Class, cells: dict[str, Sequence[int]],
         **{k: np.array(cells[k], dtype=np.int32)
            for k in PACKED_CELL_ARRAYS})[OUT]
     return np.asarray(flat).reshape(n_col, naux)
+
+
+@cache
+def bra_transform_kernel(la: int, lb: int) -> Kernel:
+    """`build_bra_transform_kernel(la, lb)`, built once."""
+    return build_bra_transform_kernel(la, lb)
+
+
+def launch_bra_transform(la: int, lb: int, src: np.ndarray,
+                         pairs: dict[str, Sequence[int]], n_dst_col: int, *,
+                         threads: int = 32) -> np.ndarray:
+    """One interpreted launch of `sbra3_{la}{lb}` (#747) over the pairs
+    `pairs` names (`eri3.bra_pairs`), reading `src`, `(n_src_col, n_aux)`,
+    a spherical-aux packed output, into a NaN-filled `(n_dst_col, n_aux)`,
+    which is returned."""
+    n_src_col, naux = src.shape
+    n_pair = len(pairs["src_col"])
+    grid, block = launch_shape(n_pair * naux, threads)
+    flat = Interpreter(bra_transform_kernel(la, lb),
+                       launch=Launch(grid, block, 1)).run(
+        n_pair=n_pair, n_aux=naux, n_src_col=n_src_col, n_dst_col=n_dst_col,
+        **{k: np.array(pairs[k], dtype=np.int32)
+           for k in ("src_col", "dst_col")},
+        **{BRA_SRC: src.reshape(-1),
+           OUT: np.full(n_dst_col * naux, np.nan)})[OUT]
+    return np.asarray(flat).reshape(n_dst_col, naux)
