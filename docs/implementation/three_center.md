@@ -858,6 +858,62 @@ hash identically against the parent). Its wall-clock against the unrolled
 form was not taken (the #747 sweep was stopped by decision), so whether it
 becomes the default is open.
 
+## A warp per cell (#749)
+
+The thread-per-cell low-stack form keeps the tower, `U` and the bra tables
+in a 6 to 8 KB per-thread frame and accumulates every element in global
+memory, one read-modify-write per column, element and primitive triple.
+`build_warp_eri3_kernel(cls)` (`wsperi3_`) and with `spherical_bra=True`
+(`wssperi3_`) run a block of one warp (`WARP_LANES` = 32) per cell
+(`warp_launch_shape`), with the same parameters, cell arrays and output:
+
+- per bra record, lane 0 forms the axis tables into SHARED memory;
+- its aux records go in phases of `warp_slots(cls)` (as many towers as fit
+  `WARP_SHARED_DOUBLES` = 2,048 doubles beside `U`, `Vab` and the tables,
+  `kernel_d2eri3`'s budget; 32 at (ss|s), 3 at (ff|i)), lane `g` forming
+  aux record `k0 + g`'s tower into its SHARED slot of `R`;
+- per pair and aux column, between barriers, the lanes split `U[t]` (by
+  `t`), `Vab[a, b]` (by `(a, b)`) and the output slots (by `(μ, ν)`), each
+  slot accumulated in the lane's registers across every record pair
+  (`ceil(slots / 32) (2lP+1)` doubles, 26 at (ff|i));
+- each lane stores its slots once at the end, a diagonal pair's mirror
+  too. No global read-modify-write.
+
+Every `U`, `Vab`, transform and accumulator update is the thread-per-cell
+statement (`aux_harmonics` read from `ConstTables`' CSR, as #748's rolled
+form), in the same order per slot, so **interpreted, it is bitwise the
+thread-per-cell kernel** (`test_kernel_eri3_warp.py`: (pp|d), (pd|p),
+(dd|f), (sf|d) in both modes, and four aux records in phases of 1 and 3).
+On the card (`test_eri3_warp_device.py`, (dd|f) and (ff|i), GH200,
+native `sm_90`), both forms are held to the host contraction; they are not
+bitwise there (each text gets its own fused multiply-adds), with the same
+worst error.
+
+**Stack.** `wssperi3_336`: 208 B of stack, 0 spill, 15,080 B of shared
+memory, 145 KB of text, 1.2 s of nvcc, against `ssperi3_336`'s 7,872 B,
+72 B, none, 331 KB, 5.1 s (`sm_90`); `wssperi3_333`: 144 B against
+6,336 B.
+
+**Speed, measured once and not by the sweep** (a script over the harness,
+#606's clock bases, the median of 21 runs, GH200):
+
+| class | thread per cell | warp per cell | ratio |
+|---|---|---|---|
+| (pp\|p) | 0.033 ms | 0.172 ms | 5.18 |
+| (dd\|d) | 0.553 ms | 1.028 ms | 1.86 |
+| (dd\|i) | 3.153 ms | 2.710 ms | 0.86 |
+| (sf\|f) | 0.050 ms | 0.819 ms | 16.5 |
+| (ff\|f) | 6.574 ms | 6.095 ms | 0.93 |
+| (ff\|i) | 14.008 ms | 11.626 ms | 0.83 |
+
+The warp form wins where a cell's contraction is heavy (both bras d or f,
+high `lP`) and loses badly where it is light: there the per-pair barriers
+and lane 0's serial table build dominate. On these bases a cell has one
+aux record, so the phases hold one tower; deeper aux contraction would
+share more. **Opt-in, the caller picks the classes**, as with
+`kernel_d2eri3`'s warp-shared tower. Every existing unit's text is
+unchanged. HIP is not compiled or run.
+
 ## What is not done
 
 - **Spherical comparison.** #606 asks for agreement with spherical
