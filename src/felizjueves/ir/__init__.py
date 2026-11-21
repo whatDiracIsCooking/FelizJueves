@@ -5,7 +5,8 @@ Types only. No passes, no emitters, no interpreter -- those are functions of a
 dataclass over tuples, so a `Kernel` is hashable and two of them compare with
 `==`: a pass is checked by structural equality on IR, never on text.
 
-    Kernel(name, params, body)
+    Kernel(name, params, body, consts=())
+    Const(name, type, values)     -- a read-only table, `__constant__` (#748)
     Stmt = Decl | Assign | For | If | Break | WarpReduce | LaneBroadcast
          | AtomicAdd | Note | Raw | Inline | Barrier | Boys | Rys
     Expr = Weighted | Index | Call | Lit | Var
@@ -106,6 +107,7 @@ from __future__ import annotations
 
 import itertools
 import keyword
+import math
 import re
 import struct
 from collections.abc import Callable, Iterator
@@ -1269,11 +1271,14 @@ def check_store(dst: Scalar | None, value: Scalar | None, what: str) -> None:
 
 
 def _check_types(params: tuple[Param, ...], body: tuple[Stmt, ...],
-                 unknown: tuple[str, ...] = ()) -> None:
+                 unknown: tuple[str, ...] = (),
+                 consts: tuple[Const, ...] = ()) -> None:
     """Walk `body` in scope order and apply the hygiene rules to every
-    statement. `unknown` names are in scope with no known type."""
+    statement. `unknown` names are in scope with no known type; `consts`
+    are the kernel's read-only tables (#748)."""
     scopes: list[dict[str, Scalar | None]] = [
-        {**{n: None for n in unknown}, **{p.name: p.type for p in params}}]
+        {**{n: None for n in unknown}, **{c.name: c.type for c in consts},
+         **{p.name: p.type for p in params}}]
 
     def lookup(name: str) -> Scalar | None:
         for sc in reversed(scopes):
@@ -1349,6 +1354,37 @@ def _check_types(params: tuple[Param, ...], body: tuple[Stmt, ...],
 
 
 @dataclass(frozen=True)
+class Const:
+    """A read-only table the kernel indexes like a 1-D array (#748): `name`,
+    its element `type` (I32 or F64) and its `values`, fixed when the kernel
+    is built. A backend spells it once per unit, at file scope, as a
+    `__constant__` array (every thread of a warp reading one entry at once
+    is constant memory's broadcast case); the interpreter binds it as an
+    array no statement may store to. A kernel without one is unchanged."""
+
+    name: str
+    type: Scalar
+    values: tuple[int | float, ...]
+
+    def __post_init__(self) -> None:
+        _ident(self.name, "Const name")
+        if self.type not in (Scalar.I32, Scalar.F64):
+            raise ValueError(f"Const {self.name!r}: I32 or F64, not "
+                             f"{self.type!r}")
+        values = _tuple(self, "values", self.values)
+        if not values:
+            raise ValueError(f"Const {self.name!r} is empty")
+        for v in values:
+            if self.type is Scalar.I32:
+                ok = type(v) is int and -2 ** 31 <= v < 2 ** 31
+            else:
+                ok = type(v) is float and math.isfinite(v)
+            if not ok:
+                raise ValueError(f"Const {self.name!r}: {v!r} is not a "
+                                 f"{self.type.name} value")
+
+
+@dataclass(frozen=True)
 class Kernel:
     """One device kernel: a name, its parameters, and an ordered body.
 
@@ -1363,10 +1399,16 @@ class Kernel:
     name: str
     params: tuple[Param, ...]
     body: tuple[Stmt, ...]
+    consts: tuple[Const, ...] = ()  # read-only tables (#748); () for most
 
     def __post_init__(self) -> None:
         _ident(self.name, "Kernel name")
         params = _tuple(self, "params", self.params)
+        consts = _tuple(self, "consts", self.consts)
+        for c in consts:
+            if not isinstance(c, Const):
+                raise TypeError(f"Kernel consts holds {type(c).__name__}, "
+                                "not Const")
         for p in params:
             if not isinstance(p, Param):
                 raise TypeError(f"Kernel params holds {type(p).__name__}, not Param")
@@ -1387,10 +1429,21 @@ class Kernel:
         _check_breaks(self.body, False)
 
         _check_inlines(params, self.body)
-        _check_types(params, self.body)
+        _check_types(params, self.body, consts=consts)
 
         stmts = list(walk(self.body))  # walked once, read by each check below
-        bound = set(names) | {s.name for s in stmts if isinstance(s, Decl)}
+        tables = {c.name for c in consts}
+        decls = {s.name for s in stmts if isinstance(s, Decl)}
+        clash = tables & (set(names) | decls)
+        if len(tables) != len(consts) or clash:
+            raise ValueError(f"Const names must be unique and bind nothing "
+                             f"else: {sorted(clash) or [c.name for c in consts]}")
+        for s in stmts:
+            dst = getattr(s, "dst", None)
+            if isinstance(dst, Index) and dst.array in tables:
+                raise ValueError(f"{type(s).__name__} stores to the Const "
+                                 f"{dst.array!r}")
+        bound = set(names) | decls | tables
         bound |= {b for s in stmts if isinstance(s, Inline)
                   for b in s.fragment.binds}
         for s in stmts:

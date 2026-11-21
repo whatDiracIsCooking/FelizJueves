@@ -417,7 +417,7 @@ def recycle(kernel: Kernel, *, array: str = "slot") -> Kernel:
 
     n_slots = max(slot.values()) + 1
     decl = Decl(array, Scalar.F64, (Lit(n_slots),), Space.LOCAL)
-    return Kernel(kernel.name, kernel.params, (decl, *st(kernel.body)))
+    return Kernel(kernel.name, kernel.params, (decl, *st(kernel.body)), kernel.consts)
 
 
 def lower(kernel: Kernel, *, recycle_slots: bool = False) -> Kernel:

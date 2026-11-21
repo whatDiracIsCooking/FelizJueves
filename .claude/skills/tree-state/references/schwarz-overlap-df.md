@@ -220,6 +220,14 @@ writing each element once; interpreted against numpy in
 Partial by decision: 29 of 70 classes on a GH200 (`sm_90` native), all
 "faster", 0.69 to 0.86. `sm_90` is a compile target (`device.SM_90`), not
 one of `ARCHS`.
+**Rolled forms** (#748; `three_center.md`, "The rolled spherical kernels"):
+`rolled=True` gives `rsperi3_` / `rssperi3_`, the aux columns and bra
+harmonics as loops over `ir.Const` tables (`__constant__`, the IR's new
+read-only table). Interpreted bitwise the unrolled forms
+(`test_kernel_eri3_rolled.py`); on CUDA (a GH200) not bitwise, both within
+the host bound (`test_eri3_rolled_device.py`). `rssperi3_336` is 126 KB and
+compiles in 1.4 s against 331 KB and 5.3 s. Off by default, untimed; every
+existing unit's text unchanged. HIP not run.
 **Both DF targets also have an HGP twin, for s and p shells, interpreted
 only** (`docs/implementation/hgp_df.md` is the one place with the detail):
 `eri/density_fit/kernel_hgp.py`'s `build_hmetric_kernel` (`hmetric_{lP}{lQ}`)
