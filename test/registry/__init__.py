@@ -164,6 +164,8 @@ UNITS: dict[str, tuple[str, str, int]] = {
     "ssperi3": ("mmd", "eri3", 0),  # its fully spherical mode (#745)
     "rsperi3": ("mmd", "eri3", 0), "rssperi3": ("mmd", "eri3", 0),  # #748
     "wsperi3": ("mmd", "eri3", 0), "wssperi3": ("mmd", "eri3", 0),  # #749
+    "mssperi3": ("mmd", "eri3", 0), "msperi3": ("mmd", "eri3", 0),
+    "mrssperi3": ("mmd", "eri3", 0), "mrsperi3": ("mmd", "eri3", 0),
     "gs": ("mmd", "s", 1), "gt": ("mmd", "t", 1), "gv": ("mmd", "v", 1),
     # the d1 matrix forms (#687): a variant of the d1 case, as a lever is
     "ips": ("mmd", "s", 1), "ipt": ("mmd", "t", 1), "ipv": ("mmd", "v", 1),

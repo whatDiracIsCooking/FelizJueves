@@ -314,6 +314,7 @@
    "spec"
   ],
   "eri.density_fit.kernel_eri3": [
+   "eri.j_coulomb.levers.mixed",
    "ir",
    "mmd.e_fragment",
    "mmd.recurrence",

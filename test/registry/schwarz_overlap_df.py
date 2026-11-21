@@ -105,6 +105,9 @@ TESTS = {
     # Its warp-per-cell form (#749): (dd|f) and (ff|i), against the host.
     "test/test_eri3_warp_device.py::test_X_warp_eri3_is_the_contracted_host":
         Classes("mmd", "eri3"),
+    # The mixed-precision form: (dd|f) and (ff|i), at the FP32 tier.
+    "test/test_eri3_mixed_device.py::test_X_mixed_eri3_is_the_contracted_host":
+        Classes("mmd", "eri3"),
     # The HGP twins.
     "test/test_emit_hgp_df.py::test_X_compiles_the_hgp_df_unit":
         Classes("hgp", "metric"),

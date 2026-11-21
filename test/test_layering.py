@@ -2591,8 +2591,11 @@ RULES |= {
         "quartet (la lb|lP 0) (`plan`), the J engine's prelude and "
         "recurrence statements (`recurrence`), the bra `E` block and the "
         "single-center `E` fragment inlined (`e_fragment`) and `kernel_jab`'s "
-        "scatter rule restated",
-        ("spec", "=ir", "mmd.e_fragment", "plan", "mmd.recurrence"),
+        "scatter rule restated; its mixed-precision form reuses #346's FP32 "
+        "prelude and narrowing (`j_coulomb.levers.mixed`), as the K lever "
+        "(#347) does",
+        ("spec", "=ir", "mmd.e_fragment", "plan", "mmd.recurrence",
+         "eri.j_coulomb.levers.mixed"),
         ao="`ao.eri3` is the witness the kernel is interpreted against: "
            "importing it shares ancestry with it (#20)",
         **{"ir.interp":
@@ -2623,7 +2626,8 @@ RULE_OF |= {
 EDGES |= {k: frozenset(v) for k, v in {
     "eri.density_fit.kernel_eri3": (
         "mmd.e_fragment", "ir", "plan.dag", "plan.pipeline",
-        "plan.schedule", "plan.targets", "mmd.recurrence", "spec"),
+        "plan.schedule", "plan.targets", "mmd.recurrence", "spec",
+        "eri.j_coulomb.levers.mixed"),
     "eri.density_fit.eri3_drive": (
         "eri.density_fit.eri3", "ao.shell", "ir.interp", "ir",
         "eri.density_fit.kernel_eri3"),

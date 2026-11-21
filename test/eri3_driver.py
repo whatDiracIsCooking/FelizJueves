@@ -195,7 +195,8 @@ PACKED_SIZES = ("n_cell", "n_bra_rec", "n_aux_rec", "n_col", "n_aux")
 def packed_kernel(cls: Eri3Class, lowstack: bool | None = None,
                   spherical_aux: bool = False,
                   spherical_bra: bool = False,
-                  rolled: bool = False, warp: bool = False) -> Kernel:
+                  rolled: bool = False, warp: bool = False,
+                  mixed: bool = False) -> Kernel:
     """The class's packed kernel (its spherical-aux mode when
     `spherical_aux`), its signature checked against the records and the
     packed cell arrays."""
@@ -205,7 +206,7 @@ def packed_kernel(cls: Eri3Class, lowstack: bool | None = None,
                                    lowstack=lowstack, packed=True,
                                    spherical_aux=spherical_aux,
                                    spherical_bra=spherical_bra,
-                                   rolled=rolled))
+                                   rolled=rolled, mixed=mixed))
     names = [p.name for p in kern.params]
     want = [*PACKED_SIZES,
             *(_param(n) for n in (*Eri3Class.BRA_ARRAYS,
@@ -250,13 +251,14 @@ def packed_program(classes: Sequence[Eri3Class], backend: str,
                    name: str = "peri3_runner",
                    spherical_aux: bool = False,
                    spherical_bra: bool = False,
-                   rolled: bool = False, warp: bool = False) -> Program:
+                   rolled: bool = False, warp: bool = False,
+                   mixed: bool = False) -> Program:
     """The runner over every class's packed unit, emitted into `workdir`."""
     workdir.mkdir(parents=True, exist_ok=True)
     units = []
     for cls in classes:
         kern = packed_kernel(cls, lowstack, spherical_aux, spherical_bra,
-                             rolled, warp)
+                             rolled, warp, mixed)
         units.append((_unit(kern, backend, workdir, None), [kern.name]))
     return units_runner(backend, units, workdir, name)
 
@@ -299,7 +301,8 @@ def build_packed_on_card(classes: Sequence[Eri3Class],
                          spherical_aux: bool = False,
                          spherical_bra: bool = False,
                          rolled: bool = False,
-                         warp: bool = False) -> np.ndarray:
+                         warp: bool = False,
+                         mixed: bool = False) -> np.ndarray:
     """The packed `(mn|P)` of `classes` built on the card over `cells`
     (`packed_layout`'s, or a subset's of one layout), `(n_col, n_aux)`,
     NaN where no launched cell stores, the sequence run `RUNS` times
@@ -310,10 +313,10 @@ def build_packed_on_card(classes: Sequence[Eri3Class],
     prog = packed_program(classes, backend, workdir, lowstack=lowstack,
                           spherical_aux=spherical_aux,
                           spherical_bra=spherical_bra, rolled=rolled,
-                          warp=warp)
+                          warp=warp, mixed=mixed)
     binary = build_runner(tc, prog, workdir / "peri3_bin", timeout=timeout)
     kernels = [packed_kernel(c, lowstack, spherical_aux, spherical_bra,
-                             rolled, warp) for c in classes]
+                             rolled, warp, mixed) for c in classes]
     buffers, steps = packed_steps(classes, cells, n_col, n_aux, kernels,
                                   warp=warp)
     ran = run_sequence(binary, workdir / "case", buffers, steps, outs=[OUT],
