@@ -1,7 +1,7 @@
 """The three-center DF integral kernel, `Target.ERI3`: `(mn|P)`.
 
     build_eri3_kernel(spec | (la, lb, lP), lowstack=None, packed=False,
-                      spherical_aux=False) -> Kernel
+                      spherical_aux=False, spherical_bra=False) -> Kernel
     eri3_lowstack(spec | (la, lb, lP))     -> bool        the form's rule
     aux_harmonics(l)                       -> c[m][tau]   the aux columns
     eri3_spec(la, lb, lP)                  -> Spec        the class's key
@@ -193,6 +193,33 @@ accumulators, and is untouched. Named `speri3_` (`speri3_333`); the packed
 parameters, launch and cell arrays, with `n_aux` and `dst` counting
 spherical aux columns. The square `eri3` has no such mode.
 
+THE FULLY SPHERICAL OUTPUT (`spherical_bra=True` with `spherical_aux`;
+FelizJueves#745). Both bra indices in real solid harmonics too: `(mu nu|Q)`,
+`(2 la + 1)(2 lb + 1)(2 lP + 1)` elements a cell, at `dst + n_aux (mu (2 lb
++ 1) + nu) + m`. The low-stack form has no staged block to transform (it
+accumulates straight into global memory, #606), and a cell's spherical
+region is smaller than its Cartesian block, so neither "transform before
+the store" nor an in-place pass over the accumulated block is open.
+Instead, inside each unrolled aux column `m`, per primitive triple:
+
+    V[a, b]      = SUM_t E^{ab}_t U[t]          every Cartesian (a, b), LOCAL
+    T[b]         = SUM_a c^{la}[mu][a] V[a, b]  one mu at a time
+    out[mu,nu,m] +-= w SUM_b c^{lb}[nu][b] T[b]
+
+`c^l` is `aux_harmonics(l)`, the aux convention, spelled as literals over
+its nonzero terms, `mu` and `nu` unrolled and the `T` row's `b` rolled.
+The added stack is `V[nA nB]` and `T[nB]` (`V_ARRAY`, `T_ARRAY`), 880 B at
+(ff|.), independent of `lP`; the global read-modify-writes per column and
+primitive triple fall from `nA nB` to `(2 la + 1)(2 lb + 1)`. A diagonal
+pair forms `a >= b` and mirrors within `V`, accumulates `mu >= nu`, and is
+mirrored on spherical indices at the end. s and p are the identity: with
+`la, lb <= 1` there is no `V` and no transform, and the body is
+`speri3_`'s unchanged (`2 l + 1` is the Cartesian count there, so even the
+slots are the same). Named `ssperi3_`; the packed parameters, `n_col`
+counting spherical bra functions (`eri3.packed_columns(...,
+spherical_bra=True)`). Boys, the tower, the bra tables, the aux columns,
+the records, the cells and the launch are `speri3_`'s.
+
     params  n_cell n_bra_rec n_aux_rec n_ao n_aux (I32)
             zeta_ab[n_bra_rec]  P XPA XPB[n_bra_rec, 3]  s_ab[n_bra_rec]
             A[n_aux_rec, 3]  alpha[n_aux_rec]  s_aux[n_aux_rec]
@@ -293,15 +320,18 @@ _PACKED_DIAGONAL = (
 
 
 def eri3_name(cls: Spec | tuple[int, int, int], *,
-              packed: bool = False, spherical_aux: bool = False) -> str:
+              packed: bool = False, spherical_aux: bool = False,
+              spherical_bra: bool = False) -> str:
     """The kernel name of a class: `eri3_` and its three `l`s, run
     together while every `l <= 9` (`eri3_220`) and `_`-separated once any
     is two digits (`eri3_0_11_0`), so `(0, 11, 0)` and `(0, 1, 10)` never
     share a name (#445). The packed form's is `peri3_` (`peri3_220`), its
-    spherical-aux mode's `speri3_` (`speri3_220`)."""
+    spherical-aux mode's `speri3_` (`speri3_220`), and the fully spherical
+    one's `ssperi3_` (`ssperi3_220`, #745)."""
     am = cls.am if isinstance(cls, Spec) else tuple(cls)
     sep = "_" if max(am) > 9 else ""
-    head = ("speri3_" if spherical_aux else "peri3_" if packed else "eri3_")
+    head = ("ssperi3_" if spherical_bra else "speri3_" if spherical_aux
+            else "peri3_" if packed else "eri3_")
     return head + sep.join(map(str, am))
 
 
@@ -453,7 +483,8 @@ def build_eri3_kernel(cls: Spec | tuple[int, int, int], *,
                       name: str | None = None,
                       lowstack: bool | None = None,
                       packed: bool = False,
-                      spherical_aux: bool = False) -> Kernel:
+                      spherical_aux: bool = False,
+                      spherical_bra: bool = False) -> Kernel:
     """The three-center kernel of one class (module docstring).
 
     `cls` is a `Target.ERI3` `Spec` or `(la, lb, lP)`; any class the
@@ -465,8 +496,14 @@ def build_eri3_kernel(cls: Spec | tuple[int, int, int], *,
     OUTPUT): the same arithmetic in either form, named `peri3_`.
     `spherical_aux` (packed only) writes the aux index in real solid
     harmonics (THE SPHERICAL-AUX OUTPUT), always in the low-stack form,
-    named `speri3_`; it refuses `packed=False` and `lowstack=False`."""
+    named `speri3_`; it refuses `packed=False` and `lowstack=False`.
+    `spherical_bra` (with `spherical_aux`) writes both bra indices in real
+    solid harmonics too (THE FULLY SPHERICAL OUTPUT, #745), named
+    `ssperi3_`."""
     spec = _spec(cls)
+    if spherical_bra and not spherical_aux:
+        raise ValueError("spherical_bra is a mode of the spherical-aux "
+                         "output: pass spherical_aux=True")
     if spherical_aux:
         if not packed:
             raise ValueError("spherical_aux is a mode of the packed output: "
@@ -474,7 +511,8 @@ def build_eri3_kernel(cls: Spec | tuple[int, int, int], *,
         if lowstack is False:
             raise ValueError("spherical_aux exists in the low-stack form "
                              "only (THE SPHERICAL-AUX OUTPUT)")
-        return _build_lowstack(spec, name, packed=True, spherical=True)
+        return _build_lowstack(spec, name, packed=True, spherical=True,
+                               spherical_bra=spherical_bra)
     if lowstack is None:
         lowstack = eri3_lowstack(spec)
     if lowstack:
@@ -757,6 +795,8 @@ LOWSTACK_MIN_L = 10  # every class from L = la + lb + lP = 10 (#606)
 E_DOUBLES_MAX = 1575
 R_ARRAY = "R"  # [r]^(0) of one (bra, aux) pair, hermite_targets(L) order
 U_ARRAY = "U"  # SUM_tau [t+tau] E^q_tau of one aux row q, hermite_targets(Lab)
+V_ARRAY = "Vab"  # one aux column's Cartesian bra block, [a nB + b] (#745)
+T_ARRAY = "Tmu"  # one spherical mu's row of it, SUM_a c[mu][a] V[a, b] (#745)
 AUX_TABLES = ("Cx", "Cy", "Cz")  # the aux record's single-center tables
 
 LOWSTACK_NOTE = (
@@ -773,6 +813,15 @@ SPHERICAL_NOTE = (
     "product and scaled by sqrt((2 lP - 1)!!): FreeBreakfast's "
     "spherical_transform_matrix block for one shell. n_aux and dst count "
     "spherical aux columns")
+SPHERICAL_BRA_NOTE = (
+    "FULLY SPHERICAL (FelizJueves#745): eri3[dst + n_aux (mu (2 lb + 1) + "
+    "nu) + m], mu, nu and m all real solid harmonics in aux_harmonics' "
+    "convention (s and p the identity); each column's Cartesian bra block "
+    "is formed in a local Vab per primitive triple and transformed before "
+    "the global add. n_col counts spherical bra functions")
+_SPHERICAL_DIAGONAL = (
+    "diagonal AO shell pair (diag): mu >= nu formed, each mirrored once "
+    "into the full square spherical block")
 
 
 def eri3_e_doubles(cls: Spec | tuple[int, int, int]) -> int:
@@ -874,19 +923,28 @@ def _scaled_w(lP: int) -> Expr:
 
 
 def _build_lowstack(spec: Spec, name: str | None,
-                    packed: bool = False, spherical: bool = False) -> Kernel:
+                    packed: bool = False, spherical: bool = False,
+                    spherical_bra: bool = False) -> Kernel:
     """`build_eri3_kernel`'s kernel with no `E` block and no accumulators
     (module docstring, THE LOW-STACK FORM): the same parameters, launch and
     output. `packed`: the packed output's (THE PACKED OUTPUT), each element
     accumulated in its packed slot by the same operations. `spherical`
     (packed only): the aux index in solid harmonics (THE SPHERICAL-AUX
-    OUTPUT), the aux record's tables replaced by `aux_harmonics(lP)`."""
+    OUTPUT), the aux record's tables replaced by `aux_harmonics(lP)`.
+    `spherical_bra` (spherical only): both bra indices in solid harmonics
+    too (THE FULLY SPHERICAL OUTPUT), each column's Cartesian block formed
+    in a local `V` and transformed into the output's spherical slots."""
     la, lb, lP = spec.am
     Lab, L = la + lb, la + lb + lP
     dag, order = eri3_plan(spec)
     fB, fP = ef.axis_tables_fragment(la, lb), ef.center_tables_fragment(lP)
     nA, nB = (len(ef.cartesians(x)) for x in (la, lb))
     nP = 2 * lP + 1 if spherical else len(ef.cartesians(lP))
+    # the output block's bra extents: spherical when `spherical_bra`, where
+    # s and p are the identity, so only a class with a d or higher bra
+    # shell transforms (THE FULLY SPHERICAL OUTPUT)
+    oA, oB = (2 * la + 1, 2 * lb + 1) if spherical_bra else (nA, nB)
+    transform = spherical_bra and max(la, lb) >= 2
     odd = lP % 2 == 1
     cell, ib, ik = Var(CELL), Var(BRA), Var(KET)
     targets = live_targets(la, lb, lP)
@@ -900,7 +958,7 @@ def _build_lowstack(spec: Spec, name: str | None,
     def out_at(i: Expr, j: Expr, k: Expr, mirror: bool = False) -> Index:
         if packed:  # block (i, j), or (j, i) for the mirror, at `od`
             r, c = (j, i) if mirror else (i, j)
-            return _packed_at(_iadd(_c(Fn.MUL, r, Lit(nB)), c), k)
+            return _packed_at(_iadd(_c(Fn.MUL, r, Lit(oB)), c), k)
         m, n = _iadd(Var("oa"), i), _iadd(Var("ob"), j)
         return Index(OUT, (n, m, _iadd(Var("op"), k)) if mirror
                      else (m, n, _iadd(Var("op"), k)))
@@ -910,12 +968,19 @@ def _build_lowstack(spec: Spec, name: str | None,
         def row(a: tuple[Expr, Expr, Expr]) -> tuple[Stmt, ...]:
             def elem(b: tuple[Expr, Expr, Expr]) -> tuple[Stmt, ...]:
                 at = out_at(Var("ra"), Var("rb"), rq)
-                update: tuple[Stmt, ...] = (
-                    *ef.rolled_e_sum(la, lb, a, b,
-                                     lambda h: Index(U_ARRAY, (h,)), "v"),
-                    Assign(at, _c(Fn.SUB if odd else Fn.ADD, at,
-                                  _c(Fn.MUL, Var("w"), Var("v")))),
-                )
+                v_sum = ef.rolled_e_sum(la, lb, a, b,
+                                        lambda h: Index(U_ARRAY, (h,)), "v")
+                update: tuple[Stmt, ...]
+                if transform:  # the column's Cartesian block, local
+                    update = (*v_sum, Assign(_v_at(Var("ra"), Var("rb")),
+                                             Var("v")))
+                    if la == lb:  # a diagonal pair's mirror, within V
+                        update = (*update, If(_c(Fn.LT, Lit(0), Var("dg")), (
+                            Assign(_v_at(Var("rb"), Var("ra")), Var("v")),)))
+                else:
+                    update = (*v_sum, Assign(at, _c(
+                        Fn.SUB if odd else Fn.ADD, at,
+                        _c(Fn.MUL, Var("w"), Var("v")))))
                 head = (Decl("rb", Scalar.I32, init=ef.cartesian_index("b")),)
                 if la != lb:
                     return (*head, *update)
@@ -925,11 +990,55 @@ def _build_lowstack(spec: Spec, name: str | None,
                     ef.cartesian_loops(lb, ("bx", "by", "bz"), elem, tag="b"))
         return ef.cartesian_loops(la, ("ax", "ay", "az"), row, tag="a")
 
+    def _v_at(a: Expr, b: Expr) -> Index:
+        return Index(V_ARRAY, (_iadd(_c(Fn.MUL, a, Lit(nB)), b),))
+
     element_note = Note(
         f"per element (a, b, q): eri3 {'-' if odd else '+'}= s_ij s_k SUM_t "
         "E^{ab}_t U[t], rolled over the per-axis tables; "
         f"(-1)^|tau| = (-1)^{lP} on every live tau"
         + ("; a diagonal pair forms a >= b only" if la == lb else ""))
+    if transform:
+        element_note = Note(
+            "per Cartesian (a, b): Vab[a nB + b] = SUM_t E^{ab}_t U[t], "
+            "rolled over the per-axis tables, LOCAL (no global add)"
+            + ("; a diagonal pair forms a >= b only, mirrored within Vab"
+               if la == lb else ""))
+
+    # --- one column's V onto the spherical bra slots, unrolled -------------
+    def to_spherical(m: int) -> tuple[Stmt, ...]:
+        ca, cb = aux_harmonics(la), aux_harmonics(lb)
+        out: list[Stmt] = [Note(
+            f"the bra onto solid harmonics: for each mu, Tmu[b] = SUM_a "
+            "c[mu][a] Vab[a nB + b]; then out[mu, nu, m] "
+            f"{'-' if odd else '+'}= w SUM_b c[nu][b] Tmu[b] "
+            "(aux_harmonics, nonzero terms only)"
+            + ("; a diagonal pair accumulates mu >= nu only"
+               if la == lb else ""))]
+        tb = Var("tb")
+        for mu in range(oA):
+            t_row: Expr | None = None
+            for a, c in enumerate(ca[mu]):
+                if c != 0.0:
+                    term = _c(Fn.MUL, Lit(c), _v_at(Lit(a), tb))
+                    t_row = term if t_row is None else _iadd(t_row, term)
+            assert t_row is not None  # every harmonic has a term
+            out.append(For(tb.name, Lit(0), Lit(nB), Lit(1), (
+                Assign(Index(T_ARRAY, (tb,)), t_row),)))
+            for nu in range(oB):
+                sv: Expr | None = None
+                for b, c in enumerate(cb[nu]):
+                    if c != 0.0:
+                        term = _c(Fn.MUL, Lit(c), Index(T_ARRAY, (Lit(b),)))
+                        sv = term if sv is None else _iadd(sv, term)
+                assert sv is not None
+                at = out_at(Lit(mu), Lit(nu), Lit(m))
+                upd: Stmt = Assign(at, _c(Fn.SUB if odd else Fn.ADD, at,
+                                          _c(Fn.MUL, Var("w"), sv)))
+                if la == lb and nu > mu:
+                    upd = If(Var("differ"), (upd,))
+                out.append(upd)
+        return tuple(out)
 
     # --- one Cartesian aux row q: U[t], then every (a, b) element of it ------
     def per_q(q: tuple[Expr, Expr, Expr]) -> tuple[Stmt, ...]:
@@ -971,6 +1080,7 @@ def _build_lowstack(spec: Spec, name: str | None,
             ef.hermite_loops(Lab, u_of, tag="h"),
             element_note,
             elements(Lit(m)),
+            *(to_spherical(m) if transform else ()),
         )
 
     if spherical:
@@ -1043,7 +1153,7 @@ def _build_lowstack(spec: Spec, name: str | None,
         return For("i", Lit(0), ni, Lit(1), (For("j", Lit(0), nj, Lit(1), (
             For("k", Lit(0), Lit(nP), Lit(1), body),)),))
 
-    zero = nest(Lit(nA), Lit(nB), (Assign(out_at(i, j, k), Lit(0.0)),))
+    zero = nest(Lit(oA), Lit(oB), (Assign(out_at(i, j, k), Lit(0.0)),))
     if packed:
         cell_body: tuple[Stmt, ...] = (
             *_cell_ranges(cell),
@@ -1059,18 +1169,24 @@ def _build_lowstack(spec: Spec, name: str | None,
             zero,
             *(Decl(n, Scalar.F64, (Lit(len(hermite_targets(x))),))
               for n, x in ((R_ARRAY, L), (U_ARRAY, Lab))),
+            *((Decl(V_ARRAY, Scalar.F64, (Lit(nA * nB),)),
+               Decl(T_ARRAY, Scalar.F64, (Lit(nB),))) if transform else ()),
             Note("the bra records of the cell's shell pair, serially"),
             For(BRA, Var("b0"), Var("b1"), Lit(1), bra_body),
-            *((Note(_PACKED_DIAGONAL), If(
-                _c(Fn.LT, Lit(0), Var("dg")), (nest(Lit(nA), i, (Assign(
+            *((Note(_SPHERICAL_DIAGONAL if transform
+                    else _PACKED_DIAGONAL), If(
+                _c(Fn.LT, Lit(0), Var("dg")), (nest(Lit(oA), i, (Assign(
                     out_at(i, j, k, mirror=True), out_at(i, j, k)),)),)))
               if la == lb else ()),
         )
         body = _packed_body(spec, True, cell_body)
         if spherical:
             body = (Note(SPHERICAL_NOTE), *body)
+        if spherical_bra:
+            body = (Note(SPHERICAL_BRA_NOTE), *body)
         return Kernel(name or eri3_name(spec, packed=True,
-                                        spherical_aux=spherical),
+                                        spherical_aux=spherical,
+                                        spherical_bra=spherical_bra),
                       _params(True), body)
     off_diag = (nest(Lit(nA), Lit(nB), (
         Assign(out_at(i, j, k, mirror=True), out_at(i, j, k)),)),)

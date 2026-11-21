@@ -161,6 +161,7 @@ UNITS: dict[str, tuple[str, str, int]] = {
     "metric": ("mmd", "metric", 0), "eri3": ("mmd", "eri3", 0),
     "peri3": ("mmd", "eri3", 0),  # the packed form (FreeBreakfast#1680)
     "speri3": ("mmd", "eri3", 0),  # its spherical-aux mode (#743)
+    "ssperi3": ("mmd", "eri3", 0),  # its fully spherical mode (#745)
     "gs": ("mmd", "s", 1), "gt": ("mmd", "t", 1), "gv": ("mmd", "v", 1),
     # the d1 matrix forms (#687): a variant of the d1 case, as a lever is
     "ips": ("mmd", "s", 1), "ipt": ("mmd", "t", 1), "ipv": ("mmd", "v", 1),
