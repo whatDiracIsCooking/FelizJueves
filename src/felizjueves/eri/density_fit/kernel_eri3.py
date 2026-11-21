@@ -7,6 +7,8 @@
     aux_harmonics(l)                       -> c[m][tau]   the aux columns
     eri3_spec(la, lb, lP)                  -> Spec        the class's key
     build_bra_transform_kernel(la, lb)     -> Kernel      sbra3_ (#747)
+    build_warp_eri3_kernel(spec | (la, lb, lP), spherical_bra=False)
+                                           -> Kernel      wsperi3_ / wssperi3_ (#749)
     quartet_spec(spec | (la, lb, lP))      -> Spec        Target.J (la lb|lP 0)
     eri3_plan(spec | (la, lb, lP))         -> (dag, order)  the plan's answer
     live_targets(la, lb, lP)               -> the [r]^(0) the contraction reads
@@ -254,6 +256,7 @@ import math
 
 from felizjueves.ir import (
     Assign,
+    Barrier,
     Boys,
     Call,
     Const,
@@ -271,6 +274,7 @@ from felizjueves.ir import (
     Note,
     Param,
     Scalar,
+    Space,
     Stmt,
     Var,
     Weighted,
@@ -299,6 +303,7 @@ __all__ = [
     "PARAM_OF",
     "aux_harmonics",
     "build_bra_transform_kernel",
+    "build_warp_eri3_kernel",
     "build_eri3_kernel",
     "bra_transform_name",
     "E_DOUBLES_MAX",
@@ -948,6 +953,72 @@ def _scaled_w(lP: int) -> Expr:
     return w
 
 
+class ConstTables:
+    """The `ir.Const` tables a kernel reads (#748, #749), each added on
+    first use, in that order (`consts()`):
+
+    - `hc{l}_{part}`: `aux_harmonics(l)` as CSR -- `off` (I32, `2l+2`:
+      column `m`'s terms are `off[m] .. off[m+1]`), `idx` (I32, the
+      Cartesian index), `val` (F64, the coefficient) and `tx`/`ty`/`tz`
+      (I32, the Cartesian's components), each column's nonzero terms in
+      Cartesian order, the order the unrolled sums take them;
+    - `ht{L}_{x|y|z}`: the components of `hermite_targets(L)` (I32);
+    - `cc{l}_{x|y|z}`: the components of `cartesians(l)` (I32)."""
+
+    def __init__(self) -> None:
+        self.tables: dict[str, Const] = {}
+
+    def _add(self, n: str, type_: Scalar, vals: tuple) -> str:
+        if n not in self.tables:
+            self.tables[n] = Const(n, type_, vals)
+        return n
+
+    def table(self, l: int, part: str) -> str:  # noqa: E741
+        n = f"hc{l}_{part}"
+        if n in self.tables:
+            return n
+        terms = [[(i, c) for i, c in enumerate(col) if c != 0.0]
+                 for col in aux_harmonics(l)]
+        flat = [t for col in terms for t in col]
+        carts = ef.cartesians(l)
+        vals: tuple[int | float, ...] = {
+            "off": tuple(itertools.accumulate(
+                (len(col) for col in terms), initial=0)),
+            "idx": tuple(i for i, _ in flat),
+            "val": tuple(float(c) for _, c in flat),
+            "tx": tuple(carts[i][0] for i, _ in flat),
+            "ty": tuple(carts[i][1] for i, _ in flat),
+            "tz": tuple(carts[i][2] for i, _ in flat)}[part]
+        return self._add(n, Scalar.F64 if part == "val" else Scalar.I32,
+                         vals)
+
+    def at(self, l: int, part: str, k: Expr) -> Index:  # noqa: E741
+        return Index(self.table(l, part), (k,))
+
+    def hermite(self, L: int, d: int, k: Expr) -> Index:  # noqa: N803
+        n = self._add(f"ht{L}_{'xyz'[d]}", Scalar.I32,
+                      tuple(t[d] for t in hermite_targets(L)))
+        return Index(n, (k,))
+
+    def cart(self, l: int, d: int, k: Expr) -> Index:  # noqa: E741
+        n = self._add(f"cc{l}_{'xyz'[d]}", Scalar.I32,
+                      tuple(c[d] for c in ef.cartesians(l)))
+        return Index(n, (k,))
+
+    def csr_sum(self, l: int, row: Expr, term, acc: str  # noqa: E741
+                ) -> tuple[Stmt, ...]:
+        """`acc = SUM_k val[k] term(k)` over row `row`'s terms, a left fold
+        from 0: `0 + x` is `x`, so the unrolled fold's value."""
+        k = Var(f"{acc}_k")
+        return (Decl(acc, Scalar.F64, init=Lit(0.0)),
+                For(k.name, self.at(l, "off", row), self.at(l, "off", _iadd(
+                    row, Lit(1))), Lit(1), (Assign(Var(acc), _iadd(Var(acc), _c(
+                        Fn.MUL, self.at(l, "val", k), term(k)))),)))
+
+    def consts(self) -> tuple[Const, ...]:
+        return tuple(self.tables.values())
+
+
 def _build_lowstack(spec: Spec, name: str | None,
                     packed: bool = False, spherical: bool = False,
                     spherical_bra: bool = False,
@@ -1111,44 +1182,9 @@ def _build_lowstack(spec: Spec, name: str | None,
         )
 
     # --- THE ROLLED FORM (#748): the same, over the constant tables --------
-    tables: dict[str, Const] = {}
-
-    def table(l: int, part: str) -> str:  # noqa: E741
-        """The name of `aux_harmonics(l)`'s CSR `part`, the table added to
-        the kernel on first use: `off` (I32, 2l+2: column m's terms are
-        `off[m] .. off[m+1]`), `idx` (I32, the Cartesian index), `val`
-        (F64, the coefficient) and `tx`/`ty`/`tz` (I32, the Cartesian's
-        components), each column's nonzero terms in Cartesian order --
-        the order the unrolled sums take them."""
-        n = f"hc{l}_{part}"
-        if n not in tables:
-            terms = [[(i, c) for i, c in enumerate(col) if c != 0.0]
-                     for col in aux_harmonics(l)]
-            flat = [t for col in terms for t in col]
-            carts = ef.cartesians(l)
-            vals: tuple[int | float, ...] = {
-                "off": tuple(itertools.accumulate(
-                    (len(col) for col in terms), initial=0)),
-                "idx": tuple(i for i, _ in flat),
-                "val": tuple(float(c) for _, c in flat),
-                "tx": tuple(carts[i][0] for i, _ in flat),
-                "ty": tuple(carts[i][1] for i, _ in flat),
-                "tz": tuple(carts[i][2] for i, _ in flat)}[part]
-            tables[n] = Const(n, Scalar.F64 if part == "val" else Scalar.I32,
-                              vals)
-        return n
-
-    def at(l: int, part: str, k: Expr) -> Index:  # noqa: E741
-        return Index(table(l, part), (k,))
-
-    def csr_sum(l: int, row: Expr, term, acc: str) -> tuple[Stmt, ...]:  # noqa: E741
-        """`acc = SUM_k val[k] term(k)` over row `row`'s terms, a left fold
-        from 0: `0 + x` is `x`, so the unrolled fold's value."""
-        k = Var(f"{acc}_k")
-        return (Decl(acc, Scalar.F64, init=Lit(0.0)),
-                For(k.name, at(l, "off", row), at(l, "off", _iadd(row, Lit(
-                    1))), Lit(1), (Assign(Var(acc), _iadd(Var(acc), _c(
-                        Fn.MUL, at(l, "val", k), term(k)))),)))
+    tabs = ConstTables()
+    tables = tabs.tables
+    at, csr_sum = tabs.at, tabs.csr_sum
 
     def to_spherical_rolled(m: Expr) -> tuple[Stmt, ...]:
         mu, nu, tb = Var("mu"), Var("nu"), Var("tb")
@@ -1458,3 +1494,277 @@ def build_bra_transform_kernel(la: int, lb: int, *,
         If(_c(Fn.LT, gid, _c(Fn.MUL, Var("n_pair"), naux)), per),
     )
     return Kernel(name or bra_transform_name(la, lb), params, body)
+
+
+# ---------------------------------------------------------------------------
+# A warp per cell (#749)
+# ---------------------------------------------------------------------------
+
+WARP_LANES = 32  # one warp per cell: the block's width, both cards' wavefront
+# the shared doubles the phase's tower slots may take with U, V and the bra
+# tables (kernel_d2eri3's SHARED_DOUBLES, #1265)
+WARP_SHARED_DOUBLES = 2048
+R_SLOT = "r_off"  # the start of a record pair's slot in the shared R
+ACC_ARRAY = "acc"  # a lane's output slots, across every record pair
+WARP_NOTE = (
+    "A WARP PER CELL (FelizJueves#749): block = one warp, cell = block index. "
+    "Per bra record lane 0 forms the axis tables into SHARED memory; the aux "
+    "records go in phases, a lane forming one pair's tower into its SHARED "
+    "slot of R; then per pair and aux column the lanes split U[t] (by t), "
+    "Vab[a nB + b] (by (a, b)) and the output slots (by (mu, nu)) between "
+    "barriers, each slot accumulated in the lane's registers across every "
+    "record pair and stored once at the end: no global read-modify-write. "
+    "Each value is formed by the thread-per-cell kernel's statements in its "
+    "order")
+
+
+def warp_slots(cls: Spec | tuple[int, int, int]) -> int:
+    """How many aux records' towers a phase holds (THE WARP FORM): as many
+    as fit `WARP_SHARED_DOUBLES` beside U, V and the bra tables, at most
+    `WARP_LANES`, at least one."""
+    la, lb, lP = _spec(cls).am
+    n_r = len(hermite_targets(la + lb + lP))
+    fixed = (len(hermite_targets(la + lb)) + len(ef.cartesians(la))
+             * len(ef.cartesians(lb)) + 3 * ef.axis_table_extent(la, lb))
+    return max(1, min(WARP_LANES, (WARP_SHARED_DOUBLES - fixed) // n_r))
+
+
+def warp_launch_shape(n_cell: int) -> tuple[int, tuple[int, int]]:
+    """`(n_cell, (WARP_LANES, 1))`: a block, one warp, per cell."""
+    if type(n_cell) is not int or n_cell < 1:
+        raise ValueError(f"n_cell = {n_cell!r} is not a positive int")
+    return n_cell, (WARP_LANES, 1)
+
+
+def build_warp_eri3_kernel(cls: Spec | tuple[int, int, int], *,
+                           spherical_bra: bool = False,
+                           slots: int | None = None,
+                           name: str | None = None) -> Kernel:
+    """THE WARP FORM (#749) of the spherical-aux packed output (`speri3_`),
+    or with `spherical_bra` of the fully spherical one (`ssperi3_`): the
+    same parameters, cell arrays and output, launched one warp per cell
+    (`warp_launch_shape`), named `wsperi3_` / `wssperi3_`.
+
+    The cell's bra records, outer, serially. Per bra record lane 0 forms
+    the axis tables `Ex Ey Ez` into SHARED memory; a `Barrier`. Its aux
+    records go in PHASES of `warp_slots(cls)`: lane `g` of the phase forms
+    the tower of aux record `k0 + g` into SHARED `R[g n_R ..]` (the
+    thread-per-cell kernel's tower statements, each store moved into the
+    slot); a `Barrier`. Then per pair, in order, and per aux column `m`:
+
+        U[t]       lanes split t, SUM_tau c^{lP}[m][tau] R[t + tau]      (shared)
+        Vab[a, b]  lanes split (a, b), SUM_t E^{ab}_t U[t]               (shared)
+        acc[slot] +-= w S      lanes split the output slots, in registers
+
+    between `Barrier`s, `S` the slot's bra transform of `Vab` (`ssperi3_`:
+    `SUM_b c^{lb}[nu][b] SUM_a c^{la}[mu][a] Vab[a, b]`; `speri3_`: `Vab`
+    itself). At the end each lane stores its slots, one plain store each;
+    a diagonal pair forms `a >= b` (and `mu >= nu`) and stores the mirror.
+
+    Each `U`, `Vab`, `S` and `acc` update is the thread-per-cell kernel's
+    statement (`aux_harmonics` read from `ConstTables`' CSR, as the rolled
+    form), in the same order per slot, so the outputs are BITWISE the
+    thread-per-cell kernel's, interpreted. A lane holds
+    `ceil(slots / WARP_LANES) (2 lP + 1)` accumulators (26 at (ff|i)); the
+    tower, the tables, `U` and `Vab` are SHARED (`WARP_SHARED_DOUBLES`).
+    WAVE64: a 64-lane wavefront needs `WARP_LANES = 64` (half the
+    accumulators a lane) and nothing else; both cards here are wave32.
+    `slots` overrides `warp_slots(cls)`, the phase's width (1 to
+    `WARP_LANES`)."""
+    spec = _spec(cls)
+    la, lb, lP = spec.am
+    Lab, L = la + lb, la + lb + lP
+    nA, nB = len(ef.cartesians(la)), len(ef.cartesians(lb))
+    oA, oB = (2 * la + 1, 2 * lb + 1) if spherical_bra else (nA, nB)
+    transform = spherical_bra and max(la, lb) >= 2
+    nP, nU, nR = 2 * lP + 1, len(hermite_targets(Lab)), len(hermite_targets(L))
+    P = warp_slots(spec) if slots is None else slots
+    if type(P) is not int or not 1 <= P <= WARP_LANES:
+        raise ValueError(f"slots = {slots!r} is not in 1..{WARP_LANES}")
+    n_slot = oA * oB
+    NK = -(-n_slot // WARP_LANES)
+    odd = lP % 2 == 1
+    tabs = ConstTables()
+    dag, order = eri3_plan(spec)
+    fB = ef.axis_tables_fragment(la, lb)
+    lane, cell, ib, ik = Var("lane"), Var(CELL), Var(BRA), Var(KET)
+    j, m, g = Var("j"), Var("m"), Var("g")
+    W = Lit(WARP_LANES)
+
+    def lt(x: Expr, y: Expr) -> Expr:
+        return _c(Fn.LT, x, y)
+
+    def div(x: Expr, y: Expr) -> Expr:
+        return _c(Fn.DIV, x, y)
+
+    def mod(x: Expr, n: int) -> Expr:
+        return _c(Fn.SUB, x, _c(Fn.MUL, div(x, Lit(n)), Lit(n)))
+
+    def shared(n: str, size: int) -> Decl:
+        return Decl(n, Scalar.F64, (Lit(size),), space=Space.SHARED)
+
+    def strided(var: str, n: int, body: tuple[Stmt, ...]) -> For:
+        return For(var, lane, Lit(n), W, body)
+
+    # --- the tower of one aux record into its slot (lane g of the phase) ---
+    targets = live_targets(la, lb, lP)
+    prelude, fundamental = fundamental_prelude(
+        [mm for (r, mm) in order if not any(r)])
+    tower = store_targets(_live((*prelude, *recurrence_body(
+        dag, order, fundamental)), {node_name((r, 0)) for r in targets}),
+        targets, L, R_ARRAY)
+    slotted = tuple(
+        Assign(Index(R_ARRAY, (_iadd(Var(R_SLOT), st.dst.at[0]),)), st.value)
+        if isinstance(st, Assign) and isinstance(st.dst, Index)
+        and st.dst.array == R_ARRAY else st for st in tower)
+    towers = If(lt(lane, Lit(P)), (If(lt(_iadd(
+        Var("k0"), lane), Var("p1")), (
+        Decl("tk", Scalar.I32, init=_iadd(Var("k0"), lane)),
+        Decl(R_SLOT, Scalar.I32, init=_c(Fn.MUL, lane, Lit(nR))),
+        Decl("aq", Scalar.F64, init=Index("alpha", (Var("tk"),))),
+        *(Decl(n, Scalar.F64, init=_c(Fn.SUB, Var(f"P{d}"),
+                                      Index("A", (Var("tk"), Lit(d)))))
+          for d, n in enumerate(PQ_PARAMS)),
+        Decl(THETA, Scalar.F64, init=_c(Fn.SQRT, _c(
+            Fn.DIV, _c(Fn.MUL, Var("ze"), Var("aq")),
+            _c(Fn.ADD, Var("ze"), Var("aq"))))),
+        *slotted)),))
+
+    # --- U, by t ----------------------------------------------------------
+    def r_at(k: Expr) -> Index:
+        t = tuple(_iadd(tabs.hermite(Lab, d, j),
+                        tabs.at(lP, ("tx", "ty", "tz")[d], k))
+                  for d in range(3))
+        return Index(R_ARRAY, (_iadd(Var(R_SLOT), ef.hermite_index(t)),))
+    u_phase = strided("j", nU, (
+        *tabs.csr_sum(lP, m, r_at, "u"),
+        Assign(Index(U_ARRAY, (j,)), Var("u"))))
+
+    # --- Vab, by (a, b) ---------------------------------------------------
+    ra, rb = div(j, Lit(nB)), mod(j, nB)
+    a = tuple(tabs.cart(la, d, Var("ra")) for d in range(3))
+    b = tuple(tabs.cart(lb, d, Var("rb")) for d in range(3))
+    v_body: tuple[Stmt, ...] = (
+        *ef.rolled_e_sum(la, lb, a, b, lambda h: Index(U_ARRAY, (h,)), "v"),
+        Assign(Index(V_ARRAY, (j,)), Var("v")))
+    if transform and la == lb:  # a diagonal pair's mirror, within Vab
+        v_body = (*v_body, If(lt(Lit(0), Var("dg")), (Assign(Index(
+            V_ARRAY, (_iadd(_c(Fn.MUL, Var("rb"), Lit(nB)), Var("ra")),)),
+            Var("v")),)))
+    if la == lb:
+        v_body = (If(_iadd(Var("differ"), lt(Var("rb"), _iadd(
+            Var("ra"), Lit(1)))), v_body),)
+    v_phase = strided("j", nA * nB, (
+        Decl("ra", Scalar.I32, init=ra), Decl("rb", Scalar.I32, init=rb),
+        *v_body))
+
+    # --- the slots, by (mu, nu) ------------------------------------------
+    acc_at = Index(ACC_ARRAY, (_iadd(_c(Fn.MUL, Var("kk"), Lit(nP)), m),))
+    if transform:
+        kb, ka = Var("kb"), Var("ka")
+        value: tuple[Stmt, ...] = (
+            Decl("sv", Scalar.F64, init=Lit(0.0)),
+            For(kb.name, tabs.at(lb, "off", Var("rc")), tabs.at(
+                lb, "off", _iadd(Var("rc"), Lit(1))), Lit(1), (
+                Decl("tr", Scalar.F64, init=Lit(0.0)),
+                For(ka.name, tabs.at(la, "off", Var("rr")), tabs.at(
+                    la, "off", _iadd(Var("rr"), Lit(1))), Lit(1), (
+                    Assign(Var("tr"), _iadd(Var("tr"), _c(
+                        Fn.MUL, tabs.at(la, "val", ka), Index(V_ARRAY, (
+                            _iadd(_c(Fn.MUL, tabs.at(la, "idx", ka),
+                                     Lit(nB)), tabs.at(lb, "idx", kb)),
+                        ))))),)),
+                Assign(Var("sv"), _iadd(Var("sv"), _c(
+                    Fn.MUL, tabs.at(lb, "val", kb), Var("tr")))))))
+        s_val: Expr = Var("sv")
+    else:
+        value, s_val = (), Index(V_ARRAY, (j,))
+    s_body: tuple[Stmt, ...] = (*value, Assign(acc_at, _c(
+        Fn.SUB if odd else Fn.ADD, acc_at, _c(Fn.MUL, Var("w"), s_val))))
+    if la == lb:
+        s_body = (If(_iadd(Var("differ"), lt(Var("rc"), _iadd(
+            Var("rr"), Lit(1)))), s_body),)
+    def slot_head(rows: bool) -> tuple[Stmt, ...]:
+        """`kk`, and the slot's row and column where they are read."""
+        return (Decl("kk", Scalar.I32, init=div(j, W)), *((
+            Decl("rr", Scalar.I32, init=div(j, Lit(oB))),
+            Decl("rc", Scalar.I32, init=mod(j, oB))) if rows else ()))
+    s_phase = strided("j", n_slot, (*slot_head(transform or la == lb),
+                                    *s_body))
+
+    # --- one record pair: w, then every aux column -------------------------
+    pair: tuple[Stmt, ...] = (
+        Decl(KET, Scalar.I32, init=_iadd(Var("k0"), g)),
+        Decl(R_SLOT, Scalar.I32, init=_c(Fn.MUL, g, Lit(nR))),
+        *((Decl("hq", Scalar.F64, init=_c(Fn.DIV, Lit(0.5), Index(
+            "alpha", (ik,)))),) if lP else ()),
+        Decl("w", Scalar.F64, init=_scaled_w(lP)),
+        For(m.name, Lit(0), Lit(nP), Lit(1), (
+            u_phase, Barrier(), v_phase, Barrier(), s_phase, Barrier())))
+
+    bra_binds: dict[str, Expr] = {ef.ZETA: Var("ze"),
+                                  **{n: Var(n) for n in ef.AXIS_ARRAYS}}
+    if ef.HALF_INV_ZETA in fB.binds:
+        bra_binds[ef.HALF_INV_ZETA] = _c(Fn.DIV, Lit(0.5), Var("ze"))
+    for d in range(3):
+        bra_binds[Factor.pa(d).name_in_kernel] = Index("XPA", (ib, Lit(d)))
+        bra_binds[Factor.pb(d).name_in_kernel] = Index("XPB", (ib, Lit(d)))
+    bra_body: tuple[Stmt, ...] = (
+        Decl("ze", Scalar.F64, init=Index("zeta_ab", (ib,))),
+        *(Decl(f"P{d}", Scalar.F64, init=Index("P", (ib, Lit(d))))
+          for d in range(3)),
+        Decl("sb", Scalar.F64, init=Index("s_ab", (ib,))),
+        Note("lane 0 forms the bra record's axis tables, shared"),
+        If(lt(lane, Lit(1)), (Inline(fB, bra_binds),)),
+        Barrier(),
+        Note(f"the aux records in phases of {P}: a lane each forms a "
+             "pair's tower into its shared slot"),
+        For("k0", Var("p0"), Var("p1"), Lit(P), (
+            towers, Barrier(),
+            For(g.name, Lit(0), Lit(P), Lit(1), (
+                If(lt(_iadd(Var("k0"), g), Var("p1")), pair),)))),
+    )
+
+    # --- the store, once ---------------------------------------------------
+    def out(row: Expr) -> Index:
+        return _packed_at(row, m)
+
+    store: tuple[Stmt, ...] = (Assign(out(j), acc_at),)
+    if la == lb:
+        store = (*store, If(lt(Lit(0), Var("dg")), (If(lt(Var("rc"), Var(
+            "rr")), (Assign(out(_iadd(_c(Fn.MUL, Var("rc"), Lit(oB)),
+                                      Var("rr"))), acc_at),)),)))
+        store = (If(_iadd(Var("differ"), lt(Var("rc"), _iadd(
+            Var("rr"), Lit(1)))), store),)
+    per_cell: tuple[Stmt, ...] = (
+        *_cell_ranges(cell),
+        Decl("od", Scalar.I32, init=Index("dst", (cell,))),
+        *((Decl("dg", Scalar.I32, init=Index("diag", (cell,))),
+           Decl("differ", Scalar.I32, init=lt(Var("dg"), Lit(1))))
+          if la == lb else ()),
+        Decl("lane", Scalar.I32, init=Call(Fn.THREAD_X)),
+        *(shared(n, ef.axis_table_extent(la, lb)) for n in ef.AXIS_ARRAYS),
+        shared(R_ARRAY, P * nR), shared(U_ARRAY, nU),
+        shared(V_ARRAY, nA * nB),
+        Decl(ACC_ARRAY, Scalar.F64, (Lit(NK * nP),)),
+        For("i", Lit(0), Lit(NK * nP), Lit(1), (
+            Assign(Index(ACC_ARRAY, (Var("i"),)), Lit(0.0)),)),
+        Note("the bra records of the cell's shell pair, serially"),
+        For(BRA, Var("b0"), Var("b1"), Lit(1), bra_body),
+        Note("each lane's slots, stored once; a diagonal pair's mirror"),
+        strided("j", n_slot, (*slot_head(la == lb), For(
+            m.name, Lit(0), Lit(nP), Lit(1), store))),
+    )
+    body: tuple[Stmt, ...] = (
+        Note(WARP_NOTE),
+        *((Note(SPHERICAL_BRA_NOTE),) if spherical_bra else ()),
+        Note(SPHERICAL_NOTE),
+        Note(f"three-center DF integral, class (la, lb, lP) = ({la}, {lb}, "
+             f"{lP}), packed, a warp per cell: (mn|P) by the quartet "
+             f"({la},{lb}|{lP},0)'s recurrence at L = {L}"),
+        Decl(CELL, Scalar.I32, init=Call(Fn.BLOCK_X)),
+        If(lt(cell, Var("n_cell")), per_cell),
+    )
+    return Kernel(name or "w" + eri3_name(spec, spherical_aux=True,
+                                          spherical_bra=spherical_bra),
+                  _params(True), body, tabs.consts())

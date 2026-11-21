@@ -228,6 +228,15 @@ read-only table). Interpreted bitwise the unrolled forms
 the host bound (`test_eri3_rolled_device.py`). `rssperi3_336` is 126 KB and
 compiles in 1.4 s against 331 KB and 5.3 s. Off by default, untimed; every
 existing unit's text unchanged. HIP not run.
+**A warp per cell** (#749; `three_center.md`, "A warp per cell"):
+`build_warp_eri3_kernel` gives `wsperi3_` / `wssperi3_`, one 32-lane block
+per cell, the towers (a phase of aux records, a lane each), bra tables, `U`
+and `Vab` in SHARED memory between barriers, each lane's slots in registers
+and stored once. Interpreted bitwise the thread-per-cell kernels
+(`test_kernel_eri3_warp.py`); on CUDA (a GH200) held to the host at (dd|f)
+and (ff|i) (`test_eri3_warp_device.py`). `wssperi3_336`: 208 B of stack
+against 7,872 B. Timed once by script: 0.83x at (ff|i), 0.86x (dd|i),
+0.93x (ff|f), but 1.9x to 16x at light classes. Opt-in; HIP not run.
 **Both DF targets also have an HGP twin, for s and p shells, interpreted
 only** (`docs/implementation/hgp_df.md` is the one place with the detail):
 `eri/density_fit/kernel_hgp.py`'s `build_hmetric_kernel` (`hmetric_{lP}{lQ}`)

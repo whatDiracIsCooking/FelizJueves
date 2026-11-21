@@ -102,6 +102,9 @@ TESTS = {
     # Its rolled form (#748): (dd|f) and (ff|i), against the host.
     "test/test_eri3_rolled_device.py::test_X_rolled_eri3_is_the_contracted_host":
         Classes("mmd", "eri3"),
+    # Its warp-per-cell form (#749): (dd|f) and (ff|i), against the host.
+    "test/test_eri3_warp_device.py::test_X_warp_eri3_is_the_contracted_host":
+        Classes("mmd", "eri3"),
     # The HGP twins.
     "test/test_emit_hgp_df.py::test_X_compiles_the_hgp_df_unit":
         Classes("hgp", "metric"),

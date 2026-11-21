@@ -52,7 +52,9 @@ from felizjueves.eri.density_fit.kernel_eri3 import (
     PARAM_OF,
     build_bra_transform_kernel,
     build_eri3_kernel,
+    build_warp_eri3_kernel,
     launch_shape,
+    warp_launch_shape,
 )
 from felizjueves.eri.density_fit.kernel_hgp import build_heri3_kernel
 from felizjueves.eri.density_fit.kernel_reri3 import build_reri3_kernel
@@ -134,11 +136,16 @@ def packed_kernel(la: int, lb: int, lP: int,
                   lowstack: bool | None = None,
                   spherical_aux: bool = False,
                   spherical_bra: bool = False,
-                  rolled: bool = False) -> Kernel:
+                  rolled: bool = False, warp: bool = False) -> Kernel:
     """`build_eri3_kernel((la, lb, lP), packed=True)`, built once;
     `spherical_aux` its solid-harmonic aux mode, `spherical_bra` with it
     the fully spherical one (#745), and `rolled` either one's rolled form
-    (#748)."""
+    (#748); `warp` the warp-per-cell form of either (#749)."""
+    if warp:
+        if not spherical_aux or rolled or lowstack is False:
+            raise ValueError("the warp form is a spherical-aux one")
+        return build_warp_eri3_kernel((la, lb, lP),
+                                      spherical_bra=spherical_bra)
     return build_eri3_kernel((la, lb, lP), lowstack=lowstack, packed=True,
                              spherical_aux=spherical_aux,
                              spherical_bra=spherical_bra, rolled=rolled)
@@ -149,22 +156,25 @@ def launch_packed(cls: Eri3Class, cells: dict[str, Sequence[int]],
                   lowstack: bool | None = None,
                   spherical_aux: bool = False,
                   spherical_bra: bool = False,
-                  rolled: bool = False) -> np.ndarray:
+                  rolled: bool = False, warp: bool = False) -> np.ndarray:
     """One interpreted launch of `cls`'s packed kernel over the cells
     `cells` names (`PACKED_CELL_ARRAYS`, `packed_cells`' arrays), writing
     into (a copy of) `out`, `(n_col, n_aux)`, which is returned;
     `spherical_aux` launches the solid-harmonic aux mode, `n_aux` and `dst`
     in spherical aux columns; `spherical_bra` (with it) the fully spherical
     mode, `n_col` in spherical bra functions (#745); `rolled` the rolled
-    form of either (#748)."""
+    form of either (#748); `warp` the warp-per-cell form (#749), a block
+    of `WARP_LANES` per cell (`threads` unused)."""
     n_col, naux = out.shape
     n_cell = len(cells["dst"])
-    grid, block = launch_shape(n_cell, threads)
+    grid, block = (warp_launch_shape(n_cell) if warp
+                   else launch_shape(n_cell, threads))
     records = {PARAM_OF.get(k, k): np.array(v, dtype=float)
                for k, v in cls.arrays().items()
                if k in (*cls.BRA_ARRAYS, *cls.AUX_ARRAYS)}
     flat = Interpreter(packed_kernel(cls.la, cls.lb, cls.lP, lowstack,
-                                     spherical_aux, spherical_bra, rolled),
+                                     spherical_aux, spherical_bra, rolled,
+                                     warp),
                        launch=Launch(grid, block, 1), boys=boys).run(
         n_cell=n_cell, n_bra_rec=cls.n_bra_rec, n_aux_rec=cls.n_aux_rec,
         n_col=n_col, n_aux=naux, **{OUT: out.reshape(-1)}, **records,
