@@ -4,6 +4,7 @@
     launch_class(cls, out, *, boys, threads=32)    -> out with cls's elements
     eri3_tensor_kernel(basis, aux, *, boys, classes=None, threads=32) -> Run
     launch_packed(cls, cells, out, *, boys, threads=32) -> out, packed blocks
+                    (spherical_aux=, spherical_bra=: speri3_ / ssperi3_)
 
 The `eri/density_fit/metric_drive.py` pattern for `Target.ERI3`: `kernel_eri3.
 build_eri3_kernel((la, lb, lP))` run in `interp.Interpreter` over
@@ -127,22 +128,27 @@ def eri3_tensor_kernel(basis: Basis, aux: Basis, *, boys: Boys,
 @cache
 def packed_kernel(la: int, lb: int, lP: int,
                   lowstack: bool | None = None,
-                  spherical_aux: bool = False) -> Kernel:
+                  spherical_aux: bool = False,
+                  spherical_bra: bool = False) -> Kernel:
     """`build_eri3_kernel((la, lb, lP), packed=True)`, built once;
-    `spherical_aux` its solid-harmonic aux mode."""
+    `spherical_aux` its solid-harmonic aux mode, and `spherical_bra` with
+    it the fully spherical one (#745)."""
     return build_eri3_kernel((la, lb, lP), lowstack=lowstack, packed=True,
-                             spherical_aux=spherical_aux)
+                             spherical_aux=spherical_aux,
+                             spherical_bra=spherical_bra)
 
 
 def launch_packed(cls: Eri3Class, cells: dict[str, Sequence[int]],
                   out: np.ndarray, *, boys: Boys, threads: int = 32,
                   lowstack: bool | None = None,
-                  spherical_aux: bool = False) -> np.ndarray:
+                  spherical_aux: bool = False,
+                  spherical_bra: bool = False) -> np.ndarray:
     """One interpreted launch of `cls`'s packed kernel over the cells
     `cells` names (`PACKED_CELL_ARRAYS`, `packed_cells`' arrays), writing
     into (a copy of) `out`, `(n_col, n_aux)`, which is returned;
     `spherical_aux` launches the solid-harmonic aux mode, `n_aux` and `dst`
-    in spherical aux columns."""
+    in spherical aux columns; `spherical_bra` (with it) the fully spherical
+    mode, `n_col` in spherical bra functions (#745)."""
     n_col, naux = out.shape
     n_cell = len(cells["dst"])
     grid, block = launch_shape(n_cell, threads)
@@ -150,7 +156,7 @@ def launch_packed(cls: Eri3Class, cells: dict[str, Sequence[int]],
                for k, v in cls.arrays().items()
                if k in (*cls.BRA_ARRAYS, *cls.AUX_ARRAYS)}
     flat = Interpreter(packed_kernel(cls.la, cls.lb, cls.lP, lowstack,
-                                     spherical_aux),
+                                     spherical_aux, spherical_bra),
                        launch=Launch(grid, block, 1), boys=boys).run(
         n_cell=n_cell, n_bra_rec=cls.n_bra_rec, n_aux_rec=cls.n_aux_rec,
         n_col=n_col, n_aux=naux, **{OUT: out.reshape(-1)}, **records,

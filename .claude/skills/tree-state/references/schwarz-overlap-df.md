@@ -197,6 +197,21 @@ only, by decision. Interpreted (`test_kernel_eri3_spherical.py`, worst
 through l = 6 with no kernel. No la ≠ lb class and no lP > 3 runs through
 a kernel here: FreeBreakfast#1736's full-ladder regeneration covers those.
 Every Cartesian kernel's text is unchanged.
+**And a fully spherical mode** (#745; `three_center.md`, "The fully
+spherical packed output"): `build_eri3_kernel(cls, packed=True,
+spherical_aux=True, spherical_bra=True)`, `ssperi3_{la}{lb}{lP}`, both bra
+indices in solid harmonics too (`aux_harmonics`), each aux column's
+Cartesian bra block formed in a local `Vab[nA nB]` per primitive triple and
+transformed (through `Tmu[nB]`) before the global add; s and p bras are
+`speri3_`'s body unchanged. Held to the host's Cartesian block contracted on
+all three indices, within `(2 TOL_ULPS + nq + lP + 2 (nA + nB) + 1) eps` of
+the contracted scale, at (aa|p), a = 0..3, p = 0..6 only, by decision.
+Interpreted (`test_kernel_eri3_fully_spherical.py`, worst 2.78 eps) and on
+**CUDA only**, an NVIDIA GH200 running the `sm_86` build by PTX JIT
+(`test_eri3_fully_spherical_device.py`); HIP not compiled, no card. No
+la != lb class runs through a kernel here. `sm_86` frame at (ff|f) 6,336 B
+against `speri3_`'s 5,264 B, at (ff|i) 7,872 B against 7,072 B. Every
+existing kernel's text is unchanged.
 **Both DF targets also have an HGP twin, for s and p shells, interpreted
 only** (`docs/implementation/hgp_df.md` is the one place with the detail):
 `eri/density_fit/kernel_hgp.py`'s `build_hmetric_kernel` (`hmetric_{lP}{lQ}`)

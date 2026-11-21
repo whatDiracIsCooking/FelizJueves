@@ -677,6 +677,97 @@ consumer's full-ladder regeneration (FreeBreakfast#1736) covers those.
 worst within 3.0 eps of the contracted scale (bounds 33 to 45 eps).
 Interpreted, the worst is 1.74 eps.
 
+## The fully spherical packed output (#745)
+
+FreeBreakfast's consumer still applied the bra's Cartesian-to-spherical
+transform after `speri3_`, which needs complete Cartesian blocks.
+`build_eri3_kernel(cls, packed=True, spherical_aux=True,
+spherical_bra=True)` does that transform in the kernel:
+`ssperi3_{la}{lb}{lP}`, `(μν|Q)` with all three indices in real solid
+harmonics, `(2la+1)(2lb+1)(2lP+1)` elements a cell. B shrinks by 25/36 at
+(dd|·) and 49/100 at (ff|·).
+
+**Why per column, per primitive triple.** The low-stack form has no staged
+block: one thread per cell accumulates `out[a,b,m] ±= w Σ_t E^{ab}_t U[t]`
+straight into global memory, and per-thread accumulators were removed on
+purpose (#606). A cell's spherical region is smaller than its Cartesian
+block, so reading the accumulated block back and transforming it in place
+would overwrite the next cell. So inside each unrolled aux column `m`,
+after `U[t]` is formed:
+
+    V[a,b]       = Σ_t E^{ab}_t U[t]              every Cartesian (a,b), local
+    T[b]         = Σ_a c^{la}[μ][a] V[a,b]        one μ at a time
+    out[μ,ν,m]  ±= w Σ_b c^{lb}[ν][b] T[b]        global, spherical slots
+
+`c^l` is `aux_harmonics(l)`, the same table and convention as the aux
+index, spelled as literals over its nonzero terms (μ and ν unrolled, the
+`T` row's `b` rolled). The added locals are `Vab[nA nB]` and `Tmu[nB]`:
+880 B at (ff|·), 304 B at (dd|·), independent of `lP`. The global
+read-modify-writes per column and primitive triple fall from `nA nB` to
+`(2la+1)(2lb+1)` (100 to 49 at (ff)). A diagonal pair forms `a ≥ b` and
+mirrors within `V`, accumulates `μ ≥ ν`, and is mirrored on spherical
+indices at the end. Boys, the R tower, the bra tables, the aux columns,
+the records, the cells and the launch are `speri3_`'s.
+
+**s and p are the identity.** With `la, lb ≤ 1` there is no `V` and no
+transform: the body is `speri3_`'s, after one leading note, and since
+`2l + 1` is the Cartesian count there, the slots are the same too.
+
+**Host side.** `packed_columns(..., spherical_bra=True)` counts
+`(2la+1)(2lb+1)` columns a pair; `eri3_drive.launch_packed(...,
+spherical_bra=True)` is the interpreted launcher.
+
+**Low-stack only**, at every class, like #743: it refuses `lowstack=False`,
+`packed=False` and `spherical_aux=False`. Every existing kernel's text is
+unchanged: the 860 CUDA and HIP units of `eri3_`, `peri3_` and `speri3_`
+over `la ≤ lb ≤ 3`, `lP ≤ 6` (default, low-stack and, at L ≤ 6, unrolled
+forms) hash identically against the parent commit.
+
+**Stack and compile time**, each unit compiled alone by nvcc 13.0 with the
+tier's `NVCC_FLAGS`, no cache, on a GH200 VM's Grace CPU (faster than the
+RTX 3080 box: `speri3_336` takes 2.8 s here against 7.6 s there):
+
+| unit | text | `sm_86` frame | spill st / ld | nvcc `sm_86` |
+|---|---|---|---|---|
+| `speri3_222` | 46 KB | 1,432 B | 68 / 68 B | |
+| `ssperi3_222` | 75 KB | 1,904 B | 228 / 284 B | |
+| `speri3_333` | 93 KB | 5,264 B | 136 / 156 B | 1.6 s |
+| `ssperi3_333` | 178 KB | 6,336 B | 416 / 800 B | 2.5 s |
+| `speri3_336` | 173 KB | 7,072 B | 60 / 76 B | 2.8 s |
+| `ssperi3_336` | 331 KB | 7,872 B | 72 / 92 B | 5.0 s |
+
+The frame grows by 800 to 1,072 B at (ff|·), about the 880 B of `V` and
+`T`; `sm_90` frames are the same to within 16 B. The text roughly doubles
+at f, since the transform is unrolled inside each of the `2lP+1` columns;
+a rolled transform would need a coefficient array in local memory, which
+is the stack this form avoids, so it stays unrolled.
+
+**The witness is the host, contracted on all three indices; not bitwise.**
+Per cell, the host's Cartesian `class_block` contracted by `aux_harmonics`
+on `a`, `b` and `q`. The bound per element is
+`(2·TOL_ULPS + nq + lP + 2(nA + nB) + 1) eps` times the contracted scale
+`(|c^{la}| |c^{lb}| |c^{lP}|)·scale`: #743's bound, plus the kernel's two
+transform sums and its `w S` product, plus the host's own two bra
+contractions. A diagonal pair's block is symmetric in `(μ, ν)` exactly,
+and each cell stores exactly its `(2la+1)(2lb+1)(2lP+1)` elements (the
+output starts NaN). At `a ≤ 1` the output is also bitwise `speri3_`'s.
+
+**Scope, by decision (#745).** The emitter takes any class. Tested: the 28
+classes (aa|p), a = 0..3, p = 0..6, on a two-shell AO basis per `l`
+(two diagonal pairs and an off-diagonal one) and two aux shells.
+Interpreted (`test_kernel_eri3_fully_spherical.py`; L ≤ 4 fast, any d or
+f bra `slow`): every class passes, the worst 2.78 eps of the contracted
+scale (bounds 38 to 107 eps). No `la ≠ lb` class runs through a kernel
+here.
+
+**Where it ran:** CUDA only, on an NVIDIA GH200 (`sm_90`, CUDA 13.0), the
+units built `-arch=sm_86` (the tier's `CUDA_ARCH`; `sm_90` is not a
+declared `Arch`) and JIT-compiled from their PTX
+(`test_eri3_fully_spherical_device.py`): all 28 classes pass, the worst
+2.01 eps of the contracted scale (bounds 38 to 107 eps), each run
+bit-identical across the runner's repeats. HIP: not compiled
+and not run, no hipcc and no AMD card on that machine.
+
 ## What is not done
 
 - **Spherical comparison.** #606 asks for agreement with spherical
@@ -688,7 +779,8 @@ Interpreted, the worst is 1.74 eps.
 - **L > 4 on the cc-pVTZ-jkfit fixture.** That fixture's (sp|g), (pp|f)
   and (pp|g) are still not launched. The aux-i set covers those classes.
 - **Spherical aux functions beyond the packed output.** The packed
-  low-stack kernel has a spherical-aux mode (#743, above). The square
+  low-stack kernel has a spherical-aux mode (#743, above) and a fully
+  spherical one (#745, above). The square
   kernel, the unrolled form, the metric `(P|Q)` and the DF derivative
   kernels take Cartesian aux functions only.
 - **DF-J and DF-K themselves**, and anything that factors or inverts the

@@ -96,6 +96,9 @@ TESTS = {
     # Its spherical-aux mode (#743): (ll|l), l = 0..3.
     "test/test_eri3_spherical_device.py::test_X_spherical_eri3_is_the_contracted_host":
         Classes("mmd", "eri3"),
+    # The fully spherical mode (#745): (aa|p), a = 0..3, p = 0..6.
+    "test/test_eri3_fully_spherical_device.py::test_X_fully_spherical_eri3_is_the_contracted_host":
+        Classes("mmd", "eri3"),
     # The HGP twins.
     "test/test_emit_hgp_df.py::test_X_compiles_the_hgp_df_unit":
         Classes("hgp", "metric"),

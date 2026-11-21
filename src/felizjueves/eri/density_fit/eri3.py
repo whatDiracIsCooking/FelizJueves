@@ -100,7 +100,10 @@ b][off_p + q]` bitwise -- where `place_staged` keeps the triangle.
 sorted, each one's pairs contiguous, in first-touch order) from column 0 and
 `packed_cells` forms `dst = column n_aux + off_p`; a caller with its own
 layout (a batch of pairs, its columns counted from the batch's first) forms
-its own `dst`, which is all the kernel reads.
+its own `dst`, which is all the kernel reads. The spherical modes count
+spherical columns instead: `spherical_offsets` the aux shells' (`2 lP + 1`
+each, `speri3_`, #743) and `packed_columns(..., spherical_bra=True)` the
+pairs' (`(2 la + 1)(2 lb + 1)` each, the fully spherical `ssperi3_`, #745).
 
 Plain tuples and floats, like the rest of `ao/`: `src/felizjueves` has no
 runtime dependencies.
@@ -426,17 +429,21 @@ def place_staged(cls: Eri3Class, k: int,
 
 
 def packed_columns(classes: Sequence[Eri3Class],
-                   keep: Callable[[tuple[int, int]], bool] | None = None
+                   keep: Callable[[tuple[int, int]], bool] | None = None,
+                   *, spherical_bra: bool = False
                    ) -> tuple[dict[tuple[int, int], int], int]:
     """Each staged AO shell pair's first column in the packed output
     (module docstring, THE PACKED OUTPUT), and the column count: the pairs
     `keep` admits (every one when None) in class order, each `(la, lb)`
     class's pairs contiguous in first-touch order, a pair `nA nB` columns,
-    from column 0."""
+    from column 0. `spherical_bra` counts spherical bra functions instead,
+    `(2 la + 1)(2 lb + 1)` columns a pair: the fully spherical kernel's
+    layout (`kernel_eri3`'s THE FULLY SPHERICAL OUTPUT, #745)."""
     col: dict[tuple[int, int], int] = {}
     n = 0
     for cls in sorted(classes, key=lambda c: (c.la, c.lb, c.lP)):
-        nab = len(cartesians(cls.la)) * len(cartesians(cls.lb))
+        nab = ((2 * cls.la + 1) * (2 * cls.lb + 1) if spherical_bra
+               else len(cartesians(cls.la)) * len(cartesians(cls.lb)))
         for a, b, _ in cls.cells:
             if (a, b) not in col and (keep is None or keep((a, b))):
                 col[(a, b)] = n
