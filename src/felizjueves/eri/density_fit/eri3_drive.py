@@ -7,6 +7,28 @@
                     (spherical_aux=, spherical_bra=: speri3_ / ssperi3_)
     launch_bra_transform(la, lb, src, pairs, n_dst_col, *, threads=32)
                                                    -> sbra3_'s output (#747)
+    cell_bounds(cls, basis, aux, *, pq, spherical_bra=True) -> per-cell bound
+    precision_split(bounds, *, tau_screen, tau32)  -> {screened, fp32, fp64}
+    subset_cells(cells, idx)                       -> those cells' arrays
+    screened_slots(cls, cells, idx, n_aux, *, spherical_bra=True) -> flat slots
+    launch_dynamic(cls, cells, out, bins, *, boys, ...) -> out (#754)
+
+DYNAMIC PRECISION WITH SCREENING (#754; Luehr, Ufimtsev and Martinez, JCTC
+7, 949 (2011)). The Coulomb kernel is positive definite, so per Cartesian
+element `|(ab|q)| <= sqrt((ab|ab)) sqrt((q|q))` (Cauchy-Schwarz, as
+`eri.schwarz`), and a spherical element `SUM c^{la} c^{lb} c^{lP} (ab|q)`
+is bounded per cell by
+
+    bound = max_ab sqrt((ab|ab)) max_q sqrt((q|q)) K_la K_lb K_lP,
+    K_l = max_m SUM_q |aux_harmonics(l)[m][q]|          (1 for a Cartesian bra)
+
+(`cell_bounds`, `(ab|ab)` from `eri.schwarz.diagonal_and_scale`, `(q|q)`
+from `metric.metric_block`, each clamped at 0 before its root, as the
+Schwarz matrix is). `precision_split` bins the cells: below `tau_screen`
+screened (not launched; their slots set to 0.0, the error at most the
+bound), below `tau32` the mixed-precision kernel (#753), else the FP64
+one. Both kernels take any cell subset and write only its slots, so the
+split is host-side and changes no kernel.
 
 The `eri/density_fit/metric_drive.py` pattern for `Target.ERI3`: `kernel_eri3.
 build_eri3_kernel((la, lb, lP))` run in `interp.Interpreter` over
@@ -37,19 +59,21 @@ builder, `interp`, `ir` and `ao`, never `reference/` nor a backend.
 
 from __future__ import annotations
 
+import math
 from collections.abc import Callable, Iterable, Sequence
 from dataclasses import dataclass
 from functools import cache
 
 import numpy as np
 
-from felizjueves.ao.shell import Basis
+from felizjueves.ao.shell import Basis, cartesians
 from felizjueves.eri.density_fit.eri3 import Eri3Class, eri3_classes
 from felizjueves.eri.density_fit.kernel_eri3 import (
     BRA_SRC,
     OUT,
     PACKED_CELL_ARRAYS,
     PARAM_OF,
+    aux_harmonics,
     build_bra_transform_kernel,
     build_eri3_kernel,
     build_warp_eri3_kernel,
@@ -58,6 +82,8 @@ from felizjueves.eri.density_fit.kernel_eri3 import (
 )
 from felizjueves.eri.density_fit.kernel_hgp import build_heri3_kernel
 from felizjueves.eri.density_fit.kernel_reri3 import build_reri3_kernel
+from felizjueves.eri.density_fit.metric import metric_block
+from felizjueves.eri.schwarz import diagonal_and_scale
 from felizjueves.ir import Kernel
 from felizjueves.ir.interp import Interpreter, Launch, RysRule
 from felizjueves.spec import Engine
@@ -211,3 +237,96 @@ def launch_bra_transform(la: int, lb: int, src: np.ndarray,
         **{BRA_SRC: src.reshape(-1),
            OUT: np.full(n_dst_col * naux, np.nan)})[OUT]
     return np.asarray(flat).reshape(n_dst_col, naux)
+
+
+# ---------------------------------------------------------------------------
+# Dynamic precision with screening (#754)
+# ---------------------------------------------------------------------------
+
+BINS = ("screened", "fp32", "fp64")
+
+
+def harmonic_norm(l: int) -> float:  # noqa: E741
+    """`K_l = max_m SUM_q |aux_harmonics(l)[m][q]|`: how much a spherical
+    combination can exceed the largest Cartesian element it combines."""
+    return max(sum(abs(c) for c in col) for col in aux_harmonics(l))
+
+
+def cell_bounds(cls: Eri3Class, basis: Basis, aux: Basis, *,
+                pq: Callable, spherical_bra: bool = True
+                ) -> tuple[float, ...]:
+    """Each cell's bound on every element of its spherical-aux block (with
+    `spherical_bra`, of its fully spherical block): the module docstring's
+    Cauchy-Schwarz product, `pq` the injected `[t|tau]` evaluator."""
+    k = harmonic_norm(cls.lP)
+    if spherical_bra:
+        k *= harmonic_norm(cls.la) * harmonic_norm(cls.lb)
+    q_pair: dict[tuple[int, int], float] = {}
+    q_aux: dict[int, float] = {}
+    out = []
+    for a, b, p in cls.cells:
+        if (a, b) not in q_pair:
+            diag, _ = diagonal_and_scale(basis.shells[a], basis.shells[b],
+                                         pq=pq)
+            q_pair[(a, b)] = math.sqrt(max(max(diag), 0.0))
+        if p not in q_aux:
+            blk = metric_block(aux.shells[p], aux.shells[p], pq=pq)
+            q_aux[p] = math.sqrt(max(max(blk[i][i] for i in range(len(blk))),
+                                     0.0))
+        out.append(q_pair[(a, b)] * q_aux[p] * k)
+    return tuple(out)
+
+
+def precision_split(bounds: Sequence[float], *, tau_screen: float,
+                    tau32: float) -> dict[str, tuple[int, ...]]:
+    """The cells (indices into `bounds`) in each bin: `screened` below
+    `tau_screen`, `fp32` below `tau32`, `fp64` the rest."""
+    if not 0.0 <= tau_screen <= tau32:
+        raise ValueError(f"need 0 <= tau_screen <= tau32, got {tau_screen}, "
+                         f"{tau32}")
+    bins: dict[str, list[int]] = {b: [] for b in BINS}
+    for i, x in enumerate(bounds):
+        bins["screened" if x < tau_screen else "fp32" if x < tau32
+             else "fp64"].append(i)
+    return {b: tuple(v) for b, v in bins.items()}
+
+
+def subset_cells(cells: dict[str, Sequence[int]], idx: Sequence[int]
+                 ) -> dict[str, tuple[int, ...]]:
+    """The packed cell arrays of the cells `idx` only."""
+    return {k: tuple(v[i] for i in idx) for k, v in cells.items()}
+
+
+def screened_slots(cls: Eri3Class, cells: dict[str, Sequence[int]],
+                   idx: Sequence[int], n_aux: int, *,
+                   spherical_bra: bool = True) -> np.ndarray:
+    """The flat output indices every slot of the cells `idx` owns."""
+    nA, nB = ((2 * cls.la + 1, 2 * cls.lb + 1) if spherical_bra else
+              (len(cartesians(cls.la)), len(cartesians(cls.lb))))
+    block = (n_aux * np.arange(nA * nB)[:, None]
+             + np.arange(2 * cls.lP + 1)[None, :]).reshape(-1)
+    return np.array([cells["dst"][i] + x for i in idx for x in block],
+                    dtype=np.int64)
+
+
+def launch_dynamic(cls: Eri3Class, cells: dict[str, Sequence[int]],
+                   out: np.ndarray, bins: dict[str, Sequence[int]], *,
+                   boys: Boys, threads: int = 32,
+                   spherical_bra: bool = True) -> np.ndarray:
+    """`cls`'s spherical output by bins (`precision_split` over `cells`,
+    every cell of `cls` laid out, in cell order): the FP64 kernel over
+    `fp64`, the mixed one over `fp32`, `screened` slots set to 0.0, into a
+    copy of `out`, `(n_col, n_aux)`, which is returned."""
+    if len(cells["dst"]) != cls.n_cell:
+        raise ValueError("launch_dynamic takes every cell of the class")
+    n_aux = out.shape[1]
+    out = out.copy()
+    out.reshape(-1)[screened_slots(cls, cells, bins["screened"], n_aux,
+                                   spherical_bra=spherical_bra)] = 0.0
+    for b, mixed in (("fp64", False), ("fp32", True)):
+        if bins[b]:
+            out = launch_packed(cls, subset_cells(cells, bins[b]), out,
+                                boys=boys, threads=threads,
+                                spherical_aux=True,
+                                spherical_bra=spherical_bra, mixed=mixed)
+    return out

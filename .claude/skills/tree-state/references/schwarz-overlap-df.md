@@ -235,8 +235,10 @@ and `Vab` in SHARED memory between barriers, each lane's slots in registers
 and stored once. Interpreted bitwise the thread-per-cell kernels
 (`test_kernel_eri3_warp.py`); on CUDA (a GH200) held to the host at (dd|f)
 and (ff|i) (`test_eri3_warp_device.py`). `wssperi3_336`: 208 B of stack
-against 7,872 B. Timed once by script: 0.83x at (ff|i), 0.86x (dd|i),
-0.93x (ff|f), but 1.9x to 16x at light classes. Opt-in; HIP not run.
+against 7,872 B. Timed by script: 0.83-0.93x at heavy classes on #606's
+~8.7k-cell bases, but at molecule scale (112,896 cells, #754) SLOWER
+everywhere, 1.36x to 14x -- the small-base wins were one thread's latency,
+not throughput. Opt-in, a default nowhere; HIP not run.
 **A mixed-precision form** (`three_center.md`, "The mixed-precision
 form"): `mixed=True` on either spherical mode, unrolled (`mssperi3_`) or
 rolled (`mrssperi3_`), #346's FP32 tower inside an FP64 boundary: `R`,
@@ -244,9 +246,19 @@ rolled (`mrssperi3_`), #346's FP32 tower inside an FP64 boundary: `R`,
 and every accumulation FP64. Held to the host at the declared FP32 tier
 (`F32_REL`), interpreted (`test_kernel_eri3_mixed.py`) and on CUDA, a
 GH200 (`test_eri3_mixed_device.py`); error 5e-8 to 2.3e-6 of a class's max
-|B|. Timed once by script on the GH200: 0.72x (dd|i) to 0.92x (ff|i) of
-the unrolled FP64 form, neutral at light classes; the RTX 3080, where it
-should matter most, not run. Opt-in; HIP not run.
+|B|. Timed by script on the GH200 at molecule scale (112,896 cells, #754):
+0.81x (dd|d), 0.83x (ff|f), 0.88x (ff|i), 0.95x (dd|i) of the unrolled FP64
+form; the RTX 3080, where it should matter most, not run. Opt-in; HIP not
+run.
+**Dynamic precision with screening** (#754; `three_center.md`, "Dynamic
+precision with screening"): host-side, per cell, `eri3_drive.cell_bounds`
+(Cauchy-Schwarz times the harmonic row-sum norms, rigorous) and
+`precision_split` -- screened below `tau_screen` (slots 0.0), the mixed
+kernel below `tau32`, the FP64 one above; no kernel change.
+`test_kernel_eri3_dynamic.py` (bound, bitwise FP64 cells, FP32 tier,
+screened zeros) and `test_eri3_dynamic_device.py` (CUDA, a GH200). At
+112,896 cells on a chain, 0.25-0.38x of the full FP64 time, max deviation
+5e-15; at 4,352 cells 1.9x slower (one wave: latency-bound).
 **Both DF targets also have an HGP twin, for s and p shells, interpreted
 only** (`docs/implementation/hgp_df.md` is the one place with the detail):
 `eri/density_fit/kernel_hgp.py`'s `build_hmetric_kernel` (`hmetric_{lP}{lQ}`)

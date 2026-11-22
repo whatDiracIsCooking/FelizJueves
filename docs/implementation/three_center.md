@@ -906,12 +906,15 @@ memory, 145 KB of text, 1.2 s of nvcc, against `ssperi3_336`'s 7,872 B,
 | (ff\|f) | 6.574 ms | 6.095 ms | 0.93 |
 | (ff\|i) | 14.008 ms | 11.626 ms | 0.83 |
 
-The warp form wins where a cell's contraction is heavy (both bras d or f,
-high `lP`) and loses badly where it is light: there the per-pair barriers
-and lane 0's serial table build dominate. On these bases a cell has one
-aux record, so the phases hold one tower; deeper aux contraction would
-share more. **Opt-in, the caller picks the classes**, as with
-`kernel_d2eri3`'s warp-shared tower. Every existing unit's text is
+**Corrected by #754: those wins are a small-problem artifact.** #606's
+clock bases have about 8.7k cells, 272 blocks of thread-per-cell -- about
+two waves on a 132-SM GH200 -- so the thread-per-cell times above are one
+thread's serial latency, not throughput. At molecule scale (a 48-shell
+chain and 96 aux shells, 112,896 cells, the same script) the warp form is
+SLOWER everywhere: 14.0x at (pp|p), 2.07x at (dd|d), 1.36x at (dd|i),
+1.64x at (ff|f), 1.43x at (ff|i). Its value is a small stack in a
+latency-bound launch (few cells, or a card that cannot hold the
+thread-per-cell frames); **opt-in**, and not a default anywhere. Every existing unit's text is
 unchanged. HIP is not compiled or run.
 
 ## The mixed-precision form
@@ -952,8 +955,14 @@ integrals in FP64. The usual answer is dynamic precision (Luehr, Ufimtsev
 and Martínez, JCTC 7, 949 (2011)): FP32 only for contributions whose bound
 is below a threshold, which needs the screening this tree does not have.
 
-**Speed** (a script over the harness, #606's clock bases, median of 21,
-GH200 native `sm_90`), against the same form in FP64:
+**Speed at molecule scale** (#754's re-timing: a 48-shell chain and 96
+aux shells, 112,896 cells, GH200), unrolled mixed against unrolled FP64:
+0.98x (pp|p), **0.81x (dd|d)**, 0.95x (dd|i), **0.83x (ff|f)**, 0.88x
+(ff|i). It holds where the problem fills the card.
+
+**Speed on #606's clock bases** (~8.7k cells, about two waves, so one
+thread's latency rather than throughput; a script over the harness, median
+of 21, GH200 native `sm_90`), against the same form in FP64:
 
 | class | unrolled FP64 | unrolled mixed | ratio | rolled FP64 | rolled mixed | ratio |
 |---|---|---|---|---|---|---|
@@ -969,6 +978,64 @@ the lever's value; on the RTX 3080 (FP64 at 1/64 of FP32) the contraction
 is the whole of the gap, and the ratio there is not measured. The table
 also shows **the rolled form's runtime cost** (#748 measured only its
 compile): 1.3x to 5x the unrolled form in FP64.
+
+## Dynamic precision with screening (#754)
+
+Luehr, Ufimtsev and Martínez's dynamic precision (JCTC 7, 949 (2011)),
+per cell, host-side, over the two spherical kernels: the FP64 `ssperi3_`
+and the mixed-precision `mssperi3_` (#753). No kernel changes: both take
+any cell subset and write only its slots.
+
+**The bound** (`eri3_drive.cell_bounds`, `pq=` injected). The Coulomb
+kernel is positive definite, so per Cartesian element `|(ab|q)| <=
+sqrt((ab|ab)) sqrt((q|q))` (Cauchy-Schwarz, as `eri.schwarz`), and a
+spherical element `Σ c^{la} c^{lb} c^{lP} (ab|q)` is at most
+
+    max_ab sqrt((ab|ab)) · max_q sqrt((q|q)) · K_la K_lb K_lP,
+    K_l = max_m Σ_q |aux_harmonics(l)[m][q]|
+
+with `(ab|ab)` from `eri.schwarz.diagonal_and_scale` and `(q|q)` from
+`metric.metric_block`, each clamped at 0 before its root. It has no
+distance decay (none of Schwarz does): a far aux shell is bounded as a
+near one.
+
+**The split** (`precision_split`): below `tau_screen` a cell is screened
+(not launched; `launch_dynamic` and `test/eri3_driver.build_dynamic_on_card`
+set its slots to 0.0, an error of at most its bound); below `tau32` it runs
+the mixed kernel; above, the FP64 one. `subset_cells` and `screened_slots`
+are the host helpers.
+
+**Tests** (`test_kernel_eri3_dynamic.py`, (pp|d) and (dd|d) on a chain of
+four AO shells and two aux shells, thresholds placed so every bin holds
+cells; `test_eri3_dynamic_device.py`, (dd|d) on a GH200, native `sm_90`),
+one oracle per claim: every element of every cell is within its bound
+(the host's FP64 contraction); FP64 cells are bitwise the full FP64 run
+(on the card, within the FP64 form's bound of the host); FP32 cells are
+within the declared FP32 tier; screened slots are exactly 0.0 and the
+host's |B| there is at most `tau_screen`; no slot is left unstored.
+
+**Speed** (a script, GH200 native `sm_90`, `tau_screen = 1e-12`, `tau32 =
+1e-4`, a 48-shell AO chain 2.5 bohr apart and 96 aux shells along it,
+112,896 cells; the whole sequence, median of 15):
+
+| class | cells (screened / FP32 / FP64) | full FP64 | dynamic | ratio | max \|dynamic − full\| |
+|---|---|---|---|---|---|
+| (pp\|d) | 90,816 / 4,224 / 17,856 | 0.229 ms | 0.087 ms | 0.38 | 4.8e-15 |
+| (dd\|d) | 86,688 / 8,352 / 17,856 | 5.504 ms | 1.346 ms | 0.25 | 5.4e-15 |
+| (dd\|i) | 86,688 / 4,128 / 22,080 | 23.98 ms | 6.541 ms | 0.27 | 2.2e-20 |
+
+(max |B| 0.1 to 0.2). Most of the gain is the screen, and a 117-bohr chain
+is kind to it; a compact 3-D molecule screens fewer cells. The host bound
+took 66 s at (dd|·) in pure Python, a one-time cost per geometry that a
+consumer computes its own way.
+
+**SMALL PROBLEMS DO NOT GAIN.** With 4,352 cells (16 AO shells, 32 aux) the
+same split is 1.9x SLOWER: one thread per cell is 136 blocks, one wave on
+132 SMs, so a launch costs one thread's latency whatever its cell count
+(446 us for 4,352 cells, 436 us for 1,856), and two launches cost two.
+The same regime governed #747's, #749's and #753's timings on #606's
+~8.7k-cell bases; #749's and #753's are re-timed at scale in their
+sections.
 
 ## What is not done
 
