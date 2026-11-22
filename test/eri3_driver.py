@@ -324,3 +324,37 @@ def build_packed_on_card(classes: Sequence[Eri3Class],
     (B,) = ran.load(OUT)
     assert B.shape == (n_col * n_aux,), (B.shape, n_col, n_aux)
     return B.reshape(n_col, n_aux)
+
+
+def build_dynamic_on_card(cls: Eri3Class, cells: dict[str, tuple[int, ...]],
+                          bins: dict[str, Sequence[int]], n_col: int,
+                          n_aux: int, backend: str, tc: Toolchain,
+                          workdir: Path, *, timeout: float = 1800.0
+                          ) -> np.ndarray:
+    """The fully spherical `(mn|P)` of `cls` by precision bins (#754,
+    `eri3_drive.precision_split` over `cells`, every cell of `cls`): ONE
+    runner over `ssperi3_` and `mssperi3_`, the FP64 kernel over `fp64`,
+    the mixed one over `fp32`, `screened` slots 0.0 from the upload and
+    the rest NaN, so an element nobody stores is seen. The sequence runs
+    `RUNS` times bit-identically; the caller holds the card."""
+    from felizjueves.eri.density_fit.eri3_drive import (
+        screened_slots,
+        subset_cells,
+    )
+    work = [(b, m) for b, m in (("fp64", False), ("fp32", True)) if bins[b]]
+    kernels = [packed_kernel(cls, None, True, True, mixed=m) for _, m in work]
+    workdir.mkdir(parents=True, exist_ok=True)
+    units = [(_unit(k, backend, workdir, None), [k.name]) for k in kernels]
+    binary = build_runner(tc, units_runner(backend, units, workdir,
+                                           "dyn_runner"),
+                          workdir / "dyn_bin", timeout=timeout)
+    buffers, steps = packed_steps([cls] * len(work),
+                                  [subset_cells(cells, bins[b])
+                                   for b, _ in work], n_col, n_aux, kernels)
+    init = np.full(n_col * n_aux, np.nan)
+    init[screened_slots(cls, cells, bins["screened"], n_aux)] = 0.0
+    buffers[OUT] = init
+    ran = run_sequence(binary, workdir / "case", buffers, steps, outs=[OUT],
+                       runs=RUNS)
+    (B,) = ran.load(OUT)
+    return B.reshape(n_col, n_aux)

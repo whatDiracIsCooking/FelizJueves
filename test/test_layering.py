@@ -2607,7 +2607,9 @@ RULES |= {
     "eri3_adapter": _rule(
         "ao/eri3_drive.py (#444): the three-center kernel run in the "
         "interpreter over `ao.eri3`'s staging -- builder + interp + ao, "
-        "producing numbers, as `ao/metric_drive.py` does for the metric",
+        "producing numbers, as `ao/metric_drive.py` does for the metric; "
+        "#754's dynamic precision bounds each cell from the host's Schwarz "
+        "diagonal (`eri.schwarz`) and metric diagonal, `pq` injected",
         ("spec", "=ir", "ir.interp", "ao", "mmd.hermite",
          "eri.density_fit.kernel_eri3"),
         reference="the kernel's numbers are compared against reference/; "
@@ -2630,7 +2632,8 @@ EDGES |= {k: frozenset(v) for k, v in {
         "eri.j_coulomb.levers.mixed"),
     "eri.density_fit.eri3_drive": (
         "eri.density_fit.eri3", "ao.shell", "ir.interp", "ir",
-        "eri.density_fit.kernel_eri3"),
+        "eri.density_fit.kernel_eri3", "eri.density_fit.metric",
+        "eri.schwarz"),
 }.items()}
 
 

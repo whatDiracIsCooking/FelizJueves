@@ -108,6 +108,9 @@ TESTS = {
     # The mixed-precision form: (dd|f) and (ff|i), at the FP32 tier.
     "test/test_eri3_mixed_device.py::test_X_mixed_eri3_is_the_contracted_host":
         Classes("mmd", "eri3"),
+    # Dynamic precision with screening (#754): (dd|d), every bin.
+    "test/test_eri3_dynamic_device.py::test_X_dynamic_eri3_keeps_each_bins_claim":
+        span("mmd", "eri3", 0, (6,)),
     # The HGP twins.
     "test/test_emit_hgp_df.py::test_X_compiles_the_hgp_df_unit":
         Classes("hgp", "metric"),
